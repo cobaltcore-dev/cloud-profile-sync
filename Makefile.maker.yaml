@@ -1,0 +1,26 @@
+# Configuration file for <https://github.com/sapcc/go-makefile-maker>
+
+metadata:
+  url: https://github.com/cobaltcore-dev/cloud-profile-sync
+
+binaries:
+  - name:        cloud-profile-sync
+    fromPackage: .
+    installTo:   bin/
+
+golang:
+  setGoModVersion: true
+
+golangciLint:
+  createConfig: true
+
+githubWorkflow:
+  global:
+    defaultBranch: master
+  ci:
+    enabled: true
+
+renovate:
+  enabled: true
+  assignees:
+    - Nuckal777
