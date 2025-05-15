@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 
-	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"golang.org/x/sync/semaphore"
 	"oras.land/oras-go/v2/registry/remote"
 	"oras.land/oras-go/v2/registry/remote/auth"
@@ -91,25 +90,23 @@ func (o *OCI) GetVersions(ctx context.Context) ([]SourceImage, error) {
 				return
 			}
 			defer reader.Close()
-			var index ocispec.Index
-			if err := json.NewDecoder(reader).Decode(&index); err != nil {
+			manifest := struct {
+				Annotations map[string]string `json:"annotations"`
+			}{}
+			err = json.NewDecoder(reader).Decode(&manifest)
+			if err != nil {
 				out <- Result[SourceImage]{err: err}
 				return
 			}
-			if len(index.Manifests) == 0 {
-				out <- Result[SourceImage]{err: errors.New("no manifests found")}
+			arch, ok := manifest.Annotations["architecture"]
+			if !ok {
+				out <- Result[SourceImage]{err: errors.New("architecture annotation not found in descriptor")}
 				return
-			}
-			archs := make([]string, 0, len(index.Manifests))
-			for _, manifest := range index.Manifests {
-				if manifest.Platform != nil {
-					archs = append(archs, manifest.Platform.Architecture)
-				}
 			}
 			out <- Result[SourceImage]{
 				value: SourceImage{
 					Version:       tag,
-					Architectures: archs,
+					Architectures: []string{arch},
 				},
 			}
 		}()
