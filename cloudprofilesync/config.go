@@ -84,7 +84,7 @@ func LoadConfig(data []byte) (Config, error) {
 			Username:   desc.Source.OCI.Username,
 			Password:   string(desc.Source.OCI.Password),
 			Parallel:   desc.Source.OCI.Parallel,
-		}, true)
+		}, false)
 		if err != nil {
 			return Config{}, err
 		}
