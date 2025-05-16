@@ -9,6 +9,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/blang/semver/v4"
 	"github.com/gardener/gardener/pkg/apis/core/v1beta1"
 	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/types"
@@ -56,10 +57,31 @@ func (r *Runnable) patchCloudProfile(ctx context.Context) error {
 	return nil
 }
 
-func (r *Runnable) CheckSource(ctx context.Context, cloudProfile *v1beta1.CloudProfile) error {
+func (r *Runnable) getVersions(ctx context.Context) ([]SourceImage, error) {
 	versions, err := r.Source.GetVersions(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get versions from source: %w", err)
+		return nil, fmt.Errorf("failed to get versions from source: %w", err)
+	}
+	filtered := make([]SourceImage, 0, len(versions))
+	for _, version := range versions {
+		_, err := semver.Parse(version.Version)
+		if err != nil {
+			r.Log.Info("skipping invalid version", "version", version.Version)
+			continue
+		}
+		if len(version.Architectures) == 0 {
+			r.Log.Info("skipping version with no architectures", "version", version.Version)
+			continue
+		}
+		filtered = append(filtered, version)
+	}
+	return filtered, nil
+}
+
+func (r *Runnable) CheckSource(ctx context.Context, cloudProfile *v1beta1.CloudProfile) error {
+	versions, err := r.getVersions(ctx)
+	if err != nil {
+		return err
 	}
 	imageIndex := slices.IndexFunc(cloudProfile.Spec.MachineImages, func(mi v1beta1.MachineImage) bool {
 		return mi.Name == r.Source.Name

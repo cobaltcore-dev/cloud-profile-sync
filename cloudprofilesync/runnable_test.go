@@ -14,20 +14,20 @@ import (
 var _ = Describe("Runnable", func() {
 
 	It("adds an image from the source to the CloudProfile spec", func(ctx SpecContext) {
-		mockSource.images = []cloudprofilesync.SourceImage{{Version: "v1.0.0", Architectures: []string{"amd64"}}}
+		mockSource.images = []cloudprofilesync.SourceImage{{Version: "1.0.0", Architectures: []string{"amd64"}}}
 		var cloudProfile v1beta1.CloudProfile
 		Expect(runnable.CheckSource(ctx, &cloudProfile)).To(Succeed())
 		Expect(cloudProfile.Spec.MachineImages).To(HaveLen(1))
 		Expect(cloudProfile.Spec.MachineImages[0].Name).To(Equal("test"))
 		Expect(cloudProfile.Spec.MachineImages[0].Versions).To(HaveLen(1))
-		Expect(cloudProfile.Spec.MachineImages[0].Versions[0].Version).To(Equal("v1.0.0"))
+		Expect(cloudProfile.Spec.MachineImages[0].Versions[0].Version).To(Equal("1.0.0"))
 		Expect(cloudProfile.Spec.MachineImages[0].Versions[0].Architectures).To(Equal([]string{"amd64"}))
 	})
 
 	It("adds multiple images from the source to the CloudProfile spec", func(ctx SpecContext) {
 		mockSource.images = []cloudprofilesync.SourceImage{
-			{Version: "v1.0.0", Architectures: []string{"amd64"}},
-			{Version: "v2.0.0", Architectures: []string{"arm64", "amd64"}},
+			{Version: "1.0.0", Architectures: []string{"amd64"}},
+			{Version: "2.0.0", Architectures: []string{"arm64", "amd64"}},
 		}
 		var cloudProfile v1beta1.CloudProfile
 		Expect(runnable.CheckSource(ctx, &cloudProfile)).To(Succeed())
@@ -36,13 +36,13 @@ var _ = Describe("Runnable", func() {
 		Expect(cloudProfile.Spec.MachineImages[0].Versions).To(ConsistOf([]v1beta1.MachineImageVersion{
 			{
 				ExpirableVersion: v1beta1.ExpirableVersion{
-					Version: "v1.0.0",
+					Version: "1.0.0",
 				},
 				Architectures: []string{"amd64"},
 			},
 			{
 				ExpirableVersion: v1beta1.ExpirableVersion{
-					Version: "v2.0.0",
+					Version: "2.0.0",
 				},
 				Architectures: []string{"arm64", "amd64"},
 			},
@@ -58,7 +58,7 @@ var _ = Describe("Runnable", func() {
 						Versions: []v1beta1.MachineImageVersion{
 							{
 								ExpirableVersion: v1beta1.ExpirableVersion{
-									Version: "v1.0.0",
+									Version: "1.0.0",
 								},
 								Architectures: []string{"amd64"},
 							},
@@ -68,12 +68,12 @@ var _ = Describe("Runnable", func() {
 			},
 		}
 
-		mockSource.images = []cloudprofilesync.SourceImage{{Version: "v2.0.0", Architectures: []string{"arm64"}}}
+		mockSource.images = []cloudprofilesync.SourceImage{{Version: "2.0.0", Architectures: []string{"arm64"}}}
 		Expect(runnable.CheckSource(ctx, &cloudProfile)).To(Succeed())
 		Expect(cloudProfile.Spec.MachineImages).To(HaveLen(1))
 		Expect(cloudProfile.Spec.MachineImages[0].Name).To(Equal("test"))
 		Expect(cloudProfile.Spec.MachineImages[0].Versions).To(HaveLen(1))
-		Expect(cloudProfile.Spec.MachineImages[0].Versions[0].Version).To(Equal("v2.0.0"))
+		Expect(cloudProfile.Spec.MachineImages[0].Versions[0].Version).To(Equal("2.0.0"))
 		Expect(cloudProfile.Spec.MachineImages[0].Versions[0].Architectures).To(Equal([]string{"arm64"}))
 	})
 
@@ -86,7 +86,7 @@ var _ = Describe("Runnable", func() {
 						Versions: []v1beta1.MachineImageVersion{
 							{
 								ExpirableVersion: v1beta1.ExpirableVersion{
-									Version: "v1.0.0",
+									Version: "1.0.0",
 								},
 								Architectures: []string{"amd64"},
 							},
@@ -97,7 +97,7 @@ var _ = Describe("Runnable", func() {
 						Versions: []v1beta1.MachineImageVersion{
 							{
 								ExpirableVersion: v1beta1.ExpirableVersion{
-									Version: "v2.0.0",
+									Version: "2.0.0",
 								},
 								Architectures: []string{"arm64"},
 							},
@@ -107,7 +107,7 @@ var _ = Describe("Runnable", func() {
 			},
 		}
 
-		mockSource.images = []cloudprofilesync.SourceImage{{Version: "v1.1.0", Architectures: []string{"arm64"}}}
+		mockSource.images = []cloudprofilesync.SourceImage{{Version: "1.1.0", Architectures: []string{"arm64"}}}
 		Expect(runnable.CheckSource(ctx, &cloudProfile)).To(Succeed())
 		Expect(cloudProfile.Spec.MachineImages).To(ConsistOf([]v1beta1.MachineImage{
 			{
@@ -115,7 +115,7 @@ var _ = Describe("Runnable", func() {
 				Versions: []v1beta1.MachineImageVersion{
 					{
 						ExpirableVersion: v1beta1.ExpirableVersion{
-							Version: "v1.1.0",
+							Version: "1.1.0",
 						},
 						Architectures: []string{"arm64"},
 					},
@@ -126,7 +126,7 @@ var _ = Describe("Runnable", func() {
 				Versions: []v1beta1.MachineImageVersion{
 					{
 						ExpirableVersion: v1beta1.ExpirableVersion{
-							Version: "v2.0.0",
+							Version: "2.0.0",
 						},
 						Architectures: []string{"arm64"},
 					},

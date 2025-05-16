@@ -32,10 +32,10 @@ var _ = Describe("OCISource", func() {
 					MediaType: ocispec.MediaTypeImageManifest,
 					Size:      0,
 					Digest:    ocispec.DescriptorEmptyJSON.Digest,
-					Platform: &ocispec.Platform{
-						Architecture: "amd64",
-					},
 				},
+			},
+			Annotations: map[string]string{
+				"architecture": "amd64",
 			},
 		}
 		indexBlob, err := json.Marshal(index)

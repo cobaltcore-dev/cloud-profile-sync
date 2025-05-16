@@ -3,6 +3,7 @@ module github.com/cobaltcore-dev/cloud-profile-sync
 go 1.24.0
 
 require (
+	github.com/blang/semver/v4 v4.0.0
 	github.com/distribution/distribution/v3 v3.0.0
 	github.com/gardener/gardener v1.118.1
 	github.com/go-logr/logr v1.4.2
