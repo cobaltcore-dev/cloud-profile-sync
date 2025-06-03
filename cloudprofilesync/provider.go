@@ -40,8 +40,17 @@ func (p *IroncoreProvider) Configure(cloudProfile *v1beta1.CloudProfile, version
 		imageIndex = len(cfg.MachineImages) - 1
 	}
 	image := &cfg.MachineImages[imageIndex]
+
+	existingRefs := map[string]struct{}{}
+	for _, version := range image.Versions {
+		existingRefs[version.Image] = struct{}{}
+	}
+
 	for _, version := range versions {
 		ref := p.Registry + "/" + p.Repository + ":" + version.Version
+		if _, ok := existingRefs[ref]; ok {
+			continue
+		}
 		for _, arch := range version.Architectures {
 			image.Versions = append(image.Versions, v1alpha1.MachineImageVersion{
 				Version:      version.Version,

@@ -65,4 +65,21 @@ var _ = Describe("IroncoreProvider", func() {
 		}))
 	})
 
+	It("should not add duplicate images", func() {
+		var cloudProfile v1beta1.CloudProfile
+		versions := []cloudprofilesync.SourceImage{
+			{Version: "v1.0.0", Architectures: []string{"amd64"}},
+			{Version: "v1.0.0", Architectures: []string{"arm64"}},
+		}
+		Expect(provider.Configure(&cloudProfile, versions)).To(Succeed())
+		Expect(provider.Configure(&cloudProfile, versions)).To(Succeed())
+		Expect(cloudProfile.Spec.ProviderConfig).ToNot(BeNil())
+
+		var providerConfig v1alpha1.CloudProfileConfig
+		Expect(json.Unmarshal(cloudProfile.Spec.ProviderConfig.Raw, &providerConfig)).To(Succeed())
+		Expect(providerConfig.MachineImages).To(HaveLen(1))
+		Expect(providerConfig.MachineImages[0].Name).To(Equal("test"))
+		Expect(providerConfig.MachineImages[0].Versions).To(HaveLen(2))
+	})
+
 })
