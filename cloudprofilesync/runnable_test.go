@@ -72,9 +72,11 @@ var _ = Describe("Runnable", func() {
 		Expect(runnable.CheckSource(ctx, &cloudProfile)).To(Succeed())
 		Expect(cloudProfile.Spec.MachineImages).To(HaveLen(1))
 		Expect(cloudProfile.Spec.MachineImages[0].Name).To(Equal("test"))
-		Expect(cloudProfile.Spec.MachineImages[0].Versions).To(HaveLen(1))
-		Expect(cloudProfile.Spec.MachineImages[0].Versions[0].Version).To(Equal("2.0.0"))
-		Expect(cloudProfile.Spec.MachineImages[0].Versions[0].Architectures).To(Equal([]string{"arm64"}))
+		Expect(cloudProfile.Spec.MachineImages[0].Versions).To(HaveLen(2))
+		Expect(cloudProfile.Spec.MachineImages[0].Versions[0].Version).To(Equal("1.0.0"))
+		Expect(cloudProfile.Spec.MachineImages[0].Versions[0].Architectures).To(Equal([]string{"amd64"}))
+		Expect(cloudProfile.Spec.MachineImages[0].Versions[1].Version).To(Equal("2.0.0"))
+		Expect(cloudProfile.Spec.MachineImages[0].Versions[1].Architectures).To(Equal([]string{"arm64"}))
 	})
 
 	It("does not change unrelated images in the CloudProfile spec", func(ctx SpecContext) {
@@ -113,6 +115,12 @@ var _ = Describe("Runnable", func() {
 			{
 				Name: "test",
 				Versions: []v1beta1.MachineImageVersion{
+					{
+						ExpirableVersion: v1beta1.ExpirableVersion{
+							Version: "1.0.0",
+						},
+						Architectures: []string{"amd64"},
+					},
 					{
 						ExpirableVersion: v1beta1.ExpirableVersion{
 							Version: "1.1.0",

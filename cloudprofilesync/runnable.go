@@ -91,11 +91,20 @@ func (r *Runnable) CheckSource(ctx context.Context, cloudProfile *v1beta1.CloudP
 		imageIndex = len(cloudProfile.Spec.MachineImages) - 1
 	}
 	image := &cloudProfile.Spec.MachineImages[imageIndex]
-	image.Versions = make([]v1beta1.MachineImageVersion, len(versions))
-	for i, version := range versions {
-		image.Versions[i] = v1beta1.MachineImageVersion{
-			ExpirableVersion: v1beta1.ExpirableVersion{Version: version.Version},
-			Architectures:    version.Architectures,
+	existingVersions := make(map[string]int, len(image.Versions))
+	for idx, version := range image.Versions {
+		existingVersions[version.Version] = idx
+	}
+	for _, version := range versions {
+		if idx, exists := existingVersions[version.Version]; exists {
+			image.Versions[idx].Architectures = version.Architectures
+		} else {
+			image.Versions = append(image.Versions, v1beta1.MachineImageVersion{
+				ExpirableVersion: v1beta1.ExpirableVersion{
+					Version: version.Version,
+				},
+				Architectures: version.Architectures,
+			})
 		}
 	}
 	if r.Provider != nil {
