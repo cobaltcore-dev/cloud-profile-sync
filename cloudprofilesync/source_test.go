@@ -20,7 +20,7 @@ import (
 
 var _ = Describe("OCISource", func() {
 
-	It("retireves versions from a registry", func(ctx SpecContext) {
+	It("retrieves versions from a registry", func(ctx SpecContext) {
 		repo, err := remote.NewRepository(registryAddr + "/repo")
 		Expect(err).To(Succeed())
 		repo.PlainHTTP = true
@@ -46,7 +46,12 @@ var _ = Describe("OCISource", func() {
 
 		err = repo.Push(ctx, ocispec.DescriptorEmptyJSON, strings.NewReader("{}"))
 		Expect(err).To(Succeed())
-		err = repo.PushReference(ctx, indexDesc, bytes.NewReader(indexBlob), "abc")
+		err = repo.PushReference(ctx, indexDesc, bytes.NewReader(indexBlob), "1.0.0")
+		Expect(err).To(Succeed())
+
+		err = repo.Push(ctx, ocispec.DescriptorEmptyJSON, strings.NewReader("{}"))
+		Expect(err).To(Succeed())
+		err = repo.PushReference(ctx, indexDesc, bytes.NewReader(indexBlob), "1.0.1_abc")
 		Expect(err).To(Succeed())
 
 		oci, err := cloudprofilesync.NewOCI(cloudprofilesync.OCIParams{
@@ -57,9 +62,11 @@ var _ = Describe("OCISource", func() {
 		Expect(err).To(Succeed())
 		versions, err := oci.GetVersions(ctx)
 		Expect(err).To(Succeed())
-		Expect(versions).To(HaveLen(1))
-		Expect(versions[0].Version).To(Equal("abc"))
-		Expect(versions[0].Architectures).To(Equal([]string{"amd64"}))
+		Expect(versions).To(HaveLen(2))
+		Expect(versions).To(ContainElement(
+			cloudprofilesync.SourceImage{Version: "1.0.0", Architectures: []string{"amd64"}}))
+		Expect(versions).To(ContainElement(
+			cloudprofilesync.SourceImage{Version: "1.0.1+abc", Architectures: []string{"amd64"}}))
 	})
 
 })
