@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 
 	"golang.org/x/sync/semaphore"
 	"oras.land/oras-go/v2/registry/remote"
@@ -105,7 +106,7 @@ func (o *OCI) GetVersions(ctx context.Context) ([]SourceImage, error) {
 			}
 			out <- Result[SourceImage]{
 				value: SourceImage{
-					Version:       tag,
+					Version:       strings.ReplaceAll(tag, "_", "+"), // Follow the helm convention
 					Architectures: []string{arch},
 				},
 			}
