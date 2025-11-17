@@ -6,7 +6,9 @@ package cloudprofilesync
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
+	"regexp"
 	"strings"
 )
 
@@ -37,8 +39,14 @@ type ConfigDescriptor struct {
 }
 
 type SourceDescriptor struct {
-	Name string         `json:"name"`
-	OCI  *OCIDescriptor `json:"oci"`
+	Name     string                  `json:"name"`
+	OCI      *OCIDescriptor          `json:"oci"`
+	Variants []VariantExtractionRule `json:"variants"`
+}
+
+type VariantExtractionRule struct {
+	Regex             string `json:"regex"`
+	ImageNameTemplate string `json:"imageNameTemplate"`
 }
 
 type OCIDescriptor struct {
@@ -63,6 +71,19 @@ type Config struct {
 	CloudProfile string
 	Source       NamedSource
 	Provider     Provider
+}
+
+type CompiledExtractor struct {
+	Rule  VariantExtractionRule
+	Regex *regexp.Regexp
+}
+
+func DefaultExtractor(name string) CompiledExtractor {
+	re := `^(?P<version>.+)(?P<variant>)$`
+	return CompiledExtractor{
+		Rule:  VariantExtractionRule{Regex: re, ImageNameTemplate: name},
+		Regex: regexp.MustCompile(re),
+	}
 }
 
 func LoadConfig(data []byte) (Config, error) {
@@ -103,6 +124,37 @@ func LoadConfig(data []byte) (Config, error) {
 	} else {
 		return Config{}, errors.New("no provider defined")
 	}
+
+	var extractors []CompiledExtractor
+	if len(desc.Source.Variants) == 0 {
+		extractors = append(extractors, DefaultExtractor(desc.Source.Name))
+	} else {
+		for _, r := range desc.Source.Variants {
+			re, err := regexp.Compile(r.Regex)
+			if err != nil {
+				return Config{}, fmt.Errorf("invalid variant regex '%s': %w", r.Regex, err)
+			}
+
+			groups := re.SubexpNames()
+			var hasVersion, hasVariant bool
+			for _, g := range groups {
+				if g == "version" {
+					hasVersion = true
+				}
+				if g == "variant" {
+					hasVariant = true
+				}
+			}
+			if !hasVersion || !hasVariant {
+				return Config{}, fmt.Errorf(
+					"variant regex must contain named groups 'version' and 'variant': %s",
+					r.Regex,
+				)
+			}
+			extractors = append(extractors, CompiledExtractor{Rule: r, Regex: re})
+		}
+	}
+	source.Extractors = extractors
 
 	return Config{
 		CloudProfile: desc.CloudProfile,

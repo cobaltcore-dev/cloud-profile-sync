@@ -19,7 +19,8 @@ import (
 
 type NamedSource struct {
 	Source
-	Name string
+	Name       string
+	Extractors []CompiledExtractor
 }
 
 type Runnable struct {

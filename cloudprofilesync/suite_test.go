@@ -44,8 +44,9 @@ var _ = BeforeSuite(func() {
 	runnable = cloudprofilesync.Runnable{
 		Log: GinkgoLogr,
 		Source: cloudprofilesync.NamedSource{
-			Name:   "test",
-			Source: &mockSource,
+			Name:       "test",
+			Source:     &mockSource,
+			Extractors: []cloudprofilesync.CompiledExtractor{cloudprofilesync.DefaultExtractor("test")},
 		},
 	}
 	ctx, cancel := context.WithCancel(context.Background())
