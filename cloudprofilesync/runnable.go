@@ -7,9 +7,10 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
-	"github.com/blang/semver/v4"
+	semver "github.com/blang/semver/v4"
 	"github.com/gardener/gardener/pkg/apis/core/v1beta1"
 	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/types"
@@ -79,38 +80,80 @@ func (r *Runnable) getVersions(ctx context.Context) ([]SourceImage, error) {
 	return filtered, nil
 }
 
+func extract(tag string, extractors []CompiledExtractor) (version, imageName string) {
+	for _, extractor := range extractors {
+		matches := extractor.Regex.FindStringSubmatch(tag)
+		if matches == nil {
+			continue
+		}
+		groups := extractor.Regex.SubexpNames()
+		variant := ""
+		for i, name := range groups {
+			if name == "version" {
+				version = matches[i]
+			}
+			if name == "variant" {
+				variant = matches[i]
+			}
+		}
+		imageName = strings.ReplaceAll(extractor.Rule.ImageNameTemplate, "{{variant}}", variant)
+		return
+	}
+	return "", ""
+}
+
 func (r *Runnable) CheckSource(ctx context.Context, cloudProfile *v1beta1.CloudProfile) error {
 	versions, err := r.getVersions(ctx)
 	if err != nil {
 		return err
 	}
-	imageIndex := slices.IndexFunc(cloudProfile.Spec.MachineImages, func(mi v1beta1.MachineImage) bool {
-		return mi.Name == r.Source.Name
-	})
-	if imageIndex == -1 {
-		cloudProfile.Spec.MachineImages = append(cloudProfile.Spec.MachineImages, v1beta1.MachineImage{Name: r.Source.Name})
-		imageIndex = len(cloudProfile.Spec.MachineImages) - 1
-	}
-	image := &cloudProfile.Spec.MachineImages[imageIndex]
-	existingVersions := make(map[string]int, len(image.Versions))
-	for idx, version := range image.Versions {
-		existingVersions[version.Version] = idx
-	}
-	for _, version := range versions {
-		if idx, exists := existingVersions[version.Version]; exists {
-			image.Versions[idx].Architectures = version.Architectures
-		} else {
-			image.Versions = append(image.Versions, v1beta1.MachineImageVersion{
-				ExpirableVersion: v1beta1.ExpirableVersion{
-					Version: version.Version,
-				},
-				Architectures: version.Architectures,
-			})
+
+	images := make(map[string][]SourceImage)
+	for _, v := range versions {
+		version, imageName := extract(v.Version, r.Source.Extractors)
+		if version == "" || imageName == "" {
+			continue
 		}
+		v.Version = version
+		images[imageName] = append(images[imageName], v)
 	}
-	if r.Provider != nil {
-		if err := r.Provider.Configure(cloudProfile, versions); err != nil {
-			return fmt.Errorf("failed to configure provider: %w", err)
+
+	for imageName, parsedVersions := range images {
+		imageIndex := slices.IndexFunc(
+			cloudProfile.Spec.MachineImages,
+			func(mi v1beta1.MachineImage) bool {
+				return mi.Name == imageName
+			},
+		)
+		if imageIndex == -1 {
+			cloudProfile.Spec.MachineImages = append(
+				cloudProfile.Spec.MachineImages,
+				v1beta1.MachineImage{Name: imageName},
+			)
+			imageIndex = len(cloudProfile.Spec.MachineImages) - 1
+		}
+		image := &cloudProfile.Spec.MachineImages[imageIndex]
+		existingVersions := make(map[string]int, len(image.Versions))
+		for idx, version := range image.Versions {
+			existingVersions[version.Version] = idx
+		}
+		for _, version := range parsedVersions {
+			if idx, exists := existingVersions[version.Version]; exists {
+				image.Versions[idx].Architectures = version.Architectures
+			} else {
+				image.Versions = append(image.Versions, v1beta1.MachineImageVersion{
+					ExpirableVersion: v1beta1.ExpirableVersion{
+						Version: version.Version,
+					},
+					Architectures: version.Architectures,
+				})
+			}
+		}
+		// TODO this still uses the machine image name from the provider, needs to be aligned with the extractor somehow
+		if r.Provider != nil {
+			if err := r.Provider.Configure(cloudProfile, versions); err != nil {
+				return fmt.Errorf("failed to configure provider: %w", err)
+			}
 		}
 	}
 	return nil
