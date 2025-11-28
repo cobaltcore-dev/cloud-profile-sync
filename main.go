@@ -1,4 +1,4 @@
-// Copyright 2025 SAP SE
+// SPDX-FileCopyrightText: 2025 SAP SE or an SAP affiliate company
 // SPDX-License-Identifier: Apache-2.0
 
 package main
@@ -10,7 +10,6 @@ import (
 	"github.com/gardener/gardener/pkg/apis/core/v1beta1"
 	"go.uber.org/zap/zapcore"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
@@ -18,10 +17,8 @@ import (
 	ctrlconfig "sigs.k8s.io/controller-runtime/pkg/client/config"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync"
+	"github.com/cobaltcore-dev/cloud-profile-sync/controllers"
 )
-
-const configPath = "config/config.json"
 
 var (
 	scheme   = runtime.NewScheme()
@@ -56,27 +53,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	configBytes, err := os.ReadFile(configPath)
-	if err != nil {
-		setupLog.Error(err, "unable to read config file")
-		os.Exit(1)
-	}
-	config, err := cloudprofilesync.LoadConfig(configBytes)
-	if err != nil {
-		setupLog.Error(err, "unable to load config")
-		os.Exit(1)
-	}
-
 	ctx := ctrl.SetupSignalHandler()
 
-	if err := mgr.Add(&cloudprofilesync.Runnable{
-		Client:   mgr.GetClient(),
-		Log:      ctrl.Log.WithName("cloudprofilesync"),
-		Source:   config.Source,
-		Provider: config.Provider,
-		Profile:  types.NamespacedName{Name: config.CloudProfile},
-	}); err != nil {
-		setupLog.Error(err, "unable to add runnable to manager")
+	reconciler := controllers.Reconciler{
+		Client: mgr.GetClient(),
+	}
+	if err := reconciler.SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "problem setting up ManagedCloudProfile reconciler")
 		os.Exit(1)
 	}
 

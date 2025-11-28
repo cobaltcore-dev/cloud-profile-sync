@@ -1,5 +1,9 @@
+# SPDX-FileCopyrightText: 2025 SAP SE or an SAP affiliate company
+#
+# SPDX-License-Identifier: Apache-2.0
+
 # Build the manager binary
-FROM golang:1.24-alpine AS builder
+FROM golang:1.25-alpine AS builder
 
 WORKDIR /workspace
 ENV GOTOOLCHAIN=local

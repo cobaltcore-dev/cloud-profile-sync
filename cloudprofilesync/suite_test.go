@@ -1,4 +1,4 @@
-// Copyright 2025 SAP SE
+// SPDX-FileCopyrightText: 2025 SAP SE or an SAP affiliate company
 // SPDX-License-Identifier: Apache-2.0
 
 package cloudprofilesync_test
@@ -19,7 +19,7 @@ import (
 
 func TestSource(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "Source Suite")
+	RunSpecs(t, "Cloudprofilesync Suite")
 }
 
 type MockSource struct {
@@ -33,7 +33,6 @@ func (m *MockSource) GetVersions(ctx context.Context) ([]cloudprofilesync.Source
 const registryAddr = "127.0.0.1:8080"
 
 var (
-	runnable   cloudprofilesync.Runnable
 	mockSource MockSource
 	reg        *registry.Registry
 	stop       context.CancelFunc
@@ -41,13 +40,6 @@ var (
 
 var _ = BeforeSuite(func() {
 	mockSource = MockSource{}
-	runnable = cloudprofilesync.Runnable{
-		Log: GinkgoLogr,
-		Source: cloudprofilesync.NamedSource{
-			Name:   "test",
-			Source: &mockSource,
-		},
-	}
 	ctx, cancel := context.WithCancel(context.Background())
 	stop = cancel
 	var err error
@@ -56,6 +48,7 @@ var _ = BeforeSuite(func() {
 		Storage:    configuration.Storage{"inmemory": map[string]any{}},
 		HTTP:       configuration.HTTP{Addr: registryAddr},
 		Validation: configuration.Validation{Disabled: true},
+		Log:        configuration.Log{Level: "error", AccessLog: configuration.AccessLog{Disabled: true}},
 	})
 	Expect(err).To(Succeed())
 	go func() {
