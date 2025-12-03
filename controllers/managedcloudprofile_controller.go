@@ -7,10 +7,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 
 	gardenerv1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -18,6 +21,10 @@ import (
 
 	"github.com/cobaltcore-dev/cloud-profile-sync/api/v1alpha1"
 	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync"
+)
+
+const (
+	CloudProfileAppliedConditionType string = "CloudProfileApplied"
 )
 
 type Reconciler struct {
@@ -39,21 +46,44 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		if err != nil {
 			return err
 		}
-		cloudProfile.Spec = *mcp.Spec.CloudProfile.DeepCopy()
+		cloudProfile.Spec = CloudProfileSpecToGardener(&mcp.Spec.CloudProfile)
 		return r.updateMachineImages(ctx, log, mcp, &cloudProfile)
 	})
 	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to create or patch cloudprofile: %w", err)
+		if err := r.patchStatusAndCondition(ctx, &mcp, v1alpha1.FailedReconcileStatus, metav1.Condition{
+			Type:               CloudProfileAppliedConditionType,
+			Status:             metav1.ConditionFalse,
+			ObservedGeneration: mcp.Generation,
+			Reason:             "ApplyFailed",
+			Message:            fmt.Sprintf("Failed to apply CloudProfile: %s", err),
+		}); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to patch ManagedCloudProfile status: %w", err)
+		}
+		if apierrors.IsInvalid(err) {
+			log.Error(err, "tried to apply invalid CloudProfile")
+			return ctrl.Result{}, nil
+		}
+		return ctrl.Result{}, fmt.Errorf("failed to create or patch CloudProfile: %w", err)
+	}
+
+	if err := r.patchStatusAndCondition(ctx, &mcp, v1alpha1.SucceededReconcileStatus, metav1.Condition{
+		Type:               CloudProfileAppliedConditionType,
+		Status:             metav1.ConditionTrue,
+		ObservedGeneration: mcp.Generation,
+		Reason:             "Applied",
+		Message:            "Generated CloudProfile applied successfully",
+	}); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to patch ManagedCloudProfile status: %w", err)
 	}
 	log.Info("reconciled ManagedCloudProfile")
 	return ctrl.Result{}, nil
 }
 
 func (r *Reconciler) updateMachineImages(ctx context.Context, log logr.Logger, mcp v1alpha1.ManagedCloudProfile, cloudProfile *gardenerv1beta1.CloudProfile) error {
-	if mcp.Spec.MachineImages == nil {
+	if mcp.Spec.MachineImageUpdates == nil {
 		return nil
 	}
-	mi := *mcp.Spec.MachineImages
+	mi := *mcp.Spec.MachineImageUpdates
 	var source cloudprofilesync.Source
 	switch {
 	case mi.Source.OCI != nil:
@@ -109,6 +139,52 @@ func (r *Reconciler) getCredential(ctx context.Context, ref v1alpha1.SecretRefer
 		return nil, fmt.Errorf("secret %s/%s does not have key %s", ref.Namespace, ref.Name, ref.Key)
 	}
 	return data, nil
+}
+
+func (r *Reconciler) patchStatusAndCondition(ctx context.Context, mcp *v1alpha1.ManagedCloudProfile, status v1alpha1.ReconcileStatus, cond metav1.Condition) error {
+	original := mcp.DeepCopy()
+	mcp.Status.Status = status
+	if cond.Type != "" {
+		mcp.Status.Conditions = applyCondition(mcp.Status.Conditions, cond)
+	}
+	return r.Status().Patch(ctx, mcp, client.MergeFrom(original))
+}
+
+func applyCondition(conditions []metav1.Condition, cond metav1.Condition) []metav1.Condition {
+	idx := slices.IndexFunc(conditions, func(c metav1.Condition) bool {
+		return c.Type == cond.Type
+	})
+	if idx == -1 {
+		idx = len(conditions)
+		conditions = append(conditions, metav1.Condition{})
+	}
+	conditions[idx] = metav1.Condition{
+		Type:               cond.Type,
+		Status:             cond.Status,
+		ObservedGeneration: cond.ObservedGeneration,
+		LastTransitionTime: metav1.Now(),
+		Reason:             cond.Reason,
+		Message:            cond.Message,
+	}
+	return conditions
+}
+
+func CloudProfileSpecToGardener(spec *v1alpha1.CloudProfileSpec) gardenerv1beta1.CloudProfileSpec {
+	cpy := spec.DeepCopy()
+	return gardenerv1beta1.CloudProfileSpec{
+		CABundle:       cpy.CABundle,
+		Kubernetes:     cpy.Kubernetes,
+		MachineImages:  cpy.MachineImages,
+		MachineTypes:   cpy.MachineTypes,
+		ProviderConfig: cpy.ProviderConfig,
+		Regions:        cpy.Regions,
+		SeedSelector:   cpy.SeedSelector,
+		Type:           cpy.Type,
+		VolumeTypes:    cpy.VolumeTypes,
+		Bastion:        cpy.Bastion,
+		Limits:         cpy.Limits,
+		Capabilities:   cpy.Capabilities,
+	}
 }
 
 // SetupWithManager attaches the controller to the given manager.

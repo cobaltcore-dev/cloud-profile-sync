@@ -4,6 +4,8 @@
 package cloudprofilesync_test
 
 import (
+	"encoding/json"
+
 	"github.com/gardener/gardener/pkg/apis/core/v1beta1"
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
@@ -36,7 +38,7 @@ var _ = Describe("ImageUpdater", func() {
 			{Version: "2.0.0", Architectures: []string{"arm64", "amd64"}},
 		}
 		updater := cloudprofilesync.ImageUpdater{
-			Log:       logr.Discard(),
+			Log:       GinkgoLogr,
 			Source:    &mockSource,
 			ImageName: "test",
 		}
@@ -81,7 +83,7 @@ var _ = Describe("ImageUpdater", func() {
 
 		mockSource.images = []cloudprofilesync.SourceImage{{Version: "2.0.0", Architectures: []string{"arm64"}}}
 		updater := cloudprofilesync.ImageUpdater{
-			Log:       logr.Discard(),
+			Log:       GinkgoLogr,
 			Source:    &mockSource,
 			ImageName: "test",
 		}
@@ -127,7 +129,7 @@ var _ = Describe("ImageUpdater", func() {
 
 		mockSource.images = []cloudprofilesync.SourceImage{{Version: "1.1.0", Architectures: []string{"arm64"}}}
 		updater := cloudprofilesync.ImageUpdater{
-			Log:       logr.Discard(),
+			Log:       GinkgoLogr,
 			Source:    &mockSource,
 			ImageName: "test",
 		}
@@ -162,6 +164,21 @@ var _ = Describe("ImageUpdater", func() {
 				},
 			},
 		}))
+	})
+
+	It("invokes the given provider", func(ctx SpecContext) {
+		mockSource.images = []cloudprofilesync.SourceImage{{Version: "1.0.0", Architectures: []string{"amd64"}}}
+		updater := cloudprofilesync.ImageUpdater{
+			Log:       GinkgoLogr,
+			Source:    &mockSource,
+			ImageName: "test",
+			Provider:  &MockProvider{},
+		}
+		var cloudProfile v1beta1.CloudProfile
+		Expect(updater.Update(ctx, &cloudProfile)).To(Succeed())
+		var fromProvider []cloudprofilesync.SourceImage
+		Expect(json.Unmarshal(cloudProfile.Spec.ProviderConfig.Raw, &fromProvider)).To(Succeed())
+		Expect(fromProvider).To(Equal(mockSource.images))
 	})
 
 })

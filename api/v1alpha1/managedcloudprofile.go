@@ -6,6 +6,7 @@ package v1alpha1
 import (
 	gardenerv1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	runtime "k8s.io/apimachinery/pkg/runtime"
 )
 
 func init() {
@@ -14,11 +15,66 @@ func init() {
 
 type ManagedCloudProfileSpec struct {
 	// CloudProfile contains the base spec of the CloudProfile.
-	CloudProfile gardenerv1beta1.CloudProfileSpec `json:"cloudProfile"`
+	CloudProfile CloudProfileSpec `json:"cloudProfile"`
 
-	// MachineImages contains the source and provider information to automate machine images.
+	// MachineImageUpdates contains the source and provider information to automate machine images.
 	// +optional
-	MachineImages *ManagedCloudProfileMachineImages `json:"machineImages,omitempty"`
+	MachineImageUpdates *MachineImageUpdates `json:"machineImageUpdates,omitempty"`
+}
+
+// Copy the cloud profile spec to override some validation
+
+type CloudProfileSpec struct {
+	// CABundle is a certificate bundle which will be installed onto every host machine of shoot cluster targeting this profile.
+	// +optional
+	CABundle *string `json:"caBundle,omitempty"`
+	// Kubernetes contains constraints regarding allowed values of the 'kubernetes' block in the Shoot specification.
+	Kubernetes gardenerv1beta1.KubernetesSettings `json:"kubernetes"`
+	// MachineImages contains constraints regarding allowed values for machine images in the Shoot specification.
+	// +patchMergeKey=name
+	// +patchStrategy=merge
+	// +optional
+	MachineImages []gardenerv1beta1.MachineImage `json:"machineImages" patchStrategy:"merge" patchMergeKey:"name"`
+	// MachineTypes contains constraints regarding allowed values for machine types in the 'workers' block in the Shoot specification.
+	// +patchMergeKey=name
+	// +patchStrategy=merge
+	// +optional
+	MachineTypes []gardenerv1beta1.MachineType `json:"machineTypes" patchStrategy:"merge" patchMergeKey:"name"`
+	// ProviderConfig contains provider-specific configuration for the profile.
+	// +optional
+	ProviderConfig *runtime.RawExtension `json:"providerConfig,omitempty"`
+	// Regions contains constraints regarding allowed values for regions and zones.
+	// +patchMergeKey=name
+	// +patchStrategy=merge
+	// +optional
+	Regions []gardenerv1beta1.Region `json:"regions" patchStrategy:"merge" patchMergeKey:"name"`
+	// SeedSelector contains an optional list of labels on `Seed` resources that marks those seeds whose shoots may use this provider profile.
+	// An empty list means that all seeds of the same provider type are supported.
+	// This is useful for environments that are of the same type (like openstack) but may have different "instances"/landscapes.
+	// Optionally a list of possible providers can be added to enable cross-provider scheduling. By default, the provider
+	// type of the seed must match the shoot's provider.
+	// +optional
+	SeedSelector *gardenerv1beta1.SeedSelector `json:"seedSelector,omitempty"`
+	// Type is the name of the provider.
+	Type string `json:"type"`
+	// VolumeTypes contains constraints regarding allowed values for volume types in the 'workers' block in the Shoot specification.
+	// +patchMergeKey=name
+	// +patchStrategy=merge
+	// +optional
+	VolumeTypes []gardenerv1beta1.VolumeType `json:"volumeTypes,omitempty" patchStrategy:"merge" patchMergeKey:"name"`
+	// Bastion contains the machine and image properties
+	// +optional
+	Bastion *gardenerv1beta1.Bastion `json:"bastion,omitempty"`
+	// Limits configures operational limits for Shoot clusters using this CloudProfile.
+	// See https://github.com/gardener/gardener/blob/master/docs/usage/shoot/shoot_limits.md.
+	// +optional
+	Limits *gardenerv1beta1.Limits `json:"limits,omitempty"`
+	// Capabilities contains the definition of all possible capabilities in the CloudProfile.
+	// Only capabilities and values defined here can be used to describe MachineImages and MachineTypes.
+	// The order of values for a given capability is relevant. The most important value is listed first.
+	// During maintenance upgrades, the image that matches most capabilities will be selected.
+	// +optional
+	Capabilities []gardenerv1beta1.CapabilityDefinition `json:"capabilities,omitempty"`
 }
 
 type SecretReference struct {
@@ -32,47 +88,77 @@ type SecretReference struct {
 	Key string `json:"key"`
 }
 
-type ManagedCloudProfileMachineImages struct {
+type MachineImageUpdates struct {
 	// Source contains configuration for a source for machine images.
-	Source ManagedCloudProfileMachineImagesSource `json:"source"`
+	Source MachineImageUpdatesSource `json:"source"`
 
 	// Provider contains configuration for a provider for machine images.
-	Provider ManagedCloudProfileMachineImagesProvider `json:"provider"`
+	Provider MachineImageUpdatesProvider `json:"provider"`
 
 	// ImagesName is the name of the image to maintain automatically
 	ImageName string `json:"imageName"`
 }
 
-type ManagedCloudProfileMachineImagesSource struct {
+type MachineImageUpdatesSource struct {
 	// OCI contains configuration for an OCI source.
-	OCI *ManagedCloudProfileMachineImagesSourceOCI `json:"oci,omitempty"`
+	// +optional
+	OCI *MachineImageUpdatesSourceOCI `json:"oci,omitempty"`
 }
 
-type ManagedCloudProfileMachineImagesSourceOCI struct {
-	Registry   string          `json:"registry"`
-	Repository string          `json:"repository"`
-	Username   string          `json:"username"`
-	Password   SecretReference `json:"password"`
-	Insecure   bool            `json:"insecure"`
+type MachineImageUpdatesSourceOCI struct {
+	// Registry contains the hostname and port of the OCI registry
+	Registry string `json:"registry"`
+	// Repository contains the monitored repository
+	Repository string `json:"repository"`
+	// Username for authentication
+	// +optional
+	Username string `json:"username,omitempty"`
+	// Password for authentication
+	// +optional
+	Password SecretReference `json:"password,omitempty"`
+	// Insecure disables TLS
+	// +optional
+	Insecure bool `json:"insecure,omitempty"`
 }
 
-type ManagedCloudProfileMachineImagesProvider struct {
+type MachineImageUpdatesProvider struct {
 	// Ironcore contains configuration to update provider.machineImages for ironcore-metal CloudProfiles
-	IroncoreMetal *ManagedCloudProfileMachineImagesProviderIroncoreMetal `json:"ironcoreMetal,omitempty"`
+	// +optional
+	IroncoreMetal *MachineImagesUpdatesProviderIroncoreMetal `json:"ironcoreMetal,omitempty"`
 }
 
-type ManagedCloudProfileMachineImagesProviderIroncoreMetal struct {
-	Registry   string `json:"registry"`
+type MachineImagesUpdatesProviderIroncoreMetal struct {
+	// Registry contains the hostname and port of the OCI registry
+	Registry string `json:"registry"`
+	// Repository contains the repository containing images
 	Repository string `json:"repository"`
 }
 
-type ManagedCloudProfileStatus struct{}
+type ReconcileStatus string
+
+const (
+	SucceededReconcileStatus ReconcileStatus = "Succeeded"
+	FailedReconcileStatus    ReconcileStatus = "Failed"
+)
+
+type ManagedCloudProfileStatus struct {
+	// Summarized status of the ManagedCloudProfile
+	// +optional
+	Status ReconcileStatus `json:"status"`
+
+	// Conditions represents the latest available observations of the server's current state.
+	// +patchStrategy=merge
+	// +patchMergeKey=type
+	// +optional
+	Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,1,rep,name=conditions"`
+}
 
 //+kubebuilder:object:root=true
 //+kubebuilder:subresource:status
 //+kubebuilder:resource:path=managedcloudprofiles
 //+kubebuilder:resource:singular=managedcloudprofile
 //+kubebuilder:resource:scope=Cluster
+//+kubebuilder:printcolumn:name="Status",type=string,JSONPath=`.status.status`
 
 // ManagedCloudProfile is the Schema for the ManagedCloudProfile API.
 type ManagedCloudProfile struct {

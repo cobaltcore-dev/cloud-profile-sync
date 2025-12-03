@@ -5,14 +5,17 @@ package cloudprofilesync_test
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"testing"
 
 	"github.com/distribution/distribution/v3/configuration"
 	"github.com/distribution/distribution/v3/registry"
 	_ "github.com/distribution/distribution/v3/registry/storage/driver/inmemory"
+	gardenerv1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"k8s.io/apimachinery/pkg/runtime"
 
 	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync"
 )
@@ -28,6 +31,17 @@ type MockSource struct {
 
 func (m *MockSource) GetVersions(ctx context.Context) ([]cloudprofilesync.SourceImage, error) {
 	return m.images, nil
+}
+
+type MockProvider struct{}
+
+func (m *MockProvider) Configure(cloudProfile *gardenerv1beta1.CloudProfile, versions []cloudprofilesync.SourceImage) error {
+	data, err := json.Marshal(versions)
+	if err != nil {
+		return err
+	}
+	cloudProfile.Spec.ProviderConfig = &runtime.RawExtension{Raw: data}
+	return nil
 }
 
 const registryAddr = "127.0.0.1:8080"
