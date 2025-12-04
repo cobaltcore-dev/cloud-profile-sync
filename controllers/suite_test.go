@@ -36,7 +36,7 @@ import (
 	"github.com/cobaltcore-dev/cloud-profile-sync/controllers"
 )
 
-const registryAddr = "127.0.0.1:8080"
+const registryAddr = "127.0.0.1:48081"
 
 var (
 	cfg        *rest.Config
@@ -105,6 +105,14 @@ var _ = BeforeSuite(func(ctx SpecContext) {
 		defer GinkgoRecover()
 		Expect(reg.ListenAndServe()).To(MatchError(http.ErrServerClosed))
 	}()
+	Eventually(func(g Gomega) error {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+registryAddr, http.NoBody)
+		g.Expect(err).To(Succeed())
+		res, err := http.DefaultClient.Do(req)
+		g.Expect(err).To(Succeed())
+		defer res.Body.Close()
+		return nil
+	}).Should(Succeed())
 
 	repo, err := remote.NewRepository(registryAddr + "/repo")
 	Expect(err).To(Succeed())

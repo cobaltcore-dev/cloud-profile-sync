@@ -44,7 +44,7 @@ func (m *MockProvider) Configure(cpSpec *gardenerv1beta1.CloudProfileSpec, versi
 	return nil
 }
 
-const registryAddr = "127.0.0.1:8080"
+const registryAddr = "127.0.0.1:48080"
 
 var (
 	mockSource MockSource
@@ -69,6 +69,14 @@ var _ = BeforeSuite(func() {
 		defer GinkgoRecover()
 		Expect(reg.ListenAndServe()).To(MatchError(http.ErrServerClosed))
 	}()
+	Eventually(func(g Gomega) error {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+registryAddr, http.NoBody)
+		g.Expect(err).To(Succeed())
+		res, err := http.DefaultClient.Do(req)
+		g.Expect(err).To(Succeed())
+		defer res.Body.Close()
+		return nil
+	}).Should(Succeed())
 })
 
 var _ = AfterSuite(func(ctx SpecContext) {
