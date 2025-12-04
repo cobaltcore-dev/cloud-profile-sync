@@ -67,8 +67,8 @@ func (in *CloudProfileSpec) DeepCopyInto(out *CloudProfileSpec) {
 		*out = new(v1beta1.Limits)
 		(*in).DeepCopyInto(*out)
 	}
-	if in.Capabilities != nil {
-		in, out := &in.Capabilities, &out.Capabilities
+	if in.MachineCapabilities != nil {
+		in, out := &in.MachineCapabilities, &out.MachineCapabilities
 		*out = make([]v1beta1.CapabilityDefinition, len(*in))
 		for i := range *in {
 			(*in)[i].DeepCopyInto(&(*out)[i])

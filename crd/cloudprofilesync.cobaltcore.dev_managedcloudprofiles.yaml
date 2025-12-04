@@ -77,30 +77,6 @@ spec:
                     description: CABundle is a certificate bundle which will be installed
                       onto every host machine of shoot cluster targeting this profile.
                     type: string
-                  capabilities:
-                    description: |-
-                      Capabilities contains the definition of all possible capabilities in the CloudProfile.
-                      Only capabilities and values defined here can be used to describe MachineImages and MachineTypes.
-                      The order of values for a given capability is relevant. The most important value is listed first.
-                      During maintenance upgrades, the image that matches most capabilities will be selected.
-                    items:
-                      description: CapabilityDefinition contains the Name and Values
-                        of a capability.
-                      properties:
-                        name:
-                          type: string
-                        values:
-                          description: |-
-                            CapabilityValues contains capability values.
-                            This is a workaround as the Protobuf generator can't handle a map with slice values.
-                          items:
-                            type: string
-                          type: array
-                      required:
-                      - name
-                      - values
-                      type: object
-                    type: array
                   kubernetes:
                     description: Kubernetes contains constraints regarding allowed
                       values of the 'kubernetes' block in the Shoot specification.
@@ -113,8 +89,9 @@ spec:
                             expiration date.
                           properties:
                             classification:
-                              description: Classification defines the state of a version
-                                (preview, supported, deprecated)
+                              description: |-
+                                Classification defines the state of a version (preview, supported, deprecated).
+                                To get the currently valid classification, use CurrentLifecycleClassification().
                               type: string
                             expirationDate:
                               description: ExpirationDate defines the time at which
@@ -140,6 +117,30 @@ spec:
                         format: int32
                         type: integer
                     type: object
+                  machineCapabilities:
+                    description: |-
+                      MachineCapabilities contains the definition of all possible capabilities in the CloudProfile.
+                      Only capabilities and values defined here can be used to describe MachineImages and MachineTypes.
+                      The order of values for a given capability is relevant. The most important value is listed first.
+                      During maintenance upgrades, the image that matches most capabilities will be selected.
+                    items:
+                      description: CapabilityDefinition contains the Name and Values
+                        of a capability.
+                      properties:
+                        name:
+                          type: string
+                        values:
+                          description: |-
+                            CapabilityValues contains capability values.
+                            This is a workaround as the Protobuf generator can't handle a map with slice values.
+                          items:
+                            type: string
+                          type: array
+                      required:
+                      - name
+                      - values
+                      type: object
+                    type: array
                   machineImages:
                     description: MachineImages contains constraints regarding allowed
                       values for machine images in the Shoot specification.
@@ -170,19 +171,20 @@ spec:
                                 items:
                                   type: string
                                 type: array
-                              capabilitySets:
+                              capabilityFlavors:
                                 description: |-
-                                  CapabilitySets is an array of capability sets. Each entry represents a combination of capabilities that is provided by
+                                  CapabilityFlavors is an array of MachineImageFlavor. Each entry represents a combination of capabilities that is provided by
                                   the machine image version.
                                 items:
                                   description: |-
-                                    CapabilitySet is a wrapper for Capabilities.
+                                    MachineImageFlavor is a wrapper for Capabilities.
                                     This is a workaround as the Protobuf generator can't handle a slice of maps.
                                   type: object
                                 type: array
                               classification:
-                                description: Classification defines the state of a
-                                  version (preview, supported, deprecated)
+                                description: |-
+                                  Classification defines the state of a version (preview, supported, deprecated).
+                                  To get the currently valid classification, use CurrentLifecycleClassification().
                                 type: string
                               cri:
                                 description: CRI list of supported container runtime

@@ -172,18 +172,18 @@ func applyCondition(conditions []metav1.Condition, cond metav1.Condition) []meta
 func CloudProfileSpecToGardener(spec *v1alpha1.CloudProfileSpec) gardenerv1beta1.CloudProfileSpec {
 	cpy := spec.DeepCopy()
 	return gardenerv1beta1.CloudProfileSpec{
-		CABundle:       cpy.CABundle,
-		Kubernetes:     cpy.Kubernetes,
-		MachineImages:  cpy.MachineImages,
-		MachineTypes:   cpy.MachineTypes,
-		ProviderConfig: cpy.ProviderConfig,
-		Regions:        cpy.Regions,
-		SeedSelector:   cpy.SeedSelector,
-		Type:           cpy.Type,
-		VolumeTypes:    cpy.VolumeTypes,
-		Bastion:        cpy.Bastion,
-		Limits:         cpy.Limits,
-		Capabilities:   cpy.Capabilities,
+		CABundle:            cpy.CABundle,
+		Kubernetes:          cpy.Kubernetes,
+		MachineImages:       cpy.MachineImages,
+		MachineTypes:        cpy.MachineTypes,
+		ProviderConfig:      cpy.ProviderConfig,
+		Regions:             cpy.Regions,
+		SeedSelector:        cpy.SeedSelector,
+		Type:                cpy.Type,
+		VolumeTypes:         cpy.VolumeTypes,
+		Bastion:             cpy.Bastion,
+		Limits:              cpy.Limits,
+		MachineCapabilities: cpy.MachineCapabilities,
 	}
 }
 
