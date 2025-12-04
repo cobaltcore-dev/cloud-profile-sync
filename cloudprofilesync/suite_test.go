@@ -35,12 +35,12 @@ func (m *MockSource) GetVersions(ctx context.Context) ([]cloudprofilesync.Source
 
 type MockProvider struct{}
 
-func (m *MockProvider) Configure(cloudProfile *gardenerv1beta1.CloudProfile, versions []cloudprofilesync.SourceImage) error {
+func (m *MockProvider) Configure(cpSpec *gardenerv1beta1.CloudProfileSpec, versions []cloudprofilesync.SourceImage) error {
 	data, err := json.Marshal(versions)
 	if err != nil {
 		return err
 	}
-	cloudProfile.Spec.ProviderConfig = &runtime.RawExtension{Raw: data}
+	cpSpec.ProviderConfig = &runtime.RawExtension{Raw: data}
 	return nil
 }
 

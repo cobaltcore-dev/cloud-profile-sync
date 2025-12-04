@@ -517,79 +517,82 @@ spec:
               machineImageUpdates:
                 description: MachineImageUpdates contains the source and provider
                   information to automate machine images.
-                properties:
-                  imageName:
-                    description: ImagesName is the name of the image to maintain automatically
-                    type: string
-                  provider:
-                    description: Provider contains configuration for a provider for
-                      machine images.
-                    properties:
-                      ironcoreMetal:
-                        description: Ironcore contains configuration to update provider.machineImages
-                          for ironcore-metal CloudProfiles
-                        properties:
-                          registry:
-                            description: Registry contains the hostname and port of
-                              the OCI registry
-                            type: string
-                          repository:
-                            description: Repository contains the repository containing
-                              images
-                            type: string
-                        required:
-                        - registry
-                        - repository
-                        type: object
-                    type: object
-                  source:
-                    description: Source contains configuration for a source for machine
-                      images.
-                    properties:
-                      oci:
-                        description: OCI contains configuration for an OCI source.
-                        properties:
-                          insecure:
-                            description: Insecure disables TLS
-                            type: boolean
-                          password:
-                            description: Password for authentication
-                            properties:
-                              key:
-                                description: Key within the Secret to use for required
-                                  data.
-                                type: string
-                              name:
-                                description: Name of a Secret.
-                                type: string
-                              namespace:
-                                description: Namespace of a Secret.
-                                type: string
-                            required:
-                            - key
-                            - name
-                            - namespace
-                            type: object
-                          registry:
-                            description: Registry contains the hostname and port of
-                              the OCI registry
-                            type: string
-                          repository:
-                            description: Repository contains the monitored repository
-                            type: string
-                          username:
-                            description: Username for authentication
-                            type: string
-                        required:
-                        - registry
-                        - repository
-                        type: object
-                    type: object
-                required:
-                - imageName
-                - provider
-                - source
-                type: object
+                items:
+                  properties:
+                    imageName:
+                      description: ImagesName is the name of the image to maintain
+                        automatically
+                      type: string
+                    provider:
+                      description: Provider contains configuration for a provider
+                        for machine images.
+                      properties:
+                        ironcoreMetal:
+                          description: Ironcore contains configuration to update provider.machineImages
+                            for ironcore-metal CloudProfiles
+                          properties:
+                            registry:
+                              description: Registry contains the hostname and port
+                                of the OCI registry
+                              type: string
+                            repository:
+                              description: Repository contains the repository containing
+                                images
+                              type: string
+                          required:
+                          - registry
+                          - repository
+                          type: object
+                      type: object
+                    source:
+                      description: Source contains configuration for a source for
+                        machine images.
+                      properties:
+                        oci:
+                          description: OCI contains configuration for an OCI source.
+                          properties:
+                            insecure:
+                              description: Insecure disables TLS
+                              type: boolean
+                            password:
+                              description: Password for authentication
+                              properties:
+                                key:
+                                  description: Key within the Secret to use for required
+                                    data.
+                                  type: string
+                                name:
+                                  description: Name of a Secret.
+                                  type: string
+                                namespace:
+                                  description: Namespace of a Secret.
+                                  type: string
+                              required:
+                              - key
+                              - name
+                              - namespace
+                              type: object
+                            registry:
+                              description: Registry contains the hostname and port
+                                of the OCI registry
+                              type: string
+                            repository:
+                              description: Repository contains the monitored repository
+                              type: string
+                            username:
+                              description: Username for authentication
+                              type: string
+                          required:
+                          - registry
+                          - repository
+                          type: object
+                      type: object
+                  required:
+                  - imageName
+                  - provider
+                  - source
+                  type: object
+                type: array
             required:
             - cloudProfile
             type: object

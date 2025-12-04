@@ -23,13 +23,13 @@ var _ = Describe("ImageUpdater", func() {
 			Source:    &mockSource,
 			ImageName: "test",
 		}
-		var cloudProfile v1beta1.CloudProfile
-		Expect(updater.Update(ctx, &cloudProfile)).To(Succeed())
-		Expect(cloudProfile.Spec.MachineImages).To(HaveLen(1))
-		Expect(cloudProfile.Spec.MachineImages[0].Name).To(Equal("test"))
-		Expect(cloudProfile.Spec.MachineImages[0].Versions).To(HaveLen(1))
-		Expect(cloudProfile.Spec.MachineImages[0].Versions[0].Version).To(Equal("1.0.0"))
-		Expect(cloudProfile.Spec.MachineImages[0].Versions[0].Architectures).To(Equal([]string{"amd64"}))
+		var cpSpec v1beta1.CloudProfileSpec
+		Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
+		Expect(cpSpec.MachineImages).To(HaveLen(1))
+		Expect(cpSpec.MachineImages[0].Name).To(Equal("test"))
+		Expect(cpSpec.MachineImages[0].Versions).To(HaveLen(1))
+		Expect(cpSpec.MachineImages[0].Versions[0].Version).To(Equal("1.0.0"))
+		Expect(cpSpec.MachineImages[0].Versions[0].Architectures).To(Equal([]string{"amd64"}))
 	})
 
 	It("adds multiple images from the source to the CloudProfile spec", func(ctx SpecContext) {
@@ -42,11 +42,11 @@ var _ = Describe("ImageUpdater", func() {
 			Source:    &mockSource,
 			ImageName: "test",
 		}
-		var cloudProfile v1beta1.CloudProfile
-		Expect(updater.Update(ctx, &cloudProfile)).To(Succeed())
-		Expect(cloudProfile.Spec.MachineImages).To(HaveLen(1))
-		Expect(cloudProfile.Spec.MachineImages[0].Name).To(Equal("test"))
-		Expect(cloudProfile.Spec.MachineImages[0].Versions).To(ConsistOf([]v1beta1.MachineImageVersion{
+		var cpSpec v1beta1.CloudProfileSpec
+		Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
+		Expect(cpSpec.MachineImages).To(HaveLen(1))
+		Expect(cpSpec.MachineImages[0].Name).To(Equal("test"))
+		Expect(cpSpec.MachineImages[0].Versions).To(ConsistOf([]v1beta1.MachineImageVersion{
 			{
 				ExpirableVersion: v1beta1.ExpirableVersion{
 					Version: "1.0.0",
@@ -63,18 +63,16 @@ var _ = Describe("ImageUpdater", func() {
 	})
 
 	It("updates an image from the source in the CloudProfile spec", func(ctx SpecContext) {
-		cloudProfile := v1beta1.CloudProfile{
-			Spec: v1beta1.CloudProfileSpec{
-				MachineImages: []v1beta1.MachineImage{
-					{
-						Name: "test",
-						Versions: []v1beta1.MachineImageVersion{
-							{
-								ExpirableVersion: v1beta1.ExpirableVersion{
-									Version: "1.0.0",
-								},
-								Architectures: []string{"amd64"},
+		cpSpec := v1beta1.CloudProfileSpec{
+			MachineImages: []v1beta1.MachineImage{
+				{
+					Name: "test",
+					Versions: []v1beta1.MachineImageVersion{
+						{
+							ExpirableVersion: v1beta1.ExpirableVersion{
+								Version: "1.0.0",
 							},
+							Architectures: []string{"amd64"},
 						},
 					},
 				},
@@ -87,40 +85,38 @@ var _ = Describe("ImageUpdater", func() {
 			Source:    &mockSource,
 			ImageName: "test",
 		}
-		Expect(updater.Update(ctx, &cloudProfile)).To(Succeed())
-		Expect(cloudProfile.Spec.MachineImages).To(HaveLen(1))
-		Expect(cloudProfile.Spec.MachineImages[0].Name).To(Equal("test"))
-		Expect(cloudProfile.Spec.MachineImages[0].Versions).To(HaveLen(2))
-		Expect(cloudProfile.Spec.MachineImages[0].Versions[0].Version).To(Equal("1.0.0"))
-		Expect(cloudProfile.Spec.MachineImages[0].Versions[0].Architectures).To(Equal([]string{"amd64"}))
-		Expect(cloudProfile.Spec.MachineImages[0].Versions[1].Version).To(Equal("2.0.0"))
-		Expect(cloudProfile.Spec.MachineImages[0].Versions[1].Architectures).To(Equal([]string{"arm64"}))
+		Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
+		Expect(cpSpec.MachineImages).To(HaveLen(1))
+		Expect(cpSpec.MachineImages[0].Name).To(Equal("test"))
+		Expect(cpSpec.MachineImages[0].Versions).To(HaveLen(2))
+		Expect(cpSpec.MachineImages[0].Versions[0].Version).To(Equal("1.0.0"))
+		Expect(cpSpec.MachineImages[0].Versions[0].Architectures).To(Equal([]string{"amd64"}))
+		Expect(cpSpec.MachineImages[0].Versions[1].Version).To(Equal("2.0.0"))
+		Expect(cpSpec.MachineImages[0].Versions[1].Architectures).To(Equal([]string{"arm64"}))
 	})
 
 	It("does not change unrelated images in the CloudProfile spec", func(ctx SpecContext) {
-		cloudProfile := v1beta1.CloudProfile{
-			Spec: v1beta1.CloudProfileSpec{
-				MachineImages: []v1beta1.MachineImage{
-					{
-						Name: "test",
-						Versions: []v1beta1.MachineImageVersion{
-							{
-								ExpirableVersion: v1beta1.ExpirableVersion{
-									Version: "1.0.0",
-								},
-								Architectures: []string{"amd64"},
+		cpSpec := v1beta1.CloudProfileSpec{
+			MachineImages: []v1beta1.MachineImage{
+				{
+					Name: "test",
+					Versions: []v1beta1.MachineImageVersion{
+						{
+							ExpirableVersion: v1beta1.ExpirableVersion{
+								Version: "1.0.0",
 							},
+							Architectures: []string{"amd64"},
 						},
 					},
-					{
-						Name: "other",
-						Versions: []v1beta1.MachineImageVersion{
-							{
-								ExpirableVersion: v1beta1.ExpirableVersion{
-									Version: "2.0.0",
-								},
-								Architectures: []string{"arm64"},
+				},
+				{
+					Name: "other",
+					Versions: []v1beta1.MachineImageVersion{
+						{
+							ExpirableVersion: v1beta1.ExpirableVersion{
+								Version: "2.0.0",
 							},
+							Architectures: []string{"arm64"},
 						},
 					},
 				},
@@ -133,8 +129,8 @@ var _ = Describe("ImageUpdater", func() {
 			Source:    &mockSource,
 			ImageName: "test",
 		}
-		Expect(updater.Update(ctx, &cloudProfile)).To(Succeed())
-		Expect(cloudProfile.Spec.MachineImages).To(ConsistOf([]v1beta1.MachineImage{
+		Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
+		Expect(cpSpec.MachineImages).To(ConsistOf([]v1beta1.MachineImage{
 			{
 				Name: "test",
 				Versions: []v1beta1.MachineImageVersion{
@@ -174,10 +170,10 @@ var _ = Describe("ImageUpdater", func() {
 			ImageName: "test",
 			Provider:  &MockProvider{},
 		}
-		var cloudProfile v1beta1.CloudProfile
-		Expect(updater.Update(ctx, &cloudProfile)).To(Succeed())
+		var cpSpec v1beta1.CloudProfileSpec
+		Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
 		var fromProvider []cloudprofilesync.SourceImage
-		Expect(json.Unmarshal(cloudProfile.Spec.ProviderConfig.Raw, &fromProvider)).To(Succeed())
+		Expect(json.Unmarshal(cpSpec.ProviderConfig.Raw, &fromProvider)).To(Succeed())
 		Expect(fromProvider).To(Equal(mockSource.images))
 	})
 

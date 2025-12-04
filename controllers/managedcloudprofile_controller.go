@@ -47,7 +47,11 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 			return err
 		}
 		cloudProfile.Spec = CloudProfileSpecToGardener(&mcp.Spec.CloudProfile)
-		return r.updateMachineImages(ctx, log, mcp, &cloudProfile)
+		errs := make([]error, 0)
+		for _, updates := range mcp.Spec.MachineImageUpdates {
+			errs = append(errs, r.updateMachineImages(ctx, log, updates, &cloudProfile.Spec))
+		}
+		return errors.Join(errs...)
 	})
 	if err != nil {
 		if err := r.patchStatusAndCondition(ctx, &mcp, v1alpha1.FailedReconcileStatus, metav1.Condition{
@@ -79,25 +83,21 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	return ctrl.Result{}, nil
 }
 
-func (r *Reconciler) updateMachineImages(ctx context.Context, log logr.Logger, mcp v1alpha1.ManagedCloudProfile, cloudProfile *gardenerv1beta1.CloudProfile) error {
-	if mcp.Spec.MachineImageUpdates == nil {
-		return nil
-	}
-	mi := *mcp.Spec.MachineImageUpdates
+func (r *Reconciler) updateMachineImages(ctx context.Context, log logr.Logger, update v1alpha1.MachineImageUpdate, cpSpec *gardenerv1beta1.CloudProfileSpec) error {
 	var source cloudprofilesync.Source
 	switch {
-	case mi.Source.OCI != nil:
-		password, err := r.getCredential(ctx, mi.Source.OCI.Password)
+	case update.Source.OCI != nil:
+		password, err := r.getCredential(ctx, update.Source.OCI.Password)
 		if err != nil {
 			return err
 		}
 		oci, err := cloudprofilesync.NewOCI(cloudprofilesync.OCIParams{
-			Registry:   mi.Source.OCI.Registry,
-			Repository: mi.Source.OCI.Repository,
-			Username:   mi.Source.OCI.Username,
+			Registry:   update.Source.OCI.Registry,
+			Repository: update.Source.OCI.Repository,
+			Username:   update.Source.OCI.Username,
 			Password:   string(password),
 			Parallel:   1,
-		}, mi.Source.OCI.Insecure)
+		}, update.Source.OCI.Insecure)
 		if err != nil {
 			return fmt.Errorf("failed to initialize oci source: %w", err)
 		}
@@ -107,20 +107,20 @@ func (r *Reconciler) updateMachineImages(ctx context.Context, log logr.Logger, m
 	}
 
 	var provider cloudprofilesync.Provider
-	if mi.Provider.IroncoreMetal != nil {
+	if update.Provider.IroncoreMetal != nil {
 		provider = &cloudprofilesync.IroncoreProvider{
-			Registry:   mi.Provider.IroncoreMetal.Registry,
-			Repository: mi.Provider.IroncoreMetal.Repository,
-			ImageName:  mi.ImageName,
+			Registry:   update.Provider.IroncoreMetal.Registry,
+			Repository: update.Provider.IroncoreMetal.Repository,
+			ImageName:  update.ImageName,
 		}
 	}
-	updater := cloudprofilesync.ImageUpdater{
+	imageUpdater := cloudprofilesync.ImageUpdater{
 		Log:       log,
 		Source:    source,
 		Provider:  provider,
-		ImageName: mi.ImageName,
+		ImageName: update.ImageName,
 	}
-	if err := updater.Update(ctx, cloudProfile); err != nil {
+	if err := imageUpdater.Update(ctx, cpSpec); err != nil {
 		return fmt.Errorf("updating machine images failed: %w", err)
 	}
 	return nil

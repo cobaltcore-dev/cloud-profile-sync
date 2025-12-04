@@ -13,7 +13,7 @@ import (
 )
 
 type Provider interface {
-	Configure(cloudProfile *v1beta1.CloudProfile, versions []SourceImage) error
+	Configure(cloudProfile *v1beta1.CloudProfileSpec, versions []SourceImage) error
 }
 
 type IroncoreProvider struct {
@@ -22,10 +22,10 @@ type IroncoreProvider struct {
 	ImageName  string
 }
 
-func (p *IroncoreProvider) Configure(cloudProfile *v1beta1.CloudProfile, versions []SourceImage) error {
+func (p *IroncoreProvider) Configure(cpSpec *v1beta1.CloudProfileSpec, versions []SourceImage) error {
 	var cfg v1alpha1.CloudProfileConfig
-	if cloudProfile.Spec.ProviderConfig != nil {
-		if err := json.Unmarshal(cloudProfile.Spec.ProviderConfig.Raw, &cfg); err != nil {
+	if cpSpec.ProviderConfig != nil {
+		if err := json.Unmarshal(cpSpec.ProviderConfig.Raw, &cfg); err != nil {
 			return err
 		}
 	}
@@ -33,11 +33,11 @@ func (p *IroncoreProvider) Configure(cloudProfile *v1beta1.CloudProfile, version
 		return m.Name == p.ImageName
 	})
 	if imageIndex == -1 {
+		imageIndex = len(cfg.MachineImages)
 		cfg.MachineImages = append(cfg.MachineImages, v1alpha1.MachineImages{
 			Name:     p.ImageName,
 			Versions: []v1alpha1.MachineImageVersion{},
 		})
-		imageIndex = len(cfg.MachineImages) - 1
 	}
 	image := &cfg.MachineImages[imageIndex]
 
@@ -63,7 +63,7 @@ func (p *IroncoreProvider) Configure(cloudProfile *v1beta1.CloudProfile, version
 	if err != nil {
 		return err
 	}
-	cloudProfile.Spec.ProviderConfig = &runtime.RawExtension{
+	cpSpec.ProviderConfig = &runtime.RawExtension{
 		Raw: raw,
 	}
 	return err

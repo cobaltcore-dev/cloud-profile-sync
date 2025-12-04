@@ -37,21 +37,21 @@ type ImageUpdater struct {
 	ImageName string
 }
 
-func (iu *ImageUpdater) Update(ctx context.Context, cloudProfile *gardenerv1beta1.CloudProfile) error {
+func (iu *ImageUpdater) Update(ctx context.Context, cpSpec *gardenerv1beta1.CloudProfileSpec) error {
 	sourceImages, err := iu.Source.GetVersions(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to retrieve images version from oci registry: %w", err)
 	}
 	iu.Log.Info("checked source", "image", iu.ImageName)
 	sourceImages = filterImages(iu.Log, sourceImages)
-	imageIndex := slices.IndexFunc(cloudProfile.Spec.MachineImages, func(img gardenerv1beta1.MachineImage) bool {
+	imageIndex := slices.IndexFunc(cpSpec.MachineImages, func(img gardenerv1beta1.MachineImage) bool {
 		return img.Name == iu.ImageName
 	})
 	if imageIndex == -1 {
-		cloudProfile.Spec.MachineImages = append(cloudProfile.Spec.MachineImages, gardenerv1beta1.MachineImage{Name: iu.ImageName})
-		imageIndex = len(cloudProfile.Spec.MachineImages) - 1
+		cpSpec.MachineImages = append(cpSpec.MachineImages, gardenerv1beta1.MachineImage{Name: iu.ImageName})
+		imageIndex = len(cpSpec.MachineImages) - 1
 	}
-	image := &cloudProfile.Spec.MachineImages[imageIndex]
+	image := &cpSpec.MachineImages[imageIndex]
 	existingVersions := make(map[string]int, len(image.Versions))
 	for idx, version := range image.Versions {
 		existingVersions[version.Version] = idx
@@ -69,7 +69,7 @@ func (iu *ImageUpdater) Update(ctx context.Context, cloudProfile *gardenerv1beta
 		}
 	}
 	if iu.Provider != nil {
-		if err := iu.Provider.Configure(cloudProfile, sourceImages); err != nil {
+		if err := iu.Provider.Configure(cpSpec, sourceImages); err != nil {
 			return fmt.Errorf("failed to invoke provider: %w", err)
 		}
 	}

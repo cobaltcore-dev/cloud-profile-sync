@@ -19,7 +19,7 @@ type ManagedCloudProfileSpec struct {
 
 	// MachineImageUpdates contains the source and provider information to automate machine images.
 	// +optional
-	MachineImageUpdates *MachineImageUpdates `json:"machineImageUpdates,omitempty"`
+	MachineImageUpdates []MachineImageUpdate `json:"machineImageUpdates,omitempty"`
 }
 
 // Copy the cloud profile spec to override some validation
@@ -88,24 +88,24 @@ type SecretReference struct {
 	Key string `json:"key"`
 }
 
-type MachineImageUpdates struct {
+type MachineImageUpdate struct {
 	// Source contains configuration for a source for machine images.
-	Source MachineImageUpdatesSource `json:"source"`
+	Source MachineImageUpdateSource `json:"source"`
 
 	// Provider contains configuration for a provider for machine images.
-	Provider MachineImageUpdatesProvider `json:"provider"`
+	Provider MachineImageUpdateProvider `json:"provider"`
 
 	// ImagesName is the name of the image to maintain automatically
 	ImageName string `json:"imageName"`
 }
 
-type MachineImageUpdatesSource struct {
+type MachineImageUpdateSource struct {
 	// OCI contains configuration for an OCI source.
 	// +optional
-	OCI *MachineImageUpdatesSourceOCI `json:"oci,omitempty"`
+	OCI *MachineImageUpdateSourceOCI `json:"oci,omitempty"`
 }
 
-type MachineImageUpdatesSourceOCI struct {
+type MachineImageUpdateSourceOCI struct {
 	// Registry contains the hostname and port of the OCI registry
 	Registry string `json:"registry"`
 	// Repository contains the monitored repository
@@ -121,13 +121,13 @@ type MachineImageUpdatesSourceOCI struct {
 	Insecure bool `json:"insecure,omitempty"`
 }
 
-type MachineImageUpdatesProvider struct {
+type MachineImageUpdateProvider struct {
 	// Ironcore contains configuration to update provider.machineImages for ironcore-metal CloudProfiles
 	// +optional
-	IroncoreMetal *MachineImagesUpdatesProviderIroncoreMetal `json:"ironcoreMetal,omitempty"`
+	IroncoreMetal *MachineImagesUpdateProviderIroncoreMetal `json:"ironcoreMetal,omitempty"`
 }
 
-type MachineImagesUpdatesProviderIroncoreMetal struct {
+type MachineImagesUpdateProviderIroncoreMetal struct {
 	// Registry contains the hostname and port of the OCI registry
 	Registry string `json:"registry"`
 	// Repository contains the repository containing images

@@ -99,15 +99,17 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 			Regions:      []gardenerv1beta1.Region{{Name: "foo"}},
 			MachineTypes: []gardenerv1beta1.MachineType{{Name: "baz"}},
 		}
-		mcp.Spec.MachineImageUpdates = &v1alpha1.MachineImageUpdates{
-			Source: v1alpha1.MachineImageUpdatesSource{
-				OCI: &v1alpha1.MachineImageUpdatesSourceOCI{
-					Registry:   registryAddr,
-					Repository: "repo",
-					Insecure:   true,
+		mcp.Spec.MachineImageUpdates = []v1alpha1.MachineImageUpdate{
+			{
+				Source: v1alpha1.MachineImageUpdateSource{
+					OCI: &v1alpha1.MachineImageUpdateSourceOCI{
+						Registry:   registryAddr,
+						Repository: "repo",
+						Insecure:   true,
+					},
 				},
+				ImageName: "the-image",
 			},
-			ImageName: "the-image",
 		}
 		Expect(k8sClient.Create(ctx, &mcp)).To(Succeed())
 
@@ -154,21 +156,23 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 			Regions:      []gardenerv1beta1.Region{{Name: "foo"}},
 			MachineTypes: []gardenerv1beta1.MachineType{{Name: "baz"}},
 		}
-		mcp.Spec.MachineImageUpdates = &v1alpha1.MachineImageUpdates{
-			Source: v1alpha1.MachineImageUpdatesSource{
-				OCI: &v1alpha1.MachineImageUpdatesSourceOCI{
-					Registry:   registryAddr,
-					Repository: "repo",
-					Insecure:   true,
-					Username:   "user",
-					Password: v1alpha1.SecretReference{
-						Name:      "oci",
-						Namespace: metav1.NamespaceDefault,
-						Key:       "password",
+		mcp.Spec.MachineImageUpdates = []v1alpha1.MachineImageUpdate{
+			{
+				Source: v1alpha1.MachineImageUpdateSource{
+					OCI: &v1alpha1.MachineImageUpdateSourceOCI{
+						Registry:   registryAddr,
+						Repository: "repo",
+						Insecure:   true,
+						Username:   "user",
+						Password: v1alpha1.SecretReference{
+							Name:      "oci",
+							Namespace: metav1.NamespaceDefault,
+							Key:       "password",
+						},
 					},
 				},
+				ImageName: "the-image",
 			},
-			ImageName: "the-image",
 		}
 		Expect(k8sClient.Create(ctx, &mcp)).To(Succeed())
 
