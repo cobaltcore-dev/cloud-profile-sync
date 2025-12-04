@@ -7,7 +7,7 @@ import (
 	"flag"
 	"os"
 
-	"github.com/gardener/gardener/pkg/apis/core/v1beta1"
+	gardenerv1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
 	"go.uber.org/zap/zapcore"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -17,6 +17,7 @@ import (
 	ctrlconfig "sigs.k8s.io/controller-runtime/pkg/client/config"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
+	"github.com/cobaltcore-dev/cloud-profile-sync/api/v1alpha1"
 	"github.com/cobaltcore-dev/cloud-profile-sync/controllers"
 )
 
@@ -27,7 +28,8 @@ var (
 
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
-	utilruntime.Must(v1beta1.AddToScheme(scheme))
+	utilruntime.Must(gardenerv1beta1.AddToScheme(scheme))
+	utilruntime.Must(v1alpha1.AddToScheme(scheme))
 }
 
 func main() {
