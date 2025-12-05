@@ -4,6 +4,7 @@
 package cloudprofilesync
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"slices"
@@ -38,12 +39,19 @@ type ImageUpdater struct {
 }
 
 func (iu *ImageUpdater) Update(ctx context.Context, cpSpec *gardenerv1beta1.CloudProfileSpec) error {
+	iu.Log.Info("checking source", "image", iu.ImageName)
 	sourceImages, err := iu.Source.GetVersions(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to retrieve images version from oci registry: %w", err)
 	}
 	iu.Log.Info("checked source", "image", iu.ImageName)
 	sourceImages = filterImages(iu.Log, sourceImages)
+	// Images from a source arrive in no guaranteed order. A changed order
+	// in the source images may lead to a chenged order in the CloudProfile,
+	// causing unnecesscary reconciliations.
+	slices.SortFunc(sourceImages, func(a, b SourceImage) int {
+		return cmp.Compare(a.Version, b.Version)
+	})
 	imageIndex := slices.IndexFunc(cpSpec.MachineImages, func(img gardenerv1beta1.MachineImage) bool {
 		return img.Name == iu.ImageName
 	})
