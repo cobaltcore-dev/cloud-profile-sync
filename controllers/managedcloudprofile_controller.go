@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"time"
 
 	gardenerv1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
 	"github.com/go-logr/logr"
@@ -71,10 +72,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{}, fmt.Errorf("failed to create or patch CloudProfile: %w", err)
 	}
 	log.Info("applied cloud profile", "op", op)
-	if op == controllerutil.OperationResultNone {
-		log.Info("reconciled ManagedCloudProfile (no changes)")
-		return ctrl.Result{}, nil
-	}
 
 	if err := r.patchStatusAndCondition(ctx, &mcp, v1alpha1.SucceededReconcileStatus, metav1.Condition{
 		Type:               CloudProfileAppliedConditionType,
@@ -86,7 +83,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{}, fmt.Errorf("failed to patch ManagedCloudProfile status: %w", err)
 	}
 	log.Info("reconciled ManagedCloudProfile")
-	return ctrl.Result{}, nil
+	return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
 }
 
 func (r *Reconciler) updateMachineImages(ctx context.Context, log logr.Logger, update v1alpha1.MachineImageUpdate, cpSpec *gardenerv1beta1.CloudProfileSpec) error {
@@ -197,5 +194,6 @@ func CloudProfileSpecToGardener(spec *v1alpha1.CloudProfileSpec) gardenerv1beta1
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1alpha1.ManagedCloudProfile{}).
+		Owns(&gardenerv1beta1.CloudProfile{}).
 		Complete(r)
 }

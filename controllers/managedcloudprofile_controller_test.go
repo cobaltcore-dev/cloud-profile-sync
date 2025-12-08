@@ -83,8 +83,8 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(&mcp), &mcp)).To(Succeed())
 		Expect(mcp.Status.Status).To(Equal(v1alpha1.SucceededReconcileStatus))
 
-		Expect(k8sClient.Delete(ctx, &cloudProfile)).To(Succeed())
 		Expect(k8sClient.Delete(ctx, &mcp)).To(Succeed())
+		Expect(k8sClient.Delete(ctx, &cloudProfile)).To(Succeed())
 	})
 
 	It("reports failure given an invalid cloudprofile", func(ctx SpecContext) {
@@ -157,8 +157,8 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(&mcp), &mcp)).To(Succeed())
 		Expect(mcp.Status.Status).To(Equal(v1alpha1.SucceededReconcileStatus))
 
-		Expect(k8sClient.Delete(ctx, &cloudProfile)).To(Succeed())
 		Expect(k8sClient.Delete(ctx, &mcp)).To(Succeed())
+		Expect(k8sClient.Delete(ctx, &cloudProfile)).To(Succeed())
 	})
 
 	It("fetches a secret for the OCI source", func(ctx SpecContext) {
@@ -209,8 +209,8 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 		}).Should(Succeed())
 		Expect(cloudProfile.Spec.MachineImages).To(HaveLen(1))
 
-		Expect(k8sClient.Delete(ctx, &cloudProfile)).To(Succeed())
 		Expect(k8sClient.Delete(ctx, &mcp)).To(Succeed())
+		Expect(k8sClient.Delete(ctx, &cloudProfile)).To(Succeed())
 		Expect(k8sClient.Delete(ctx, &secret)).To(Succeed())
 	})
 
