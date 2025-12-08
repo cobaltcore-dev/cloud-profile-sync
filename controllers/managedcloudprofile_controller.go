@@ -41,7 +41,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	var cloudProfile gardenerv1beta1.CloudProfile
 	cloudProfile.Name = mcp.Name
 
-	_, err := controllerutil.CreateOrPatch(ctx, r.Client, &cloudProfile, func() error {
+	op, err := controllerutil.CreateOrPatch(ctx, r.Client, &cloudProfile, func() error {
 		err := controllerutil.SetControllerReference(&mcp, &cloudProfile, r.Scheme())
 		if err != nil {
 			return err
@@ -68,6 +68,10 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 			return ctrl.Result{}, nil
 		}
 		return ctrl.Result{}, fmt.Errorf("failed to create or patch CloudProfile: %w", err)
+	}
+	if op == controllerutil.OperationResultNone {
+		log.Info("reconciled ManagedCloudProfile (no changes)")
+		return ctrl.Result{}, nil
 	}
 
 	if err := r.patchStatusAndCondition(ctx, &mcp, v1alpha1.SucceededReconcileStatus, metav1.Condition{
