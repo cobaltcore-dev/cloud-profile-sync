@@ -51,6 +51,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		for _, updates := range mcp.Spec.MachineImageUpdates {
 			errs = append(errs, r.updateMachineImages(ctx, log, updates, &cloudProfile.Spec))
 		}
+		gardenerv1beta1.SetObjectDefaults_CloudProfile(&cloudProfile)
 		return errors.Join(errs...)
 	})
 	if err != nil {
