@@ -69,6 +69,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		}
 		return ctrl.Result{}, fmt.Errorf("failed to create or patch CloudProfile: %w", err)
 	}
+	log.Info("applied cloud profile", "op", op)
 	if op == controllerutil.OperationResultNone {
 		log.Info("reconciled ManagedCloudProfile (no changes)")
 		return ctrl.Result{}, nil
