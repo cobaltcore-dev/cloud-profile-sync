@@ -9,6 +9,7 @@ import (
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/cobaltcore-dev/cloud-profile-sync/api/v1alpha1"
@@ -44,11 +45,22 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 				{
 					Name: "bar",
 					Versions: []gardenerv1beta1.MachineImageVersion{
-						{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: "0.3.0"}},
+						{
+							ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: "0.3.0"},
+							CRI:              []gardenerv1beta1.CRI{{Name: "containerd"}},
+							Architectures:    []string{"amd64"},
+						},
 					},
+					UpdateStrategy: ptr.To(gardenerv1beta1.UpdateStrategyMajor),
 				},
 			},
-			MachineTypes: []gardenerv1beta1.MachineType{{Name: "baz"}},
+			MachineTypes: []gardenerv1beta1.MachineType{
+				{
+					Name:         "baz",
+					Architecture: ptr.To("amd64"),
+					Usable:       ptr.To(true),
+				},
+			},
 		}
 		Expect(k8sClient.Create(ctx, &mcp)).To(Succeed())
 
@@ -96,8 +108,14 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 		var mcp v1alpha1.ManagedCloudProfile
 		mcp.Name = "test-oci"
 		mcp.Spec.CloudProfile = v1alpha1.CloudProfileSpec{
-			Regions:      []gardenerv1beta1.Region{{Name: "foo"}},
-			MachineTypes: []gardenerv1beta1.MachineType{{Name: "baz"}},
+			Regions: []gardenerv1beta1.Region{{Name: "foo"}},
+			MachineTypes: []gardenerv1beta1.MachineType{
+				{
+					Name:         "baz",
+					Architecture: ptr.To("amd64"),
+					Usable:       ptr.To(true),
+				},
+			},
 		}
 		mcp.Spec.MachineImageUpdates = []v1alpha1.MachineImageUpdate{
 			{
@@ -133,8 +151,8 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 		Expect(mi).To(HaveLen(1))
 		Expect(mi[0].Name).To(Equal("the-image"))
 		vers := mi[0].Versions
-		Expect(vers).To(ContainElement(gardenerv1beta1.MachineImageVersion{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: "1.0.0"}, Architectures: []string{"amd64"}}))
-		Expect(vers).To(ContainElement(gardenerv1beta1.MachineImageVersion{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: "1.0.1+abc"}, Architectures: []string{"amd64"}}))
+		Expect(vers).To(ContainElement(gardenerv1beta1.MachineImageVersion{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: "1.0.0"}, Architectures: []string{"amd64"}, CRI: []gardenerv1beta1.CRI{{Name: "containerd"}}}))
+		Expect(vers).To(ContainElement(gardenerv1beta1.MachineImageVersion{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: "1.0.1+abc"}, Architectures: []string{"amd64"}, CRI: []gardenerv1beta1.CRI{{Name: "containerd"}}}))
 
 		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(&mcp), &mcp)).To(Succeed())
 		Expect(mcp.Status.Status).To(Equal(v1alpha1.SucceededReconcileStatus))
