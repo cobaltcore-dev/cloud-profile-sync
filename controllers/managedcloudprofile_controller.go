@@ -72,15 +72,16 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{}, fmt.Errorf("failed to create or patch CloudProfile: %w", err)
 	}
 	log.Info("applied cloud profile", "op", op)
-
-	if err := r.patchStatusAndCondition(ctx, &mcp, v1alpha1.SucceededReconcileStatus, metav1.Condition{
-		Type:               CloudProfileAppliedConditionType,
-		Status:             metav1.ConditionTrue,
-		ObservedGeneration: mcp.Generation,
-		Reason:             "Applied",
-		Message:            "Generated CloudProfile applied successfully",
-	}); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to patch ManagedCloudProfile status: %w", err)
+	if op != controllerutil.OperationResultNone {
+		if err := r.patchStatusAndCondition(ctx, &mcp, v1alpha1.SucceededReconcileStatus, metav1.Condition{
+			Type:               CloudProfileAppliedConditionType,
+			Status:             metav1.ConditionTrue,
+			ObservedGeneration: mcp.Generation,
+			Reason:             "Applied",
+			Message:            "Generated CloudProfile applied successfully",
+		}); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to patch ManagedCloudProfile status: %w", err)
+		}
 	}
 	log.Info("reconciled ManagedCloudProfile")
 	return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
