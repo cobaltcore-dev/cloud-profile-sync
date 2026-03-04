@@ -97,6 +97,19 @@ type MachineImageUpdate struct {
 
 	// ImagesName is the name of the image to maintain automatically
 	ImageName string `json:"imageName"`
+	// GarbageCollection contains configuration for automated garbage collection
+	// +optional
+	GarbageCollection *GarbageCollectionConfig `json:"garbageCollection,omitempty"`
+}
+
+type GarbageCollectionConfig struct {
+	// Enabled toggles garbage collection for this image.
+	// +optional
+	Enabled bool `json:"enabled,omitempty"`
+	// MaxAge defines the maximum age for images to keep. Images older than
+	// now - MaxAge are eligible for deletion.
+	// +optional
+	MaxAge metav1.Duration `json:"maxAge,omitempty"`
 }
 
 type MachineImageUpdateSource struct {

@@ -5,13 +5,16 @@ package controllers
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	gardenerv1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
 	"github.com/go-logr/logr"
+	providercfg "github.com/ironcore-dev/gardener-extension-provider-ironcore-metal/pkg/apis/metal/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -84,7 +87,99 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		}
 	}
 	log.Info("reconciled ManagedCloudProfile")
+	for _, updates := range mcp.Spec.MachineImageUpdates {
+		if updates.GarbageCollection == nil || !updates.GarbageCollection.Enabled {
+			continue
+		}
+		var source cloudprofilesync.Source
+		switch {
+		case updates.Source.OCI != nil:
+			password, err := r.getCredential(ctx, updates.Source.OCI.Password)
+			if err != nil {
+				return ctrl.Result{}, err
+			}
+			oci, err := cloudprofilesync.NewOCI(cloudprofilesync.OCIParams{
+				Registry:   updates.Source.OCI.Registry,
+				Repository: updates.Source.OCI.Repository,
+				Username:   updates.Source.OCI.Username,
+				Password:   string(password),
+				Parallel:   1,
+			}, updates.Source.OCI.Insecure)
+			if err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to initialize oci source for garbage collection: %w", err)
+			}
+			source = oci
+		default:
+			continue
+		}
+
+		versions, err := source.GetVersions(ctx)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to list source versions for garbage collection: %w", err)
+		}
+		cutoff := time.Now().Add(-updates.GarbageCollection.MaxAge.Duration)
+		for _, v := range versions {
+			if v.CreatedAt.IsZero() {
+				continue
+			}
+			if v.CreatedAt.Before(cutoff) {
+				if err := r.deleteVersion(ctx, mcp.Name, updates.ImageName, v.Version); err != nil {
+					if apierrors.IsInvalid(err) {
+						log.V(1).Info("garbage collection validation failed, skipping", "image", updates.ImageName, "version", v.Version)
+						continue
+					}
+					return ctrl.Result{}, fmt.Errorf("failed to delete image version: %w", err)
+				}
+				log.Info("deleted image version from CloudProfile", "image", updates.ImageName, "version", v.Version)
+			}
+		}
+	}
+
 	return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
+}
+
+func (r *Reconciler) deleteVersion(ctx context.Context, cloudProfileName, imageName, version string) error {
+	var cp gardenerv1beta1.CloudProfile
+	if err := r.Get(ctx, types.NamespacedName{Name: cloudProfileName}, &cp); err != nil {
+		return err
+	}
+	for i := range cp.Spec.MachineImages {
+		if cp.Spec.MachineImages[i].Name != imageName {
+			continue
+		}
+		newVersions := make([]gardenerv1beta1.MachineImageVersion, 0, len(cp.Spec.MachineImages[i].Versions))
+		for _, mv := range cp.Spec.MachineImages[i].Versions {
+			if mv.Version == version {
+				continue
+			}
+			newVersions = append(newVersions, mv)
+		}
+		cp.Spec.MachineImages[i].Versions = newVersions
+	}
+	if cp.Spec.ProviderConfig != nil {
+		var cfg providercfg.CloudProfileConfig
+		if err := json.Unmarshal(cp.Spec.ProviderConfig.Raw, &cfg); err == nil {
+			for i := range cfg.MachineImages {
+				if cfg.MachineImages[i].Name != imageName {
+					continue
+				}
+				new := make([]providercfg.MachineImageVersion, 0, len(cfg.MachineImages[i].Versions))
+				for _, mv := range cfg.MachineImages[i].Versions {
+					if strings.HasSuffix(mv.Image, ":"+version) {
+						continue
+					}
+					new = append(new, mv)
+				}
+				cfg.MachineImages[i].Versions = new
+			}
+			raw, err := json.Marshal(cfg)
+			if err == nil {
+				cp.Spec.ProviderConfig.Raw = raw
+			}
+		}
+	}
+
+	return r.Update(ctx, &cp)
 }
 
 func (r *Reconciler) updateMachineImages(ctx context.Context, log logr.Logger, update v1alpha1.MachineImageUpdate, cpSpec *gardenerv1beta1.CloudProfileSpec) error {
