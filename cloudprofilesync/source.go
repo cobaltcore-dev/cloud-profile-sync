@@ -40,7 +40,7 @@ type OCIParams struct {
 	Registry   string `json:"registry"`
 	Repository string `json:"repository"`
 	Username   string `json:"username"`
-	Password   string `json:"password"`
+	Password   string `json:"password"` //nolint:gosec,nolintlint
 	Parallel   int64  `json:"parallel"`
 }
 

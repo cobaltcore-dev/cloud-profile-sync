@@ -106,7 +106,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 				Parallel:   1,
 			}, updates.Source.OCI.Insecure)
 			if err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to initialize oci source for garbage collection: %w", err)
+				return ctrl.Result{}, fmt.Errorf("failed to initialize OCI source for garbage collection: %w", err)
 			}
 			source = oci
 		default:
@@ -163,14 +163,14 @@ func (r *Reconciler) deleteVersion(ctx context.Context, cloudProfileName, imageN
 				if cfg.MachineImages[i].Name != imageName {
 					continue
 				}
-				new := make([]providercfg.MachineImageVersion, 0, len(cfg.MachineImages[i].Versions))
+				filtered := make([]providercfg.MachineImageVersion, 0, len(cfg.MachineImages[i].Versions))
 				for _, mv := range cfg.MachineImages[i].Versions {
 					if strings.HasSuffix(mv.Image, ":"+version) {
 						continue
 					}
-					new = append(new, mv)
+					filtered = append(filtered, mv)
 				}
-				cfg.MachineImages[i].Versions = new
+				cfg.MachineImages[i].Versions = filtered
 			}
 			raw, err := json.Marshal(cfg)
 			if err == nil {
