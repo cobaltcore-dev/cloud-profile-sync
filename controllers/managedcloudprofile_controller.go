@@ -118,7 +118,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 			return ctrl.Result{}, fmt.Errorf("failed to list source versions for garbage collection: %w", err)
 		}
 
-		// Get currently referenced versions in CloudProfile
 		referencedVersions := r.getReferencedVersions(ctx, mcp.Name, updates.ImageName)
 
 		cutoff := time.Now().Add(-updates.GarbageCollection.MaxAge.Duration)
@@ -126,7 +125,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 			if v.CreatedAt.IsZero() {
 				continue
 			}
-			// Skip deletion if version is currently referenced
 			if _, isReferenced := referencedVersions[v.Version]; isReferenced {
 				continue
 			}
@@ -190,40 +188,25 @@ func (r *Reconciler) deleteVersion(ctx context.Context, cloudProfileName, imageN
 	return r.Update(ctx, &cp)
 }
 
-// getReferencedVersions returns a map of currently referenced image versions in the CloudProfile
 func (r *Reconciler) getReferencedVersions(ctx context.Context, cloudProfileName, imageName string) map[string]bool {
 	referenced := make(map[string]bool)
 
-	var cp gardenerv1beta1.CloudProfile
-	if err := r.Get(ctx, types.NamespacedName{Name: cloudProfileName}, &cp); err != nil {
+	shootList := &gardenerv1beta1.ShootList{}
+	if err := r.List(ctx, shootList, client.InNamespace(metav1.NamespaceAll)); err != nil {
 		return referenced
 	}
 
-	// Check machine images in spec
-	for _, img := range cp.Spec.MachineImages {
-		if img.Name != imageName {
+	for _, shoot := range shootList.Items {
+		if shoot.Spec.CloudProfile == nil || shoot.Spec.CloudProfile.Name != cloudProfileName {
 			continue
 		}
-		for _, v := range img.Versions {
-			referenced[v.Version] = true
-		}
-	}
 
-	// Check provider config
-	if cp.Spec.ProviderConfig != nil {
-		var cfg providercfg.CloudProfileConfig
-		if err := json.Unmarshal(cp.Spec.ProviderConfig.Raw, &cfg); err == nil {
-			for _, img := range cfg.MachineImages {
-				if img.Name != imageName {
-					continue
-				}
-				for _, v := range img.Versions {
-					// Extract version from image URI (e.g., "registry/repo:version" -> "version")
-					if idx := strings.LastIndex(v.Image, ":"); idx != -1 {
-						version := v.Image[idx+1:]
-						referenced[version] = true
-					}
-				}
+		for _, worker := range shoot.Spec.Provider.Workers {
+			if worker.Machine.Image == nil || worker.Machine.Image.Name != imageName {
+				continue
+			}
+			if worker.Machine.Image.Version != nil {
+				referenced[*worker.Machine.Image.Version] = true
 			}
 		}
 	}
