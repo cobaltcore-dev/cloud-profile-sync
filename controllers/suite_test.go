@@ -129,6 +129,7 @@ var _ = BeforeSuite(func(ctx SpecContext) {
 		},
 		Annotations: map[string]string{
 			"architecture": "amd64",
+			"created":      time.Now().Add(-24 * time.Hour).Format(time.RFC3339),
 		},
 	}
 	indexBlob, err := json.Marshal(index)
