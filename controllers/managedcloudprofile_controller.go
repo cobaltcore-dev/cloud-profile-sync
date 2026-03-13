@@ -106,6 +106,15 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		case updates.Source.OCI != nil:
 			password, err := r.getCredential(ctx, updates.Source.OCI.Password)
 			if err != nil {
+				if patchErr := r.patchStatusAndCondition(ctx, &mcp, v1alpha1.FailedReconcileStatus, metav1.Condition{
+					Type:               CloudProfileAppliedConditionType,
+					Status:             metav1.ConditionFalse,
+					ObservedGeneration: mcp.Generation,
+					Reason:             "GarbageCollectionFailed",
+					Message:            fmt.Sprintf("failed to get credential for garbage collection: %s", err),
+				}); patchErr != nil {
+					return ctrl.Result{}, fmt.Errorf("failed to patch ManagedCloudProfile status: %w (original error: %w)", patchErr, err)
+				}
 				return ctrl.Result{}, err
 			}
 			src, err := OCIFactory(cloudprofilesync.OCIParams{
@@ -146,7 +155,24 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 			return ctrl.Result{}, fmt.Errorf("failed to list source versions for garbage collection: %w", err)
 		}
 
-		referencedVersions := r.getReferencedVersions(ctx, mcp.Name, updates.ImageName)
+		referencedVersions, err := r.getReferencedVersions(ctx, mcp.Name, updates.ImageName)
+		if err != nil {
+			if patchErr := r.patchStatusAndCondition(ctx, &mcp, v1alpha1.FailedReconcileStatus, metav1.Condition{
+				Type:               CloudProfileAppliedConditionType,
+				Status:             metav1.ConditionFalse,
+				ObservedGeneration: mcp.Generation,
+				Reason:             "GarbageCollectionFailed",
+				Message:            fmt.Sprintf("failed to determine referenced versions for garbage collection: %s", err),
+			}); patchErr != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to patch ManagedCloudProfile status: %w (original error: %w)", patchErr, err)
+			}
+			return ctrl.Result{}, fmt.Errorf("failed to determine referenced versions for garbage collection: %w", err)
+		}
+
+		if updates.GarbageCollection.MaxAge.Duration < 0 {
+			log.Info("skipping garbage collection due to negative MaxAge", "image", updates.ImageName, "maxAge", updates.GarbageCollection.MaxAge.Duration)
+			continue
+		}
 
 		cutoff := time.Now().Add(-updates.GarbageCollection.MaxAge.Duration)
 		versionsToDelete := make([]string, 0)
@@ -173,7 +199,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 					Status:             metav1.ConditionFalse,
 					ObservedGeneration: mcp.Generation,
 					Reason:             "GarbageCollectionFailed",
-					Message:            fmt.Sprintf("failed to list source versions for garbage collection: %s", err),
+					Message:            fmt.Sprintf("failed to delete image versions during garbage collection: %s", err),
 				}); patchErr != nil {
 					return ctrl.Result{}, fmt.Errorf("failed to patch ManagedCloudProfile status: %w (original error: %w)", patchErr, err)
 				}
@@ -213,78 +239,61 @@ func (r *Reconciler) deleteVersion(ctx context.Context, cloudProfileName, imageN
 	}
 	if cp.Spec.ProviderConfig != nil {
 		var cfg providercfg.CloudProfileConfig
-		if err := json.Unmarshal(cp.Spec.ProviderConfig.Raw, &cfg); err == nil {
-			for i := range cfg.MachineImages {
-				if cfg.MachineImages[i].Name != imageName {
-					continue
-				}
-				filtered := make([]providercfg.MachineImageVersion, 0, len(cfg.MachineImages[i].Versions))
-				for _, mv := range cfg.MachineImages[i].Versions {
-					found := false
-					for _, version := range versions {
-						if strings.HasSuffix(mv.Image, ":"+version) {
-							found = true
-							break
-						}
-					}
-					if !found {
-						filtered = append(filtered, mv)
-					}
-				}
-				cfg.MachineImages[i].Versions = filtered
-			}
-			raw, err := json.Marshal(cfg)
-			if err == nil {
-				cp.Spec.ProviderConfig.Raw = raw
-			}
+		if err := json.Unmarshal(cp.Spec.ProviderConfig.Raw, &cfg); err != nil {
+			return fmt.Errorf("failed to unmarshal ProviderConfig: %w", err)
 		}
+		for i := range cfg.MachineImages {
+			if cfg.MachineImages[i].Name != imageName {
+				continue
+			}
+			filtered := make([]providercfg.MachineImageVersion, 0, len(cfg.MachineImages[i].Versions))
+			for _, mv := range cfg.MachineImages[i].Versions {
+				found := false
+				for _, version := range versions {
+					if strings.HasSuffix(mv.Image, ":"+version) {
+						found = true
+						break
+					}
+				}
+				if !found {
+					filtered = append(filtered, mv)
+				}
+			}
+			cfg.MachineImages[i].Versions = filtered
+		}
+		raw, err := json.Marshal(cfg)
+		if err != nil {
+			return fmt.Errorf("failed to marshal ProviderConfig: %w", err)
+		}
+		cp.Spec.ProviderConfig.Raw = raw
 	}
 
 	return r.Update(ctx, &cp)
 }
 
-func (r *Reconciler) getReferencedVersions(ctx context.Context, cloudProfileName, imageName string) map[string]bool {
+func (r *Reconciler) getReferencedVersions(ctx context.Context, cloudProfileName, imageName string) (map[string]bool, error) {
 	referenced := make(map[string]bool)
 
-	var cp gardenerv1beta1.CloudProfile
-	if err := r.Get(ctx, types.NamespacedName{Name: cloudProfileName}, &cp); err == nil {
-		if cp.Spec.ProviderConfig != nil {
-			var cfg providercfg.CloudProfileConfig
-			if err := json.Unmarshal(cp.Spec.ProviderConfig.Raw, &cfg); err == nil {
-				for _, img := range cfg.MachineImages {
-					if img.Name != imageName {
-						continue
-					}
-					for _, v := range img.Versions {
-						if idx := strings.LastIndex(v.Image, ":"); idx != -1 {
-							version := v.Image[idx+1:]
-							referenced[version] = true
-						}
-					}
-				}
-			}
-		}
-	}
-
 	shootList := &gardenerv1beta1.ShootList{}
-	if err := r.List(ctx, shootList, client.InNamespace(metav1.NamespaceAll)); err == nil {
-		for _, shoot := range shootList.Items {
-			if shoot.Spec.CloudProfile == nil || shoot.Spec.CloudProfile.Name != cloudProfileName {
+	if err := r.List(ctx, shootList, client.InNamespace(metav1.NamespaceAll)); err != nil {
+		return nil, fmt.Errorf("failed to list Shoots: %w", err)
+	}
+	for _, shoot := range shootList.Items {
+		if shoot.Spec.CloudProfile == nil || shoot.Spec.CloudProfile.Name != cloudProfileName {
+			continue
+		}
+
+		for _, worker := range shoot.Spec.Provider.Workers {
+			if worker.Machine.Image == nil || worker.Machine.Image.Name != imageName {
 				continue
 			}
-
-			for _, worker := range shoot.Spec.Provider.Workers {
-				if worker.Machine.Image == nil || worker.Machine.Image.Name != imageName {
-					continue
-				}
-				if worker.Machine.Image.Version != nil {
-					referenced[*worker.Machine.Image.Version] = true
-				}
+			if worker.Machine.Image.Version != nil {
+				referenced[*worker.Machine.Image.Version] = true
 			}
 		}
 	}
 
-	return referenced
+	return referenced, nil
 }
 
 func (r *Reconciler) updateMachineImages(ctx context.Context, log logr.Logger, update v1alpha1.MachineImageUpdate, cpSpec *gardenerv1beta1.CloudProfileSpec) error {

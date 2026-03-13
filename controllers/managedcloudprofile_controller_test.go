@@ -46,6 +46,12 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 			Expect(k8sClient.Delete(ctx, &cp)).To(Succeed())
 		}
 
+		var shootList gardenerv1beta1.ShootList
+		Expect(k8sClient.List(ctx, &shootList)).To(Succeed())
+		for _, shoot := range shootList.Items {
+			Expect(k8sClient.Delete(ctx, &shoot)).To(Succeed())
+		}
+
 		var secList corev1.SecretList
 		Expect(k8sClient.List(ctx, &secList)).To(Succeed())
 		for _, sec := range secList.Items {
@@ -61,7 +67,7 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 		}).Should(Equal(0))
 
 		Eventually(func(g Gomega) int {
-			var updated gardenerv1beta1.CloudProfileList
+			var updated gardenerv1beta1.ShootList
 			g.Expect(k8sClient.List(ctx, &updated)).To(Succeed())
 			return len(updated.Items)
 		}).Should(Equal(0))
@@ -338,6 +344,23 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 		cloudProfile.Spec.ProviderConfig = &runtime.RawExtension{Raw: raw}
 		Expect(k8sClient.Create(ctx, &cloudProfile)).To(Succeed())
 
+		var shoot gardenerv1beta1.Shoot
+		shoot.Name = "test-shoot-preserve"
+		shoot.Namespace = metav1.NamespaceDefault
+		shoot.Spec.CloudProfile = &gardenerv1beta1.CloudProfileReference{Name: cloudProfile.Name}
+		shoot.Spec.Provider.Workers = []gardenerv1beta1.Worker{
+			{
+				Name: "worker1",
+				Machine: gardenerv1beta1.Machine{
+					Image: &gardenerv1beta1.ShootMachineImage{
+						Name:    "preserve-image",
+						Version: ptr.To("1.0.0"),
+					},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, &shoot)).To(Succeed())
+
 		var mcp v1alpha1.ManagedCloudProfile
 		mcp.Name = "test-gc-preserve"
 		mcp.Spec.CloudProfile = v1alpha1.CloudProfileSpec{
@@ -391,6 +414,7 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 
 		Expect(k8sClient.Delete(ctx, &mcp)).To(Succeed())
 		Expect(k8sClient.Delete(ctx, &cloudProfile)).To(Succeed())
+		Expect(k8sClient.Delete(ctx, &shoot)).To(Succeed())
 	})
 
 	It("preserves machine image versions referenced by Shoot workers", func(ctx SpecContext) {
