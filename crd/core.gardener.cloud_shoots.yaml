@@ -1,0 +1,75 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: shoots.core.gardener.cloud
+spec:
+  group: core.gardener.cloud
+  versions:
+  - name: v1beta1
+    served: true
+    storage: true
+    schema:
+      openAPIV3Schema:
+        description: Shoot is the schema for the shoots API.
+        type: object
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: Spec defines the desired state of the Shoot.
+            type: object
+            properties:
+              cloudProfile:
+                description: Reference to the CloudProfile used by the Shoot.
+                type: object
+                properties:
+                  name:
+                    description: Name of the CloudProfile.
+                    type: string
+              provider:
+                description: Provider-specific configuration.
+                type: object
+                properties:
+                  workers:
+                    description: Worker pools for the Shoot.
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        machine:
+                          description: Machine configuration for a worker pool.
+                          type: object
+                          properties:
+                            image:
+                              description: Image configuration for worker nodes.
+                              type: object
+                              properties:
+                                name:
+                                  description: Machine image name.
+                                  type: string
+                                version:
+                                  description: Machine image version.
+                                  type: string
+          status:
+            description: Status contains the current status of the Shoot.
+            type: object
+  scope: Namespaced
+  names:
+    plural: shoots
+    singular: shoot
+    kind: Shoot

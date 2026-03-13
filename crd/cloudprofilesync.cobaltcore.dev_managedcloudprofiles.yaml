@@ -532,7 +532,7 @@ spec:
                         maxAge:
                           description: |-
                             MaxAge defines the maximum age for images to keep. Images older than
-                            now MaxAge are eligible for deletion.
+                            now - MaxAge are eligible for deletion.
                           type: string
                       type: object
                     imageName:
