@@ -653,15 +653,6 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 			},
 			MachineTypes: []gardenerv1beta1.MachineType{{Name: "baz"}},
 		}
-		mcp.Spec.MachineImageUpdates = []v1alpha1.MachineImageUpdate{
-			{
-				ImageName: "test-image",
-				GarbageCollection: &v1alpha1.GarbageCollectionConfig{
-					Enabled: true,
-					MaxAge:  metav1.Duration{Duration: 0},
-				},
-			},
-		}
 		Expect(k8sClient.Create(ctx, &mcp)).To(Succeed())
 
 		var cp gardenerv1beta1.CloudProfile
