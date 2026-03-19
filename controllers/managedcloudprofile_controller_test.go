@@ -41,7 +41,8 @@ func (m *mockOCIFactory) Create(params cloudprofilesync.OCIParams, insecure bool
 }
 
 var _ = Describe("The ManagedCloudProfile reconciler", func() {
-
+	amd64 := "amd64"
+	version := "1.0.0"
 	AfterEach(func(ctx SpecContext) {
 		var mcpList v1alpha1.ManagedCloudProfileList
 		Expect(k8sClient.List(ctx, &mcpList)).To(Succeed())
@@ -97,6 +98,7 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 	It("should copy the spec of a ManagedCloudProfile to the respective CloudProfile", func(ctx SpecContext) {
 		var mcp v1alpha1.ManagedCloudProfile
 		mcp.Name = "test-mcp"
+		usable := true
 		mcp.Spec.CloudProfile = v1alpha1.CloudProfileSpec{
 			Regions: []gardenerv1beta1.Region{{Name: "foo"}},
 			MachineImages: []gardenerv1beta1.MachineImage{
@@ -115,8 +117,8 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 			MachineTypes: []gardenerv1beta1.MachineType{
 				{
 					Name:         "baz",
-					Architecture: ptr.To("amd64"),
-					Usable:       ptr.To(true),
+					Architecture: &amd64,
+					Usable:       &usable,
 				},
 			},
 		}
@@ -165,13 +167,14 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 	It("invokes the image updater based on an image source", func(ctx SpecContext) {
 		var mcp v1alpha1.ManagedCloudProfile
 		mcp.Name = "test-oci"
+		usable := true
 		mcp.Spec.CloudProfile = v1alpha1.CloudProfileSpec{
 			Regions: []gardenerv1beta1.Region{{Name: "foo"}},
 			MachineTypes: []gardenerv1beta1.MachineType{
 				{
 					Name:         "baz",
-					Architecture: ptr.To("amd64"),
-					Usable:       ptr.To(true),
+					Architecture: &amd64,
+					Usable:       &usable,
 				},
 			},
 		}
@@ -363,7 +366,7 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 				Machine: gardenerv1beta1.Machine{
 					Image: &gardenerv1beta1.ShootMachineImage{
 						Name:    "preserve-image",
-						Version: ptr.To("1.0.0"),
+						Version: &version,
 					},
 				},
 			},
@@ -452,7 +455,7 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 				Machine: gardenerv1beta1.Machine{
 					Image: &gardenerv1beta1.ShootMachineImage{
 						Name:    "shoot-preserve-image",
-						Version: ptr.To("1.0.0"),
+						Version: &version,
 					},
 				},
 			},
@@ -681,6 +684,7 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 	It("reports failure when CloudProfile is already owned by another controller", func(ctx SpecContext) {
 		var cloudProfile gardenerv1beta1.CloudProfile
 		cloudProfile.Name = "test-owned"
+		usable := true
 		cloudProfile.Spec = gardenerv1beta1.CloudProfileSpec{
 			Regions: []gardenerv1beta1.Region{{Name: "existing-region"}},
 			MachineImages: []gardenerv1beta1.MachineImage{
@@ -692,7 +696,7 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 				},
 			},
 			MachineTypes: []gardenerv1beta1.MachineType{
-				{Name: "existing-type", Architecture: ptr.To("amd64"), Usable: ptr.To(true)},
+				{Name: "existing-type", Architecture: &amd64, Usable: &usable},
 			},
 		}
 		cloudProfile.OwnerReferences = []metav1.OwnerReference{

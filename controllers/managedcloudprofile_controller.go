@@ -55,15 +55,15 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	if result, err := r.reconcileCloudProfile(ctx, log, &mcp); err != nil || !result.IsZero() {
-		return result, err
+	if err := r.reconcileCloudProfile(ctx, log, &mcp); err != nil {
+		return ctrl.Result{}, err
 	}
 
 	log.Info("reconciled ManagedCloudProfile")
 	return r.reconcileGarbageCollection(ctx, log, &mcp)
 }
 
-func (r *Reconciler) reconcileCloudProfile(ctx context.Context, log logr.Logger, mcp *v1alpha1.ManagedCloudProfile) (ctrl.Result, error) {
+func (r *Reconciler) reconcileCloudProfile(ctx context.Context, log logr.Logger, mcp *v1alpha1.ManagedCloudProfile) error {
 	var cloudProfile gardenerv1beta1.CloudProfile
 	cloudProfile.Name = mcp.Name
 
@@ -88,13 +88,13 @@ func (r *Reconciler) reconcileCloudProfile(ctx context.Context, log logr.Logger,
 			Reason:             "ApplyFailed",
 			Message:            fmt.Sprintf("Failed to apply CloudProfile: %s", err),
 		}); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to patch ManagedCloudProfile status: %w", err)
+			return fmt.Errorf("failed to patch ManagedCloudProfile status: %w", err)
 		}
 		if apierrors.IsInvalid(err) {
 			log.Error(err, "tried to apply invalid CloudProfile")
-			return ctrl.Result{}, nil
+			return nil
 		}
-		return ctrl.Result{}, fmt.Errorf("failed to create or patch CloudProfile: %w", err)
+		return fmt.Errorf("failed to create or patch CloudProfile: %w", err)
 	}
 	log.Info("applied cloud profile", "op", op)
 	if op != controllerutil.OperationResultNone {
@@ -105,10 +105,10 @@ func (r *Reconciler) reconcileCloudProfile(ctx context.Context, log logr.Logger,
 			Reason:             "Applied",
 			Message:            "Generated CloudProfile applied successfully",
 		}); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to patch ManagedCloudProfile status: %w", err)
+			return fmt.Errorf("failed to patch ManagedCloudProfile status: %w", err)
 		}
 	}
-	return ctrl.Result{}, nil
+	return nil
 }
 
 func (r *Reconciler) reconcileGarbageCollection(ctx context.Context, log logr.Logger, mcp *v1alpha1.ManagedCloudProfile) (ctrl.Result, error) {
@@ -117,7 +117,7 @@ func (r *Reconciler) reconcileGarbageCollection(ctx context.Context, log logr.Lo
 			continue
 		}
 		if updates.GarbageCollection.MaxAge.Duration < 0 {
-			return ctrl.Result{}, r.failWithStatusUpdate(ctx, mcp, "GarbageCollectionFailed", "garbage collection maxAge must not be negative", fmt.Errorf("invalid garbage collection maxAge: %s", updates.GarbageCollection.MaxAge.String()))
+			return ctrl.Result{}, r.failWithStatusUpdate(ctx, mcp, "garbage collection maxAge must not be negative", fmt.Errorf("invalid garbage collection maxAge: %s", updates.GarbageCollection.MaxAge.String()))
 		}
 		if updates.Source.OCI == nil {
 			continue
@@ -125,7 +125,7 @@ func (r *Reconciler) reconcileGarbageCollection(ctx context.Context, log logr.Lo
 		var source cloudprofilesync.Source
 		password, err := r.getCredential(ctx, updates.Source.OCI.Password)
 		if err != nil {
-			return ctrl.Result{}, r.failWithStatusUpdate(ctx, mcp, "GarbageCollectionFailed", fmt.Sprintf("failed to get credential for garbage collection: %s", err), err)
+			return ctrl.Result{}, r.failWithStatusUpdate(ctx, mcp, fmt.Sprintf("failed to get credential for garbage collection: %s", err), err)
 		}
 		src, err := r.OCISourceFactory.Create(cloudprofilesync.OCIParams{
 			Registry:   updates.Source.OCI.Registry,
@@ -135,18 +135,18 @@ func (r *Reconciler) reconcileGarbageCollection(ctx context.Context, log logr.Lo
 			Parallel:   1,
 		}, updates.Source.OCI.Insecure)
 		if err != nil {
-			return ctrl.Result{}, r.failWithStatusUpdate(ctx, mcp, "GarbageCollectionFailed", fmt.Sprintf("failed to initialize OCI source for garbage collection: %s", err), fmt.Errorf("failed to initialize OCI source for garbage collection: %w", err))
+			return ctrl.Result{}, r.failWithStatusUpdate(ctx, mcp, fmt.Sprintf("failed to initialize OCI source for garbage collection: %s", err), fmt.Errorf("failed to initialize OCI source for garbage collection: %w", err))
 		}
 		source = src
 
 		versions, err := source.GetVersions(ctx)
 		if err != nil {
-			return ctrl.Result{}, r.failWithStatusUpdate(ctx, mcp, "GarbageCollectionFailed", fmt.Sprintf("failed to list source versions for garbage collection: %s", err), fmt.Errorf("failed to list source versions for garbage collection: %w", err))
+			return ctrl.Result{}, r.failWithStatusUpdate(ctx, mcp, fmt.Sprintf("failed to list source versions for garbage collection: %s", err), fmt.Errorf("failed to list source versions for garbage collection: %w", err))
 		}
 
 		referencedVersions, err := r.getReferencedVersions(ctx, mcp.Name, updates.ImageName)
 		if err != nil {
-			return ctrl.Result{}, r.failWithStatusUpdate(ctx, mcp, "GarbageCollectionFailed", fmt.Sprintf("failed to determine referenced versions for garbage collection: %s", err), fmt.Errorf("failed to determine referenced versions for garbage collection: %w", err))
+			return ctrl.Result{}, r.failWithStatusUpdate(ctx, mcp, fmt.Sprintf("failed to determine referenced versions for garbage collection: %s", err), fmt.Errorf("failed to determine referenced versions for garbage collection: %w", err))
 		}
 
 		cutoff := time.Now().Add(-updates.GarbageCollection.MaxAge.Duration)
@@ -169,7 +169,7 @@ func (r *Reconciler) reconcileGarbageCollection(ctx context.Context, log logr.Lo
 					log.V(1).Info("garbage collection validation failed, skipping", "image", updates.ImageName)
 					continue
 				}
-				return ctrl.Result{}, r.failWithStatusUpdate(ctx, mcp, "GarbageCollectionFailed", fmt.Sprintf("failed to delete image versions during garbage collection: %s", err), fmt.Errorf("failed to delete image versions: %w", err))
+				return ctrl.Result{}, r.failWithStatusUpdate(ctx, mcp, fmt.Sprintf("failed to delete image versions during garbage collection: %s", err), fmt.Errorf("failed to delete image versions: %w", err))
 			}
 			for v := range versionsToDelete {
 				log.Info("deleted image version from CloudProfile", "image", updates.ImageName, "version", v)
@@ -375,12 +375,12 @@ func CloudProfileSpecToGardener(spec *v1alpha1.CloudProfileSpec) gardenerv1beta1
 	}
 }
 
-func (r *Reconciler) failWithStatusUpdate(ctx context.Context, mcp *v1alpha1.ManagedCloudProfile, reason, message string, returnErr error) error {
+func (r *Reconciler) failWithStatusUpdate(ctx context.Context, mcp *v1alpha1.ManagedCloudProfile, message string, returnErr error) error {
 	if patchErr := r.patchStatusAndCondition(ctx, mcp, v1alpha1.FailedReconcileStatus, metav1.Condition{
 		Type:               CloudProfileAppliedConditionType,
 		Status:             metav1.ConditionFalse,
 		ObservedGeneration: mcp.Generation,
-		Reason:             reason,
+		Reason:             "GarbageCollectionFailed",
 		Message:            message,
 	}); patchErr != nil {
 		return fmt.Errorf("failed to patch ManagedCloudProfile status: %w (original error: %w)", patchErr, returnErr)

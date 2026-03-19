@@ -34,7 +34,6 @@ jobs:
         uses: golangci/golangci-lint-action@v9
         with:
           version: latest
-          args: --timeout=15m
       - name: Delete pre-installed shellcheck
         run: sudo rm -f $(which shellcheck)
       - name: Run shellcheck
