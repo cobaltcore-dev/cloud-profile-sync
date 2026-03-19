@@ -47,7 +47,7 @@ func (iu *ImageUpdater) Update(ctx context.Context, cpSpec *gardenerv1beta1.Clou
 	iu.Log.Info("checked source", "image", iu.ImageName)
 	sourceImages = filterImages(iu.Log, sourceImages)
 	// Images from a source arrive in no guaranteed order. A changed order
-	// in the source images may lead to a chenged order in the CloudProfile,
+	// in the source images may lead to a changed order in the CloudProfile,
 	// causing unnecesscary reconciliations.
 	slices.SortFunc(sourceImages, func(a, b SourceImage) int {
 		return cmp.Compare(a.Version, b.Version)
