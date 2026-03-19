@@ -109,6 +109,7 @@ type GarbageCollectionConfig struct {
 	// MaxAge defines the maximum age for images to keep. Images older than
 	// now - MaxAge are eligible for deletion.
 	// +optional
+	// +kubebuilder:validation:XValidation:rule="duration(self) >= duration('0s')",message="maxAge must not be negative"
 	MaxAge metav1.Duration `json:"maxAge,omitempty"`
 }
 

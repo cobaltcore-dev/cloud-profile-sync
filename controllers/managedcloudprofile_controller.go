@@ -31,14 +31,21 @@ const (
 	CloudProfileAppliedConditionType string = "CloudProfileApplied"
 )
 
-// OCIFactory provides a hook for constructing OCI sources. It defaults to
-// cloudprofilesync.NewOCI but can be overridden in tests to simulate errors
-var OCIFactory = func(params cloudprofilesync.OCIParams, insecure bool) (cloudprofilesync.Source, error) {
+// OCISourceFactory defines an interface for creating OCI sources.
+type OCISourceFactory interface {
+	Create(params cloudprofilesync.OCIParams, insecure bool) (cloudprofilesync.Source, error)
+}
+
+// DefaultOCISourceFactory is the default implementation of OCISourceFactory.
+type DefaultOCISourceFactory struct{}
+
+func (f *DefaultOCISourceFactory) Create(params cloudprofilesync.OCIParams, insecure bool) (cloudprofilesync.Source, error) {
 	return cloudprofilesync.NewOCI(params, insecure)
 }
 
 type Reconciler struct {
 	client.Client
+	OCISourceFactory OCISourceFactory
 }
 
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -109,6 +116,9 @@ func (r *Reconciler) reconcileGarbageCollection(ctx context.Context, log logr.Lo
 		if updates.GarbageCollection == nil || !updates.GarbageCollection.Enabled {
 			continue
 		}
+		if updates.GarbageCollection.MaxAge.Duration < 0 {
+			return ctrl.Result{}, r.failWithStatusUpdate(ctx, mcp, "GarbageCollectionFailed", "garbage collection maxAge must not be negative", fmt.Errorf("invalid garbage collection maxAge: %s", updates.GarbageCollection.MaxAge.String()))
+		}
 		if updates.Source.OCI == nil {
 			continue
 		}
@@ -117,7 +127,7 @@ func (r *Reconciler) reconcileGarbageCollection(ctx context.Context, log logr.Lo
 		if err != nil {
 			return ctrl.Result{}, r.failWithStatusUpdate(ctx, mcp, "GarbageCollectionFailed", fmt.Sprintf("failed to get credential for garbage collection: %s", err), err)
 		}
-		src, err := OCIFactory(cloudprofilesync.OCIParams{
+		src, err := r.OCISourceFactory.Create(cloudprofilesync.OCIParams{
 			Registry:   updates.Source.OCI.Registry,
 			Repository: updates.Source.OCI.Repository,
 			Username:   updates.Source.OCI.Username,
@@ -269,7 +279,7 @@ func (r *Reconciler) updateMachineImages(ctx context.Context, log logr.Logger, u
 		if err != nil {
 			return err
 		}
-		src, err := OCIFactory(cloudprofilesync.OCIParams{
+		src, err := r.OCISourceFactory.Create(cloudprofilesync.OCIParams{
 			Registry:   update.Source.OCI.Registry,
 			Repository: update.Source.OCI.Repository,
 			Username:   update.Source.OCI.Username,
@@ -380,6 +390,9 @@ func (r *Reconciler) failWithStatusUpdate(ctx context.Context, mcp *v1alpha1.Man
 
 // SetupWithManager attaches the controller to the given manager.
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
+	if r.OCISourceFactory == nil {
+		r.OCISourceFactory = &DefaultOCISourceFactory{}
+	}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1alpha1.ManagedCloudProfile{}).
 		Owns(&gardenerv1beta1.CloudProfile{}).

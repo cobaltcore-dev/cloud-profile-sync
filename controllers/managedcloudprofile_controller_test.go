@@ -31,6 +31,15 @@ func (f *fakeSource) GetVersions(ctx context.Context) ([]cloudprofilesync.Source
 	return nil, errors.New("simulated list error")
 }
 
+// mockOCIFactory implements controllers.OCISourceFactory for testing
+type mockOCIFactory struct {
+	createFunc func(params cloudprofilesync.OCIParams, insecure bool) (cloudprofilesync.Source, error)
+}
+
+func (m *mockOCIFactory) Create(params cloudprofilesync.OCIParams, insecure bool) (cloudprofilesync.Source, error) {
+	return m.createFunc(params, insecure)
+}
+
 var _ = Describe("The ManagedCloudProfile reconciler", func() {
 
 	AfterEach(func(ctx SpecContext) {
@@ -593,10 +602,12 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 	})
 
 	It("reports failure when GC version listing errors occur", func(ctx SpecContext) {
-		old := controllers.OCIFactory
-		defer func() { controllers.OCIFactory = old }()
-		controllers.OCIFactory = func(params cloudprofilesync.OCIParams, insecure bool) (cloudprofilesync.Source, error) {
-			return &fakeSource{}, nil
+		old := reconciler.OCISourceFactory
+		defer func() { reconciler.OCISourceFactory = old }()
+		reconciler.OCISourceFactory = &mockOCIFactory{
+			createFunc: func(params cloudprofilesync.OCIParams, insecure bool) (cloudprofilesync.Source, error) {
+				return &fakeSource{}, nil
+			},
 		}
 
 		var mcp v1alpha1.ManagedCloudProfile
