@@ -45,6 +45,7 @@ var (
 	testEnv    *envtest.Environment
 	reg        *registry.Registry
 	stop       context.CancelFunc
+	reconciler *controllers.Reconciler
 )
 
 func TestControllers(t *testing.T) {
@@ -77,9 +78,10 @@ var _ = BeforeSuite(func(ctx SpecContext) {
 	})
 	Expect(err).To(Succeed())
 
-	err = (&controllers.Reconciler{
+	reconciler = &controllers.Reconciler{
 		Client: k8sManager.GetClient(),
-	}).SetupWithManager(k8sManager)
+	}
+	err = reconciler.SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 
 	stopCtx, cancel := context.WithCancel(ctrl.SetupSignalHandler())
@@ -129,6 +131,7 @@ var _ = BeforeSuite(func(ctx SpecContext) {
 		},
 		Annotations: map[string]string{
 			"architecture": "amd64",
+			"created":      time.Now().Add(-24 * time.Hour).Format(time.RFC3339),
 		},
 	}
 	indexBlob, err := json.Marshal(index)

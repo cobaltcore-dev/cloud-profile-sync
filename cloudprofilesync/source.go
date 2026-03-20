@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+	"time"
 
 	"golang.org/x/sync/semaphore"
 	"oras.land/oras-go/v2/registry/remote"
@@ -23,6 +24,7 @@ type Result[T any] struct {
 type SourceImage struct {
 	Version       string
 	Architectures []string
+	CreatedAt     time.Time
 }
 
 type Source interface {
@@ -38,7 +40,7 @@ type OCIParams struct {
 	Registry   string `json:"registry"`
 	Repository string `json:"repository"`
 	Username   string `json:"username"`
-	Password   string `json:"password"`
+	Password   string `json:"password"` //nolint:gosec,nolintlint
 	Parallel   int64  `json:"parallel"`
 }
 
@@ -104,10 +106,21 @@ func (o *OCI) GetVersions(ctx context.Context) ([]SourceImage, error) {
 				out <- Result[SourceImage]{err: errors.New("architecture annotation not found in descriptor")}
 				return
 			}
+			created := time.Time{}
+			if s, ok := manifest.Annotations["org.opencontainers.image.created"]; ok {
+				if t, err := time.Parse(time.RFC3339, s); err == nil {
+					created = t
+				}
+			} else if s, ok := manifest.Annotations["created"]; ok {
+				if t, err := time.Parse(time.RFC3339, s); err == nil {
+					created = t
+				}
+			}
 			out <- Result[SourceImage]{
 				value: SourceImage{
 					Version:       strings.ReplaceAll(tag, "_", "+"), // Follow the helm convention
 					Architectures: []string{arch},
+					CreatedAt:     created,
 				},
 			}
 		}()

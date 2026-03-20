@@ -10,7 +10,6 @@ import (
 	"github.com/ironcore-dev/gardener-extension-provider-ironcore-metal/pkg/apis/metal/v1alpha1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"k8s.io/utils/ptr"
 
 	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync"
 )
@@ -51,16 +50,19 @@ var _ = Describe("IroncoreProvider", func() {
 		Expect(json.Unmarshal(cpSpec.ProviderConfig.Raw, &providerConfig)).To(Succeed())
 		Expect(providerConfig.MachineImages).To(HaveLen(1))
 		Expect(providerConfig.MachineImages[0].Name).To(Equal("test"))
+
+		amd64 := "amd64"
+		arm64 := "arm64"
 		Expect(providerConfig.MachineImages[0].Versions).To(ConsistOf([]v1alpha1.MachineImageVersion{
 			{
 				Version:      "v1.0.0",
 				Image:        "registry.io/repo:v1.0.0",
-				Architecture: ptr.To("amd64"),
+				Architecture: &amd64,
 			},
 			{
 				Version:      "v1.0.0",
 				Image:        "registry.io/repo:v1.0.0",
-				Architecture: ptr.To("arm64"),
+				Architecture: &arm64,
 			},
 		}))
 	})
