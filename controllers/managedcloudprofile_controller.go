@@ -115,21 +115,25 @@ func (r *Reconciler) reconcileCloudProfile(ctx context.Context, log logr.Logger,
 }
 
 func (r *Reconciler) reconcileGarbageCollection(ctx context.Context, log logr.Logger, mcp *v1alpha1.ManagedCloudProfile) error {
+	if mcp.Spec.GarbageCollection == nil || !mcp.Spec.GarbageCollection.Enabled {
+		return nil
+	}
+	if mcp.Spec.GarbageCollection.MaxAge.Duration < 0 {
+		return r.failWithStatusUpdate(ctx, mcp, fmt.Errorf("invalid garbage collection maxAge: %s", mcp.Spec.GarbageCollection.MaxAge.String()))
+	}
+
+	cutoff := time.Now().Add(-mcp.Spec.GarbageCollection.MaxAge.Duration)
+
 	for _, updates := range mcp.Spec.MachineImageUpdates {
-		if updates.GarbageCollection == nil || !updates.GarbageCollection.Enabled {
-			continue
-		}
-		if updates.GarbageCollection.MaxAge.Duration < 0 {
-			return r.failWithStatusUpdate(ctx, mcp, fmt.Errorf("invalid garbage collection maxAge: %s", updates.GarbageCollection.MaxAge.String()))
-		}
 		if updates.Source.OCI == nil {
 			continue
 		}
-		var source cloudprofilesync.Source
+
 		password, err := r.getCredential(ctx, updates.Source.OCI.Password)
 		if err != nil {
 			return r.failWithStatusUpdate(ctx, mcp, fmt.Errorf("failed to get credential for garbage collection: %w", err))
 		}
+
 		src, err := r.OCISourceFactory.Create(cloudprofilesync.OCIParams{
 			Registry:   updates.Source.OCI.Registry,
 			Repository: updates.Source.OCI.Repository,
@@ -140,9 +144,8 @@ func (r *Reconciler) reconcileGarbageCollection(ctx context.Context, log logr.Lo
 		if err != nil {
 			return r.failWithStatusUpdate(ctx, mcp, fmt.Errorf("failed to initialize OCI source for garbage collection: %w", err))
 		}
-		source = src
 
-		versions, err := source.GetVersions(ctx)
+		versions, err := src.GetVersions(ctx)
 		if err != nil {
 			return r.failWithStatusUpdate(ctx, mcp, fmt.Errorf("failed to list source versions for garbage collection: %w", err))
 		}
@@ -152,7 +155,6 @@ func (r *Reconciler) reconcileGarbageCollection(ctx context.Context, log logr.Lo
 			return r.failWithStatusUpdate(ctx, mcp, fmt.Errorf("failed to determine referenced versions for garbage collection: %w", err))
 		}
 
-		cutoff := time.Now().Add(-updates.GarbageCollection.MaxAge.Duration)
 		versionsToDelete := make(map[string]struct{})
 		for _, v := range versions {
 			if v.CreatedAt.IsZero() {

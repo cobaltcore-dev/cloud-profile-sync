@@ -20,6 +20,9 @@ type ManagedCloudProfileSpec struct {
 	// MachineImageUpdates contains the source and provider information to automate machine images.
 	// +optional
 	MachineImageUpdates []MachineImageUpdate `json:"machineImageUpdates,omitempty"`
+	// GarbageCollection contains configuration for automated garbage collection
+	// +optional
+	GarbageCollection *GarbageCollectionConfig `json:"garbageCollection,omitempty"`
 }
 
 // Copy the cloud profile spec to override some validation
@@ -97,9 +100,6 @@ type MachineImageUpdate struct {
 
 	// ImagesName is the name of the image to maintain automatically
 	ImageName string `json:"imageName"`
-	// GarbageCollection contains configuration for automated garbage collection
-	// +optional
-	GarbageCollection *GarbageCollectionConfig `json:"garbageCollection,omitempty"`
 }
 
 type GarbageCollectionConfig struct {

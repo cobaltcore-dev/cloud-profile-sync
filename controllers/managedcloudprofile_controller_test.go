@@ -292,12 +292,13 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 						Insecure:   true,
 					},
 				},
-				GarbageCollection: &v1alpha1.GarbageCollectionConfig{
-					Enabled: true,
-					MaxAge:  metav1.Duration{Duration: 0},
-				},
 			},
 		}
+		mcp.Spec.GarbageCollection = &v1alpha1.GarbageCollectionConfig{
+			Enabled: true,
+			MaxAge:  metav1.Duration{Duration: 0},
+		}
+
 		Expect(k8sClient.Create(ctx, &mcp)).To(Succeed())
 
 		Eventually(func(g Gomega) v1alpha1.ReconcileStatus {
@@ -399,12 +400,13 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 						Insecure:   true,
 					},
 				},
-				GarbageCollection: &v1alpha1.GarbageCollectionConfig{
-					Enabled: true,
-					MaxAge:  metav1.Duration{Duration: 0},
-				},
 			},
 		}
+		mcp.Spec.GarbageCollection = &v1alpha1.GarbageCollectionConfig{
+			Enabled: true,
+			MaxAge:  metav1.Duration{Duration: 0},
+		}
+
 		Expect(k8sClient.Create(ctx, &mcp)).To(Succeed())
 
 		Eventually(func(g Gomega) v1alpha1.ReconcileStatus {
@@ -487,11 +489,11 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 						Insecure:   true,
 					},
 				},
-				GarbageCollection: &v1alpha1.GarbageCollectionConfig{
-					Enabled: true,
-					MaxAge:  metav1.Duration{Duration: 0},
-				},
 			},
+		}
+		mcp.Spec.GarbageCollection = &v1alpha1.GarbageCollectionConfig{
+			Enabled: true,
+			MaxAge:  metav1.Duration{Duration: 0},
 		}
 		Expect(k8sClient.Create(ctx, &mcp)).To(Succeed())
 
@@ -542,11 +544,11 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 						},
 					},
 				},
-				GarbageCollection: &v1alpha1.GarbageCollectionConfig{
-					Enabled: true,
-					MaxAge:  metav1.Duration{Duration: 3600000000000},
-				},
 			},
+		}
+		mcp.Spec.GarbageCollection = &v1alpha1.GarbageCollectionConfig{
+			Enabled: true,
+			MaxAge:  metav1.Duration{Duration: 3600000000000},
 		}
 		Expect(k8sClient.Create(ctx, &mcp)).To(Succeed())
 
@@ -581,11 +583,11 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 						Insecure:   true,
 					},
 				},
-				GarbageCollection: &v1alpha1.GarbageCollectionConfig{
-					Enabled: true,
-					MaxAge:  metav1.Duration{Duration: 3600000000000},
-				},
 			},
+		}
+		mcp.Spec.GarbageCollection = &v1alpha1.GarbageCollectionConfig{
+			Enabled: true,
+			MaxAge:  metav1.Duration{Duration: 3600000000000},
 		}
 		Expect(k8sClient.Create(ctx, &mcp)).To(Succeed())
 
@@ -629,11 +631,11 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 						Insecure:   true,
 					},
 				},
-				GarbageCollection: &v1alpha1.GarbageCollectionConfig{
-					Enabled: true,
-					MaxAge:  metav1.Duration{Duration: 3600000000000},
-				},
 			},
+		}
+		mcp.Spec.GarbageCollection = &v1alpha1.GarbageCollectionConfig{
+			Enabled: true,
+			MaxAge:  metav1.Duration{Duration: 3600000000000},
 		}
 		Expect(k8sClient.Create(ctx, &mcp)).To(Succeed())
 
@@ -785,11 +787,11 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 						Insecure:   true,
 					},
 				},
-				GarbageCollection: &v1alpha1.GarbageCollectionConfig{
-					Enabled: true,
-					MaxAge:  metav1.Duration{Duration: 0},
-				},
 			},
+		}
+		mcp.Spec.GarbageCollection = &v1alpha1.GarbageCollectionConfig{
+			Enabled: true,
+			MaxAge:  metav1.Duration{Duration: 0},
 		}
 		Expect(k8sClient.Create(ctx, &mcp)).To(Succeed())
 
