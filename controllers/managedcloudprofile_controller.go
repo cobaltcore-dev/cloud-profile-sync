@@ -55,6 +55,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
+	log.Info("starting reconciliation", "ManagedCloudProfile", mcp.Name, "generation", mcp.Generation)
+
 	if err := r.reconcileCloudProfile(ctx, log, &mcp); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -69,53 +71,70 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 func (r *Reconciler) reconcileCloudProfile(ctx context.Context, log logr.Logger, mcp *v1alpha1.ManagedCloudProfile) error {
 	var cloudProfile gardenerv1beta1.CloudProfile
 	cloudProfile.Name = mcp.Name
+	log.V(1).Info("starting CloudProfile reconciliation", "name", cloudProfile.Name, "generation", mcp.Generation)
 
 	op, err := controllerutil.CreateOrPatch(ctx, r.Client, &cloudProfile, func() error {
-		err := controllerutil.SetControllerReference(mcp, &cloudProfile, r.Scheme())
-		if err != nil {
+		if err := controllerutil.SetControllerReference(mcp, &cloudProfile, r.Scheme()); err != nil {
+			log.Error(err, "failed to set controller reference")
 			return err
 		}
+		log.V(1).Info("controller reference set")
 		cloudProfile.Spec = CloudProfileSpecToGardener(&mcp.Spec.CloudProfile)
+		log.V(1).Info("converted ManagedCloudProfile spec to CloudProfileSpec", "machineImages", len(cloudProfile.Spec.MachineImages))
 		errs := make([]error, 0)
 		for _, updates := range mcp.Spec.MachineImageUpdates {
-			errs = append(errs, r.updateMachineImages(ctx, log, updates, &cloudProfile.Spec))
+			log.V(1).Info("updating machine images from source", "imageName", updates.ImageName)
+			if updateErr := r.updateMachineImages(ctx, log, updates, &cloudProfile.Spec); updateErr != nil {
+				log.Error(updateErr, "failed to update machine images", "imageName", updates.ImageName)
+				errs = append(errs, updateErr)
+			}
 		}
 		gardenerv1beta1.SetObjectDefaults_CloudProfile(&cloudProfile)
+		log.V(1).Info("set CloudProfile defaults")
 		return errors.Join(errs...)
 	})
 	if err != nil {
-		if err := r.patchStatusAndCondition(ctx, mcp, v1alpha1.FailedReconcileStatus, metav1.Condition{
+		statusErr := r.patchStatusAndCondition(ctx, mcp, v1alpha1.FailedReconcileStatus, metav1.Condition{
 			Type:               CloudProfileAppliedConditionType,
 			Status:             metav1.ConditionFalse,
 			ObservedGeneration: mcp.Generation,
 			Reason:             "ApplyFailed",
 			Message:            fmt.Sprintf("Failed to apply CloudProfile: %s", err),
-		}); err != nil {
-			return fmt.Errorf("failed to patch ManagedCloudProfile status: %w", err)
+		})
+		if statusErr != nil {
+			log.Error(statusErr, "failed to patch ManagedCloudProfile status")
+			return fmt.Errorf("failed to patch ManagedCloudProfile status: %w", statusErr)
 		}
 		if apierrors.IsInvalid(err) {
-			log.Error(err, "tried to apply invalid CloudProfile")
+			log.Error(err, "CloudProfile invalid, skipping apply")
 			return nil
 		}
+		log.Error(err, "failed to create or patch CloudProfile")
 		return fmt.Errorf("failed to create or patch CloudProfile: %w", err)
 	}
 	log.Info("applied cloud profile", "op", op)
 	if op != controllerutil.OperationResultNone {
-		if err := r.patchStatusAndCondition(ctx, mcp, v1alpha1.SucceededReconcileStatus, metav1.Condition{
+		statusErr := r.patchStatusAndCondition(ctx, mcp, v1alpha1.SucceededReconcileStatus, metav1.Condition{
 			Type:               CloudProfileAppliedConditionType,
 			Status:             metav1.ConditionTrue,
 			ObservedGeneration: mcp.Generation,
 			Reason:             "Applied",
 			Message:            "Generated CloudProfile applied successfully",
-		}); err != nil {
-			return fmt.Errorf("failed to patch ManagedCloudProfile status: %w", err)
+		})
+		if statusErr != nil {
+			log.Error(statusErr, "failed to patch ManagedCloudProfile status after apply")
+			return fmt.Errorf("failed to patch ManagedCloudProfile status: %w", statusErr)
 		}
+		log.V(1).Info("ManagedCloudProfile status updated to SucceededReconcileStatus")
 	}
+	log.V(1).Info("finished CloudProfile reconciliation", "name", cloudProfile.Name)
 	return nil
 }
 
 func (r *Reconciler) reconcileGarbageCollection(ctx context.Context, log logr.Logger, mcp *v1alpha1.ManagedCloudProfile) error {
+	log.V(1).Info("starting garbage collection", "ManagedCloudProfile", mcp.Name)
 	if mcp.Spec.GarbageCollection == nil || !mcp.Spec.GarbageCollection.Enabled {
+		log.V(1).Info("garbage collection disabled or not configured")
 		return nil
 	}
 	if mcp.Spec.GarbageCollection.MaxAge.Duration < 0 {
@@ -123,12 +142,15 @@ func (r *Reconciler) reconcileGarbageCollection(ctx context.Context, log logr.Lo
 	}
 
 	cutoff := time.Now().Add(-mcp.Spec.GarbageCollection.MaxAge.Duration)
+	log.V(1).Info("garbage collection cutoff time calculated", "cutoff", cutoff)
 
 	for _, updates := range mcp.Spec.MachineImageUpdates {
 		if updates.Source.OCI == nil {
+			log.V(1).Info("skipping update with no OCI source", "image", updates.ImageName)
 			continue
 		}
 
+		log.V(1).Info("fetching OCI credentials", "image", updates.ImageName)
 		password, err := r.getCredential(ctx, updates.Source.OCI.Password)
 		if err != nil {
 			return r.failWithStatusUpdate(ctx, mcp, fmt.Errorf("failed to get credential for garbage collection: %w", err))
@@ -145,30 +167,37 @@ func (r *Reconciler) reconcileGarbageCollection(ctx context.Context, log logr.Lo
 			return r.failWithStatusUpdate(ctx, mcp, fmt.Errorf("failed to initialize OCI source for garbage collection: %w", err))
 		}
 
+		log.V(1).Info("retrieving source versions", "image", updates.ImageName)
 		versions, err := src.GetVersions(ctx)
 		if err != nil {
 			return r.failWithStatusUpdate(ctx, mcp, fmt.Errorf("failed to list source versions for garbage collection: %w", err))
 		}
+		log.V(1).Info("retrieved source versions", "count", len(versions), "image", updates.ImageName)
 
-		referencedVersions, err := r.getReferencedVersions(ctx, mcp.Name, updates.ImageName)
+		referencedVersions, err := r.getReferencedVersions(ctx, mcp.Name, updates.ImageName, log)
 		if err != nil {
 			return r.failWithStatusUpdate(ctx, mcp, fmt.Errorf("failed to determine referenced versions for garbage collection: %w", err))
 		}
+		log.V(1).Info("referenced versions retrieved", "count", len(referencedVersions), "image", updates.ImageName)
 
 		versionsToDelete := make(map[string]struct{})
 		for _, v := range versions {
 			if v.CreatedAt.IsZero() {
+				log.V(1).Info("skipping version with zero CreatedAt", "version", v.Version)
 				continue
 			}
 			if _, isReferenced := referencedVersions[v.Version]; isReferenced {
+				log.V(2).Info("skipping referenced version", "version", v.Version)
 				continue
 			}
 			if v.CreatedAt.Before(cutoff) {
 				versionsToDelete[v.Version] = struct{}{}
+				log.V(1).Info("marking version for deletion", "version", v.Version)
 			}
 		}
 
 		if len(versionsToDelete) > 0 {
+			log.V(1).Info("deleting versions from CloudProfile", "image", updates.ImageName, "count", len(versionsToDelete))
 			if err := r.deleteVersions(ctx, mcp.Name, updates.ImageName, versionsToDelete); err != nil {
 				if apierrors.IsInvalid(err) {
 					log.V(1).Info("garbage collection validation failed, skipping", "image", updates.ImageName)
@@ -179,15 +208,21 @@ func (r *Reconciler) reconcileGarbageCollection(ctx context.Context, log logr.Lo
 			for v := range versionsToDelete {
 				log.Info("deleted image version from CloudProfile", "image", updates.ImageName, "version", v)
 			}
+		} else {
+			log.V(1).Info("no versions to delete for image", "image", updates.ImageName)
 		}
 	}
 
+	log.V(1).Info("completed garbage collection", "ManagedCloudProfile", mcp.Name)
 	return nil
 }
 
 func (r *Reconciler) deleteVersions(ctx context.Context, cloudProfileName, imageName string, versionsToDelete map[string]struct{}) error {
+	log := ctrl.LoggerFrom(ctx)
+	log.V(1).Info("starting deleteVersions", "cloudProfile", cloudProfileName, "image", imageName, "versionsToDelete", versionsToDelete)
 	var cp gardenerv1beta1.CloudProfile
 	if err := r.Get(ctx, types.NamespacedName{Name: cloudProfileName}, &cp); err != nil {
+		log.Error(err, "failed to get CloudProfile")
 		return err
 	}
 
@@ -195,20 +230,27 @@ func (r *Reconciler) deleteVersions(ctx context.Context, cloudProfileName, image
 		if cp.Spec.MachineImages[i].Name != imageName {
 			continue
 		}
+		originalCount := len(cp.Spec.MachineImages[i].Versions)
 		cp.Spec.MachineImages[i].Versions = slices.DeleteFunc(cp.Spec.MachineImages[i].Versions, func(mv gardenerv1beta1.MachineImageVersion) bool {
 			_, exists := versionsToDelete[mv.Version]
+			if exists {
+				log.V(1).Info("removing version from CloudProfile MachineImages", "version", mv.Version)
+			}
 			return exists
 		})
+		log.V(1).Info("updated CloudProfile MachineImages versions", "original", originalCount, "remaining", len(cp.Spec.MachineImages[i].Versions))
 	}
 	if cp.Spec.ProviderConfig != nil {
 		var cfg providercfg.CloudProfileConfig
 		if err := json.Unmarshal(cp.Spec.ProviderConfig.Raw, &cfg); err != nil {
+			log.Error(err, "failed to unmarshal ProviderConfig")
 			return fmt.Errorf("failed to unmarshal ProviderConfig: %w", err)
 		}
 		for i := range cfg.MachineImages {
 			if cfg.MachineImages[i].Name != imageName {
 				continue
 			}
+			originalCount := len(cfg.MachineImages[i].Versions)
 			cfg.MachineImages[i].Versions = slices.DeleteFunc(cfg.MachineImages[i].Versions, func(mv providercfg.MachineImageVersion) bool {
 				idx := strings.LastIndex(mv.Image, ":")
 				if idx == -1 {
@@ -216,29 +258,42 @@ func (r *Reconciler) deleteVersions(ctx context.Context, cloudProfileName, image
 				}
 				version := mv.Image[idx+1:]
 				_, exists := versionsToDelete[version]
+				if exists {
+					log.V(1).Info("removing version from ProviderConfig", "version", version, "imageRef", mv.Image)
+				}
 				return exists
 			})
+			log.V(1).Info("updated ProviderConfig MachineImages versions", "original", originalCount, "remaining", len(cfg.MachineImages[i].Versions))
 		}
 		raw, err := json.Marshal(cfg)
 		if err != nil {
+			log.Error(err, "failed to marshal ProviderConfig after deletion")
 			return fmt.Errorf("failed to marshal ProviderConfig: %w", err)
 		}
 		cp.Spec.ProviderConfig.Raw = raw
 	}
-
-	return r.Update(ctx, &cp)
+	if err := r.Update(ctx, &cp); err != nil {
+		log.Error(err, "failed to update CloudProfile after deleting versions")
+		return err
+	}
+	log.V(1).Info("finished deleteVersions successfully")
+	return nil
 }
 
-func (r *Reconciler) getReferencedVersions(ctx context.Context, cloudProfileName, imageName string) (map[string]struct{}, error) {
+func (r *Reconciler) getReferencedVersions(ctx context.Context, cloudProfileName, imageName string, log logr.Logger) (map[string]struct{}, error) {
 	referenced := make(map[string]struct{})
+	log.V(1).Info("retrieving referenced versions", "cloudProfile", cloudProfileName, "image", imageName)
 
 	var cp gardenerv1beta1.CloudProfile
 	if err := r.Get(ctx, types.NamespacedName{Name: cloudProfileName}, &cp); err != nil {
+		log.Error(err, "failed to get CloudProfile")
 		return nil, fmt.Errorf("failed to get CloudProfile: %w", err)
 	}
+
 	if cp.Spec.ProviderConfig != nil {
 		var cfg providercfg.CloudProfileConfig
 		if err := json.Unmarshal(cp.Spec.ProviderConfig.Raw, &cfg); err != nil {
+			log.Error(err, "failed to unmarshal ProviderConfig")
 			return nil, fmt.Errorf("failed to unmarshal ProviderConfig: %w", err)
 		}
 		for _, img := range cfg.MachineImages {
@@ -249,6 +304,7 @@ func (r *Reconciler) getReferencedVersions(ctx context.Context, cloudProfileName
 				if idx := strings.LastIndex(v.Image, ":"); idx != -1 {
 					version := v.Image[idx+1:]
 					referenced[version] = struct{}{}
+					log.V(2).Info("found referenced version in ProviderConfig", "version", version)
 				}
 			}
 		}
@@ -256,6 +312,7 @@ func (r *Reconciler) getReferencedVersions(ctx context.Context, cloudProfileName
 
 	shootList := &gardenerv1beta1.ShootList{}
 	if err := r.List(ctx, shootList, client.InNamespace(metav1.NamespaceAll)); err != nil {
+		log.Error(err, "failed to list Shoots")
 		return nil, fmt.Errorf("failed to list Shoots: %w", err)
 	}
 	for _, shoot := range shootList.Items {
@@ -269,19 +326,24 @@ func (r *Reconciler) getReferencedVersions(ctx context.Context, cloudProfileName
 			}
 			if worker.Machine.Image.Version != nil {
 				referenced[*worker.Machine.Image.Version] = struct{}{}
+				log.V(2).Info("found referenced version in Shoot", "shoot", shoot.Name, "worker", worker.Name, "version", *worker.Machine.Image.Version)
 			}
 		}
 	}
 
+	log.V(1).Info("completed retrieval of referenced versions", "count", len(referenced))
 	return referenced, nil
 }
 
 func (r *Reconciler) updateMachineImages(ctx context.Context, log logr.Logger, update v1alpha1.MachineImageUpdate, cpSpec *gardenerv1beta1.CloudProfileSpec) error {
+	log.Info("updating machine images", "imageName", update.ImageName)
 	var source cloudprofilesync.Source
 	switch {
 	case update.Source.OCI != nil:
+		log.V(1).Info("using OCI source", "registry", update.Source.OCI.Registry, "repository", update.Source.OCI.Repository)
 		password, err := r.getCredential(ctx, update.Source.OCI.Password)
 		if err != nil {
+			log.Error(err, "failed to get credentials for OCI source", "imageName", update.ImageName)
 			return err
 		}
 		src, err := r.OCISourceFactory.Create(cloudprofilesync.OCIParams{
@@ -292,15 +354,19 @@ func (r *Reconciler) updateMachineImages(ctx context.Context, log logr.Logger, u
 			Parallel:   1,
 		}, update.Source.OCI.Insecure)
 		if err != nil {
-			return fmt.Errorf("failed to initialize oci source: %w", err)
+			log.Error(err, "failed to initialize OCI source", "imageName", update.ImageName)
+			return fmt.Errorf("failed to initialize OCI source: %w", err)
 		}
 		source = src
+
 	default:
+		log.Error(nil, "no machine images source configured", "imageName", update.ImageName)
 		return errors.New("no machine images source configured")
 	}
 
 	var provider cloudprofilesync.Provider
 	if update.Provider.IroncoreMetal != nil {
+		log.V(1).Info("using provider IroncoreMetal", "registry", update.Provider.IroncoreMetal.Registry, "repository", update.Provider.IroncoreMetal.Repository)
 		provider = &cloudprofilesync.IroncoreProvider{
 			Registry:   update.Provider.IroncoreMetal.Registry,
 			Repository: update.Provider.IroncoreMetal.Repository,
@@ -313,9 +379,12 @@ func (r *Reconciler) updateMachineImages(ctx context.Context, log logr.Logger, u
 		Provider:  provider,
 		ImageName: update.ImageName,
 	}
+	log.V(1).Info("calling ImageUpdater.Update", "imageName", update.ImageName)
 	if err := imageUpdater.Update(ctx, cpSpec); err != nil {
+		log.Error(err, "ImageUpdater.Update failed", "imageName", update.ImageName)
 		return fmt.Errorf("updating machine images failed: %w", err)
 	}
+	log.Info("successfully updated machine images", "imageName", update.ImageName)
 	return nil
 }
 
