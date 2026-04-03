@@ -600,7 +600,7 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 			HaveField("Type", controllers.CloudProfileAppliedConditionType),
 			HaveField("Status", metav1.ConditionFalse),
 			HaveField("Reason", "ApplyFailed"),
-			HaveField("Message", ContainSubstring("failed to initialize oci source")),
+			HaveField("Message", ContainSubstring("Failed to apply CloudProfile: failed to initialize OCI source: invalid reference: invalid repository \"/registry/repo\"")),
 		)))
 
 		Expect(k8sClient.Delete(ctx, &mcp)).To(Succeed())
@@ -648,7 +648,7 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 			HaveField("Type", controllers.CloudProfileAppliedConditionType),
 			HaveField("Status", metav1.ConditionFalse),
 			HaveField("Reason", "ApplyFailed"),
-			HaveField("Message", ContainSubstring("failed to retrieve images version")),
+			HaveField("Message", ContainSubstring("Failed to apply CloudProfile: updating machine images failed: failed to retrieve image versions from OCI registry: simulated list error")),
 		)))
 
 		Expect(k8sClient.Delete(ctx, &mcp)).To(Succeed())
