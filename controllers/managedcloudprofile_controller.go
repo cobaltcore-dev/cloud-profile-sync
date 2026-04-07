@@ -79,6 +79,7 @@ func (r *Reconciler) reconcileCloudProfile(ctx context.Context, log logr.Logger,
 			return err
 		}
 		log.V(1).Info("controller reference set")
+		cloudProfile.Spec = CloudProfileSpecToGardener(&mcp.Spec.CloudProfile)
 		totalVersionsBefore := 0
 		for _, img := range cloudProfile.Spec.MachineImages {
 			totalVersionsBefore += len(img.Versions)
@@ -93,7 +94,7 @@ func (r *Reconciler) reconcileCloudProfile(ctx context.Context, log logr.Logger,
 				errs = append(errs, updateErr)
 			}
 		}
-		cloudProfile.Spec = CloudProfileSpecToGardener(&mcp.Spec.CloudProfile)
+
 		totalVersionsAfter := 0
 		for _, img := range cloudProfile.Spec.MachineImages {
 			totalVersionsAfter += len(img.Versions)
