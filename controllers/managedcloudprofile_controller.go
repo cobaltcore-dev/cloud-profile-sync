@@ -79,12 +79,8 @@ func (r *Reconciler) reconcileCloudProfile(ctx context.Context, log logr.Logger,
 			return err
 		}
 		log.V(1).Info("controller reference set")
-		totalVersionsBefore := 0
-		for _, img := range cloudProfile.Spec.MachineImages {
-			totalVersionsBefore += len(img.Versions)
-			log.Info("before update - machine image summary", "image", img.Name, "versions_count", len(img.Versions))
-		}
-		log.Info("total machine image versions before update", "total_versions_before", totalVersionsBefore)
+		cloudProfile.Spec = CloudProfileSpecToGardener(&mcp.Spec.CloudProfile)
+		log.V(1).Info("converted ManagedCloudProfile spec to CloudProfileSpec", "machineImages", len(cloudProfile.Spec.MachineImages))
 		errs := make([]error, 0)
 		for _, updates := range mcp.Spec.MachineImageUpdates {
 			log.V(1).Info("updating machine images from source", "imageName", updates.ImageName)
@@ -93,14 +89,6 @@ func (r *Reconciler) reconcileCloudProfile(ctx context.Context, log logr.Logger,
 				errs = append(errs, updateErr)
 			}
 		}
-		cloudProfile.Spec = CloudProfileSpecToGardener(&mcp.Spec.CloudProfile)
-		totalVersionsAfter := 0
-		for _, img := range cloudProfile.Spec.MachineImages {
-			totalVersionsAfter += len(img.Versions)
-			log.Info("after update - machine image summary", "image", img.Name, "versions_count", len(img.Versions))
-		}
-		log.Info("total machine image versions after update", "total_versions_after", totalVersionsAfter)
-
 		gardenerv1beta1.SetObjectDefaults_CloudProfile(&cloudProfile)
 		log.V(1).Info("set CloudProfile defaults")
 		return errors.Join(errs...)
