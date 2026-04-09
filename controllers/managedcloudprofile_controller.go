@@ -5,9 +5,11 @@ package controllers
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"slices"
 	"strings"
 	"time"
@@ -45,7 +47,23 @@ func (f *DefaultOCISourceFactory) Create(params cloudprofilesync.OCIParams, inse
 
 type Reconciler struct {
 	client.Client
-	OCISourceFactory OCISourceFactory
+	OCISourceFactory    OCISourceFactory
+	FetchKeppelTagsFunc func(ctx context.Context, registry, repository string) (map[string]time.Time, error)
+}
+
+type KeppelTag struct {
+	Name     string `json:"name"`
+	PushedAt int64  `json:"pushed_at"`
+}
+
+type KeppelManifest struct {
+	Digest   string      `json:"digest"`
+	PushedAt int64       `json:"pushed_at"`
+	Tags     []KeppelTag `json:"tags"`
+}
+
+type KeppelManifestsResponse struct {
+	Manifests []KeppelManifest `json:"manifests"`
 }
 
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -167,6 +185,11 @@ func (r *Reconciler) reconcileGarbageCollection(ctx context.Context, log logr.Lo
 			return r.failWithStatusUpdate(ctx, mcp, fmt.Errorf("failed to initialize OCI source for garbage collection: %w", err))
 		}
 
+		tags, err := r.FetchKeppelTagsFunc(ctx, updates.Source.OCI.Registry, updates.Source.OCI.Repository)
+		if err != nil {
+			return r.failWithStatusUpdate(ctx, mcp, fmt.Errorf("failed to fetch Keppel tags: %w", err))
+		}
+
 		log.V(1).Info("retrieving source versions", "image", updates.ImageName)
 		versions, err := src.GetVersions(ctx)
 		if err != nil {
@@ -181,18 +204,14 @@ func (r *Reconciler) reconcileGarbageCollection(ctx context.Context, log logr.Lo
 		log.V(1).Info("referenced versions retrieved", "count", len(referencedVersions), "image", updates.ImageName)
 
 		versionsToDelete := make(map[string]struct{})
-		for _, v := range versions {
-			if v.CreatedAt.IsZero() {
-				log.V(1).Info("skipping version with zero CreatedAt", "version", v.Version)
+		for tag, pushedAt := range tags {
+			if _, isReferenced := referencedVersions[tag]; isReferenced {
+				log.V(2).Info("skipping referenced version", "version", tag)
 				continue
 			}
-			if _, isReferenced := referencedVersions[v.Version]; isReferenced {
-				log.V(2).Info("skipping referenced version", "version", v.Version)
-				continue
-			}
-			if v.CreatedAt.Before(cutoff) {
-				versionsToDelete[v.Version] = struct{}{}
-				log.V(1).Info("marking version for deletion", "version", v.Version)
+			if pushedAt.Before(cutoff) {
+				versionsToDelete[tag] = struct{}{}
+				log.V(1).Info("marking version for deletion", "version", tag, "pushedAt", pushedAt)
 			}
 		}
 
@@ -462,10 +481,91 @@ func (r *Reconciler) failWithStatusUpdate(ctx context.Context, mcp *v1alpha1.Man
 	return returnErr
 }
 
+func fetchKeppelTags(ctx context.Context, registry, repository string) (map[string]time.Time, error) {
+	baseURL := registryBaseURL(registry, false)
+	url, err := keppelURL(baseURL, repository)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
+	if err != nil {
+		return nil, err
+	}
+
+	tr := &http.Transport{
+		TLSHandshakeTimeout: 10 * time.Second,
+		TLSClientConfig: &tls.Config{
+			MinVersion: tls.VersionTLS12,
+		},
+	}
+	httpClient := &http.Client{
+		Timeout:   30 * time.Second,
+		Transport: tr,
+	}
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("keppel API returned status %d", resp.StatusCode)
+	}
+
+	var result KeppelManifestsResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+
+	tagMap := make(map[string]time.Time)
+	for _, m := range result.Manifests {
+		for _, t := range m.Tags {
+			normalizedTag := strings.ReplaceAll(t.Name, "_", "+")
+			tagMap[normalizedTag] = time.Unix(t.PushedAt, 0)
+		}
+	}
+
+	return tagMap, nil
+}
+
+func keppelURL(baseURL, repository string) (string, error) {
+	account, repo, err := splitKeppelRepository(repository)
+	if err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf(
+		"%s/keppel/v1/accounts/%s/repositories/%s/_manifests",
+		baseURL,
+		account,
+		repo,
+	), nil
+}
+
+func registryBaseURL(registryHost string, insecure bool) string {
+	if insecure {
+		return "http://" + registryHost
+	}
+	return "https://" + registryHost
+}
+
+func splitKeppelRepository(repository string) (account string, repo string, err error) {
+	parts := strings.SplitN(repository, "/", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return "", "", fmt.Errorf("invalid repository format %q, must be <account>/<repository-path>", repository)
+	}
+	return parts[0], parts[1], nil
+}
+
 // SetupWithManager attaches the controller to the given manager.
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if r.OCISourceFactory == nil {
 		r.OCISourceFactory = &DefaultOCISourceFactory{}
+	}
+	if r.FetchKeppelTagsFunc == nil {
+		r.FetchKeppelTagsFunc = fetchKeppelTags
 	}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1alpha1.ManagedCloudProfile{}).
