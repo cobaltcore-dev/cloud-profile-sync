@@ -48,7 +48,7 @@ func (f *DefaultOCISourceFactory) Create(params cloudprofilesync.OCIParams, inse
 type Reconciler struct {
 	client.Client
 	OCISourceFactory    OCISourceFactory
-	FetchKeppelTagsFunc func(ctx context.Context, registry, repository string) (map[string]time.Time, error)
+	FetchKeppelTagsFunc func(ctx context.Context, log logr.Logger, registry, repository string) (map[string]time.Time, error)
 }
 
 type KeppelTag struct {
@@ -185,7 +185,7 @@ func (r *Reconciler) reconcileGarbageCollection(ctx context.Context, log logr.Lo
 			return r.failWithStatusUpdate(ctx, mcp, fmt.Errorf("failed to initialize OCI source for garbage collection: %w", err))
 		}
 
-		tags, err := r.FetchKeppelTagsFunc(ctx, updates.Source.OCI.Registry, updates.Source.OCI.Repository)
+		tags, err := r.FetchKeppelTagsFunc(ctx, log, updates.Source.OCI.Registry, updates.Source.OCI.Repository)
 		if err != nil {
 			return r.failWithStatusUpdate(ctx, mcp, fmt.Errorf("failed to fetch Keppel tags: %w", err))
 		}
@@ -481,15 +481,27 @@ func (r *Reconciler) failWithStatusUpdate(ctx context.Context, mcp *v1alpha1.Man
 	return returnErr
 }
 
-func fetchKeppelTags(ctx context.Context, registry, repository string) (map[string]time.Time, error) {
-	baseURL := registryBaseURL(registry, false)
-	url, err := keppelURL(baseURL, repository)
+func fetchKeppelTags(ctx context.Context, log logr.Logger, registry, repository string) (map[string]time.Time, error) {
+	baseURL := registryBaseURL(log, registry, false)
+
+	url, err := keppelURL(log, baseURL, repository)
 	if err != nil {
+		log.Error(err, "failed to build keppel URL",
+			"registry", registry,
+			"repository", repository,
+		)
 		return nil, err
 	}
 
+	log.V(1).Info("fetching keppel tags",
+		"url", url,
+		"registry", registry,
+		"repository", repository,
+	)
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
 	if err != nil {
+		log.Error(err, "failed to create keppel request")
 		return nil, err
 	}
 
@@ -499,6 +511,7 @@ func fetchKeppelTags(ctx context.Context, registry, repository string) (map[stri
 			MinVersion: tls.VersionTLS12,
 		},
 	}
+
 	httpClient := &http.Client{
 		Timeout:   30 * time.Second,
 		Transport: tr,
@@ -506,57 +519,119 @@ func fetchKeppelTags(ctx context.Context, registry, repository string) (map[stri
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
+		log.Error(err, "keppel http request failed", "url", url)
 		return nil, err
 	}
 	defer resp.Body.Close()
 
+	log.V(1).Info("keppel response received", "status", resp.StatusCode)
+
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("keppel API returned status %d", resp.StatusCode)
+		err := fmt.Errorf("keppel API returned status %d", resp.StatusCode)
+		log.Error(err, "unexpected keppel status code")
+		return nil, err
 	}
 
 	var result KeppelManifestsResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		log.Error(err, "failed to decode keppel response")
 		return nil, err
 	}
 
+	log.V(1).Info("decoded keppel response", "manifests", len(result.Manifests))
+
 	tagMap := make(map[string]time.Time)
-	for _, m := range result.Manifests {
+
+	for i, m := range result.Manifests {
+		log.V(2).Info("processing manifest",
+			"index", i,
+			"digest", m.Digest,
+			"tags", len(m.Tags),
+		)
+
 		for _, t := range m.Tags {
 			normalizedTag := strings.ReplaceAll(t.Name, "_", "+")
-			tagMap[normalizedTag] = time.Unix(t.PushedAt, 0)
+			pushedAt := time.Unix(t.PushedAt, 0)
+
+			log.V(2).Info("processing tag",
+				"raw", t.Name,
+				"normalized", normalizedTag,
+				"pushedAt", pushedAt,
+			)
+
+			tagMap[normalizedTag] = pushedAt
 		}
 	}
+
+	log.V(1).Info("finished fetching keppel tags", "count", len(tagMap))
 
 	return tagMap, nil
 }
 
-func keppelURL(baseURL, repository string) (string, error) {
-	account, repo, err := splitKeppelRepository(repository)
+func keppelURL(log logr.Logger, baseURL, repository string) (string, error) {
+	account, repo, err := splitKeppelRepository(log, repository)
 	if err != nil {
+		log.Error(err, "failed to split keppel repository", "repository", repository)
 		return "", err
 	}
 
-	return fmt.Sprintf(
+	url := fmt.Sprintf(
 		"%s/keppel/v1/accounts/%s/repositories/%s/_manifests",
 		baseURL,
 		account,
 		repo,
-	), nil
+	)
+
+	log.V(1).Info("constructed keppel url",
+		"baseURL", baseURL,
+		"account", account,
+		"repo", repo,
+		"url", url,
+	)
+
+	return url, nil
 }
 
-func registryBaseURL(registryHost string, insecure bool) string {
+func registryBaseURL(log logr.Logger, registryHost string, insecure bool) string {
+	scheme := "https"
 	if insecure {
-		return "http://" + registryHost
+		scheme = "http"
 	}
-	return "https://" + registryHost
+
+	base := scheme + "://" + registryHost
+
+	log.V(2).Info("computed registry base url",
+		"registryHost", registryHost,
+		"insecure", insecure,
+		"baseURL", base,
+	)
+
+	return base
 }
 
-func splitKeppelRepository(repository string) (account string, repo string, err error) {
+func splitKeppelRepository(log logr.Logger, repository string) (account, repo string, err error) {
 	parts := strings.SplitN(repository, "/", 2)
+
 	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-		return "", "", fmt.Errorf("invalid repository format %q, must be <account>/<repository-path>", repository)
+		err := fmt.Errorf("invalid repository format %q, must be <account>/<repository-path>", repository)
+
+		log.Error(err, "invalid keppel repository format",
+			"repository", repository,
+		)
+
+		return "", "", err
 	}
-	return parts[0], parts[1], nil
+
+	account = parts[0]
+	repo = parts[1]
+
+	log.V(2).Info("split keppel repository",
+		"repository", repository,
+		"account", account,
+		"repo", repo,
+	)
+
+	return account, repo, nil
 }
 
 // SetupWithManager attaches the controller to the given manager.

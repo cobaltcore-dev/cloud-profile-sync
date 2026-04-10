@@ -13,10 +13,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/ptr"
-	controllerruntime "sigs.k8s.io/controller-runtime"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	gardenerv1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
+	"github.com/go-logr/logr"
 	providercfg "github.com/ironcore-dev/gardener-extension-provider-ironcore-metal/pkg/apis/metal/v1alpha1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -218,7 +219,7 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 				Source: v1alpha1.MachineImageUpdateSource{
 					OCI: &v1alpha1.MachineImageUpdateSourceOCI{
 						Registry:   registryAddr,
-						Repository: orasRepoName("account", "repo"),
+						Repository: orasRepoName("repo"),
 						Insecure:   true,
 					},
 				},
@@ -275,7 +276,7 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 				Source: v1alpha1.MachineImageUpdateSource{
 					OCI: &v1alpha1.MachineImageUpdateSourceOCI{
 						Registry:   registryAddr,
-						Repository: orasRepoName("account", "repo"),
+						Repository: orasRepoName("repo"),
 						Insecure:   true,
 						Username:   "user",
 						Password: v1alpha1.SecretReference{
@@ -338,33 +339,70 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 			},
 		}
 
+		mcp.Spec.MachineImageUpdates = []v1alpha1.MachineImageUpdate{
+			{
+				ImageName: "gc-image",
+				Source: v1alpha1.MachineImageUpdateSource{
+					OCI: &v1alpha1.MachineImageUpdateSourceOCI{
+						Registry:   "fake",
+						Repository: "repo",
+						Insecure:   true,
+					},
+				},
+			},
+		}
+
 		mcp.Spec.GarbageCollection = &v1alpha1.GarbageCollectionConfig{
 			Enabled: true,
-			MaxAge:  metav1.Duration{Duration: 1 * time.Second},
+			MaxAge:  metav1.Duration{Duration: 24 * time.Hour},
 		}
 
 		Expect(k8sClient.Create(ctx, &mcp)).To(Succeed())
 
+		shoot := &gardenerv1beta1.Shoot{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-shoot",
+				Namespace: metav1.NamespaceDefault,
+			},
+			Spec: gardenerv1beta1.ShootSpec{
+				CloudProfile: &gardenerv1beta1.CloudProfileReference{
+					Name: mcp.Name,
+				},
+				Provider: gardenerv1beta1.Provider{
+					Workers: []gardenerv1beta1.Worker{
+						{
+							Name: "worker1",
+							Machine: gardenerv1beta1.Machine{
+								Image: &gardenerv1beta1.ShootMachineImage{
+									Name:    "gc-image",
+									Version: &newVersion,
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, shoot)).To(Succeed())
+
 		reconciler := &controllers.Reconciler{
 			Client:           k8sClient,
 			OCISourceFactory: &fakeFactory{},
-			FetchKeppelTagsFunc: func(ctx context.Context, registry, repository string) (map[string]time.Time, error) {
+			FetchKeppelTagsFunc: func(ctx context.Context, log logr.Logger, registry, repository string) (map[string]time.Time, error) {
 				base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 
 				return map[string]time.Time{
-					"0.1.0": base.Add(-2 * time.Hour),
-					"1.0.0": base.Add(-30 * time.Minute),
+					"0.1.0":     base.Add(-10 * time.Hour),
+					"1.0.0":     base.Add(-10 * time.Hour),
+					"1.0.1+abc": base.Add(-10 * time.Hour),
 				}, nil
 			},
 		}
 
-		_ = reconciler
-
-		Eventually(func(g Gomega) v1alpha1.ReconcileStatus {
-			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(&mcp), &mcp)).To(Succeed())
-			return mcp.Status.Status
-		}, 20*time.Second, 300*time.Millisecond).
-			Should(Equal(v1alpha1.SucceededReconcileStatus))
+		_, err := reconciler.Reconcile(ctx, ctrl.Request{
+			NamespacedName: client.ObjectKey{Name: mcp.Name},
+		})
+		Expect(err).ToNot(HaveOccurred())
 
 		Eventually(func(g Gomega) []string {
 			var cp gardenerv1beta1.CloudProfile
@@ -375,13 +413,12 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 				versions = append(versions, v.Version)
 			}
 			return versions
-		}, 25*time.Second, 300*time.Millisecond).
+		}, 10*time.Second, 200*time.Millisecond).
 			Should(ConsistOf(newVersion))
 	})
 
 	It("preserves old machine image versions referenced by Shoot worker pools", func(ctx SpecContext) {
 		version := "1.0.0"
-		amd64 := "amd64"
 
 		var cloudProfile gardenerv1beta1.CloudProfile
 		cloudProfile.Name = "test-gc-preserve"
@@ -440,7 +477,7 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 				Source: v1alpha1.MachineImageUpdateSource{
 					OCI: &v1alpha1.MachineImageUpdateSourceOCI{
 						Registry:   registryAddr,
-						Repository: orasRepoName("account", "repo"),
+						Repository: orasRepoName("repo"),
 						Insecure:   true,
 					},
 				},
@@ -558,7 +595,7 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 		reconciler := &controllers.Reconciler{
 			Client:           k8sClient,
 			OCISourceFactory: &fakeFactory{},
-			FetchKeppelTagsFunc: func(ctx context.Context, registry, repository string) (map[string]time.Time, error) {
+			FetchKeppelTagsFunc: func(ctx context.Context, log logr.Logger, registry, repository string) (map[string]time.Time, error) {
 				now := time.Now()
 				return map[string]time.Time{
 					"1.0.0":     now.Add(-2 * time.Hour),
@@ -567,7 +604,7 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 			},
 		}
 
-		req := controllerruntime.Request{
+		req := ctrl.Request{
 			NamespacedName: client.ObjectKey{Name: mcp.Name},
 		}
 		res, err := reconciler.Reconcile(context.Background(), req)
@@ -606,7 +643,7 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 				Source: v1alpha1.MachineImageUpdateSource{
 					OCI: &v1alpha1.MachineImageUpdateSourceOCI{
 						Registry:   "invalid://registry",
-						Repository: orasRepoName("account", "repository"),
+						Repository: orasRepoName("repository"),
 						Insecure:   true,
 					},
 				},

@@ -53,8 +53,8 @@ func TestControllers(t *testing.T) {
 	RunSpecs(t, "Controllers Suite")
 }
 
-func orasRepoName(account, repo string) string {
-	return account + "/" + strings.ReplaceAll(repo, "/", "_")
+func orasRepoName(repo string) string {
+	return "account/" + strings.ReplaceAll(repo, "/", "_")
 }
 
 var _ = BeforeSuite(func(ctx SpecContext) {
@@ -119,7 +119,7 @@ var _ = BeforeSuite(func(ctx SpecContext) {
 		return nil
 	}).Should(Succeed())
 
-	repoName := orasRepoName("account", "repo")
+	repoName := orasRepoName("repo")
 
 	repo, err := remote.NewRepository(registryAddr + "/" + repoName)
 	Expect(err).To(Succeed())
