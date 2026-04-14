@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"slices"
 	"strings"
 	"time"
@@ -186,6 +187,7 @@ func (r *Reconciler) reconcileGarbageCollection(ctx context.Context, log logr.Lo
 		}
 
 		log.V(1).Info("retrieving source versions", "image", updates.ImageName)
+		ctx = logr.NewContext(ctx, log)
 		tags, err := registryClient.GetTags(
 			ctx,
 			updates.Source.OCI.Registry,
@@ -488,7 +490,7 @@ func fetchKeppelTags(ctx context.Context, registry, repository string) (map[stri
 	}
 	baseURL := registryBaseURL(log, registry, false)
 
-	url, err := keppelURL(log, baseURL, repository)
+	keppelURL, err := keppelURL(log, baseURL, repository)
 	if err != nil {
 		log.Error(err, "failed to build keppel URL",
 			"registry", registry,
@@ -498,12 +500,12 @@ func fetchKeppelTags(ctx context.Context, registry, repository string) (map[stri
 	}
 
 	log.V(1).Info("fetching keppel tags",
-		"url", url,
+		"url", keppelURL,
 		"registry", registry,
 		"repository", repository,
 	)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, keppelURL, http.NoBody)
 	if err != nil {
 		log.Error(err, "failed to create keppel request")
 		return nil, err
@@ -523,7 +525,7 @@ func fetchKeppelTags(ctx context.Context, registry, repository string) (map[stri
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		log.Error(err, "keppel http request failed", "url", url)
+		log.Error(err, "keppel http request failed", "url", keppelURL)
 		return nil, err
 	}
 	defer resp.Body.Close()
@@ -554,16 +556,16 @@ func fetchKeppelTags(ctx context.Context, registry, repository string) (map[stri
 		)
 
 		for _, t := range m.Tags {
-			if t.PushedAt > 0 {
-				tagMap[t.Name] = time.Unix(t.PushedAt, 0)
-			} else {
-				tagMap[t.Name] = time.Time{}
+			if t.PushedAt == 0 {
+				log.V(1).Info("tag without pushed at", "name", t.Name)
+				continue
 			}
 
 			log.V(2).Info("processing tag",
 				"tag", t.Name,
 				"pushedAt", t.PushedAt,
 			)
+			tagMap[t.Name] = time.Unix(t.PushedAt, 0)
 		}
 	}
 
@@ -579,7 +581,7 @@ func keppelURL(log logr.Logger, baseURL, repository string) (string, error) {
 		return "", err
 	}
 
-	url := fmt.Sprintf(
+	keppelURL := fmt.Sprintf(
 		"%s/keppel/v1/accounts/%s/repositories/%s/_manifests",
 		baseURL,
 		account,
@@ -590,10 +592,10 @@ func keppelURL(log logr.Logger, baseURL, repository string) (string, error) {
 		"baseURL", baseURL,
 		"account", account,
 		"repo", repo,
-		"url", url,
+		"url", keppelURL,
 	)
 
-	return url, nil
+	return keppelURL, nil
 }
 
 func registryBaseURL(log logr.Logger, registryHost string, insecure bool) string {
@@ -602,7 +604,12 @@ func registryBaseURL(log logr.Logger, registryHost string, insecure bool) string
 		scheme = "http"
 	}
 
-	base := scheme + "://" + registryHost
+	u := &url.URL{
+		Scheme: scheme,
+		Host:   registryHost,
+	}
+
+	base := u.String()
 
 	log.V(2).Info("computed registry base url",
 		"registryHost", registryHost,
