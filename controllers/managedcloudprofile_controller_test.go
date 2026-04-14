@@ -17,7 +17,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	gardenerv1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
-	"github.com/go-logr/logr"
 	providercfg "github.com/ironcore-dev/gardener-extension-provider-ironcore-metal/pkg/apis/metal/v1alpha1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -60,7 +59,7 @@ func (m *mockOCIFactory) Create(params cloudprofilesync.OCIParams, insecure bool
 
 type fakeRegistryClient struct{}
 
-func (f *fakeRegistryClient) GetTags(ctx context.Context, log logr.Logger, registry, repository string) (map[string]time.Time, error) {
+func (f *fakeRegistryClient) GetTags(ctx context.Context, registry, repository string) (map[string]time.Time, error) {
 	now := time.Now()
 	return map[string]time.Time{
 		"0.1.0":     now.Add(-48 * time.Hour),

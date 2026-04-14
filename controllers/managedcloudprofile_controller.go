@@ -39,13 +39,13 @@ type OCISourceFactory interface {
 }
 
 type RegistryClient interface {
-	GetTags(ctx context.Context, log logr.Logger, registry, repository string) (map[string]time.Time, error)
+	GetTags(ctx context.Context, registry, repository string) (map[string]time.Time, error)
 }
 
 type KeppelClient struct{}
 
-func (k *KeppelClient) GetTags(ctx context.Context, log logr.Logger, registry, repository string) (map[string]time.Time, error) {
-	return fetchKeppelTags(ctx, log, registry, repository)
+func (k *KeppelClient) GetTags(ctx context.Context, registry, repository string) (map[string]time.Time, error) {
+	return fetchKeppelTags(ctx, registry, repository)
 }
 
 // DefaultOCISourceFactory is the default implementation of OCISourceFactory.
@@ -188,7 +188,6 @@ func (r *Reconciler) reconcileGarbageCollection(ctx context.Context, log logr.Lo
 		log.V(1).Info("retrieving source versions", "image", updates.ImageName)
 		tags, err := registryClient.GetTags(
 			ctx,
-			log,
 			updates.Source.OCI.Registry,
 			updates.Source.OCI.Repository,
 		)
@@ -482,7 +481,11 @@ func (r *Reconciler) failWithStatusUpdate(ctx context.Context, mcp *v1alpha1.Man
 	return returnErr
 }
 
-func fetchKeppelTags(ctx context.Context, log logr.Logger, registry, repository string) (map[string]time.Time, error) {
+func fetchKeppelTags(ctx context.Context, registry, repository string) (map[string]time.Time, error) {
+	log, err := logr.FromContext(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to extract logger from context: %w", err)
+	}
 	baseURL := registryBaseURL(log, registry, false)
 
 	url, err := keppelURL(log, baseURL, repository)
@@ -551,14 +554,16 @@ func fetchKeppelTags(ctx context.Context, log logr.Logger, registry, repository 
 		)
 
 		for _, t := range m.Tags {
-			pushedAt := time.Unix(t.PushedAt, 0)
+			if t.PushedAt > 0 {
+				tagMap[t.Name] = time.Unix(t.PushedAt, 0)
+			} else {
+				tagMap[t.Name] = time.Time{}
+			}
 
 			log.V(2).Info("processing tag",
 				"tag", t.Name,
-				"pushedAt", pushedAt,
+				"pushedAt", t.PushedAt,
 			)
-
-			tagMap[t.Name] = pushedAt
 		}
 	}
 
