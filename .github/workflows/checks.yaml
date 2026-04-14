@@ -29,13 +29,13 @@ jobs:
         uses: actions/setup-go@v6
         with:
           check-latest: true
-          go-version: 1.26.1
+          go-version: 1.26.2
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
           version: latest
       - name: Delete pre-installed shellcheck
-        run: sudo rm -f $(which shellcheck)
+        run: sudo rm -f "$(which shellcheck)"
       - name: Run shellcheck
         run: make run-shellcheck
       - name: Dependency Licenses Review
@@ -45,7 +45,7 @@ jobs:
         env:
           CLICOLOR: "1"
       - name: Delete typos binary
-        run: rm typos
+        run: rm -f typos
       - name: Check if source code files have license header
         run: make check-addlicense
       - name: REUSE Compliance Check

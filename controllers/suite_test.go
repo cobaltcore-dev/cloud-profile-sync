@@ -50,8 +50,11 @@ var (
 
 func TestControllers(t *testing.T) {
 	RegisterFailHandler(Fail)
-
 	RunSpecs(t, "Controllers Suite")
+}
+
+func orasRepoName(repo string) string {
+	return "account/" + strings.ReplaceAll(repo, "/", "_")
 }
 
 var _ = BeforeSuite(func(ctx SpecContext) {
@@ -81,20 +84,18 @@ var _ = BeforeSuite(func(ctx SpecContext) {
 	reconciler = &controllers.Reconciler{
 		Client: k8sManager.GetClient(),
 	}
-	err = reconciler.SetupWithManager(k8sManager)
-	Expect(err).ToNot(HaveOccurred())
+	Expect(reconciler.SetupWithManager(k8sManager)).To(Succeed())
 
 	stopCtx, cancel := context.WithCancel(ctrl.SetupSignalHandler())
 	stop = cancel
+
 	go func() {
 		defer GinkgoRecover()
-		err = k8sManager.Start(stopCtx)
-		Expect(err).ToNot(HaveOccurred())
+		Expect(k8sManager.Start(stopCtx)).To(Succeed())
 	}()
 
 	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
 	Expect(err).To(Succeed())
-	Expect(k8sClient).ToNot(BeNil())
 
 	reg, err = registry.NewRegistry(stopCtx, &configuration.Configuration{
 		Storage:    configuration.Storage{"inmemory": map[string]any{}},
@@ -103,10 +104,12 @@ var _ = BeforeSuite(func(ctx SpecContext) {
 		Log:        configuration.Log{Level: "error", AccessLog: configuration.AccessLog{Disabled: true}},
 	})
 	Expect(err).To(Succeed())
+
 	go func() {
 		defer GinkgoRecover()
 		Expect(reg.ListenAndServe()).To(MatchError(http.ErrServerClosed))
 	}()
+
 	Eventually(func(g Gomega) error {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+registryAddr, http.NoBody)
 		g.Expect(err).To(Succeed())
@@ -116,9 +119,14 @@ var _ = BeforeSuite(func(ctx SpecContext) {
 		return nil
 	}).Should(Succeed())
 
-	repo, err := remote.NewRepository(registryAddr + "/repo")
+	repoName := orasRepoName("repo")
+
+	repo, err := remote.NewRepository(registryAddr + "/" + repoName)
 	Expect(err).To(Succeed())
 	repo.PlainHTTP = true
+
+	err = repo.Push(ctx, ocispec.DescriptorEmptyJSON, strings.NewReader("{}"))
+	Expect(err).To(Succeed())
 
 	index := ocispec.Index{
 		Versioned: specs.Versioned{SchemaVersion: 2},
@@ -134,19 +142,21 @@ var _ = BeforeSuite(func(ctx SpecContext) {
 			"created":      time.Now().Add(-24 * time.Hour).Format(time.RFC3339),
 		},
 	}
+
 	indexBlob, err := json.Marshal(index)
 	Expect(err).To(Succeed())
 
-	Expect(err).To(Succeed())
 	indexDesc := content.NewDescriptorFromBytes(ocispec.MediaTypeImageIndex, indexBlob)
 
 	err = repo.Push(ctx, ocispec.DescriptorEmptyJSON, strings.NewReader("{}"))
 	Expect(err).To(Succeed())
+
 	err = repo.PushReference(ctx, indexDesc, bytes.NewReader(indexBlob), "1.0.0")
 	Expect(err).To(Succeed())
 
 	err = repo.Push(ctx, ocispec.DescriptorEmptyJSON, strings.NewReader("{}"))
 	Expect(err).To(Succeed())
+
 	err = repo.PushReference(ctx, indexDesc, bytes.NewReader(indexBlob), "1.0.1_abc")
 	Expect(err).To(Succeed())
 })
@@ -154,7 +164,7 @@ var _ = BeforeSuite(func(ctx SpecContext) {
 var _ = AfterSuite(func(ctx SpecContext) {
 	stop()
 	Expect(reg.Shutdown(ctx)).To(Succeed())
+
 	By("tearing down the test environment")
-	err := testEnv.Stop()
-	Expect(err).ToNot(HaveOccurred())
+	Expect(testEnv.Stop()).To(Succeed())
 })

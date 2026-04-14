@@ -5,9 +5,12 @@ package controllers
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/url"
 	"slices"
 	"strings"
 	"time"
@@ -36,6 +39,16 @@ type OCISourceFactory interface {
 	Create(params cloudprofilesync.OCIParams, insecure bool) (cloudprofilesync.Source, error)
 }
 
+type RegistryClient interface {
+	GetTags(ctx context.Context, registry, repository string) (map[string]time.Time, error)
+}
+
+type KeppelClient struct{}
+
+func (k *KeppelClient) GetTags(ctx context.Context, registry, repository string) (map[string]time.Time, error) {
+	return fetchKeppelTags(ctx, registry, repository)
+}
+
 // DefaultOCISourceFactory is the default implementation of OCISourceFactory.
 type DefaultOCISourceFactory struct{}
 
@@ -45,7 +58,23 @@ func (f *DefaultOCISourceFactory) Create(params cloudprofilesync.OCIParams, inse
 
 type Reconciler struct {
 	client.Client
-	OCISourceFactory OCISourceFactory
+	OCISourceFactory     OCISourceFactory
+	RegistryProviderFunc func(registry string) (RegistryClient, error)
+}
+
+type KeppelTag struct {
+	Name     string `json:"name"`
+	PushedAt int64  `json:"pushed_at"`
+}
+
+type KeppelManifest struct {
+	Digest   string      `json:"digest"`
+	PushedAt int64       `json:"pushed_at"`
+	Tags     []KeppelTag `json:"tags"`
+}
+
+type KeppelManifestsResponse struct {
+	Manifests []KeppelManifest `json:"manifests"`
 }
 
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -150,29 +179,25 @@ func (r *Reconciler) reconcileGarbageCollection(ctx context.Context, log logr.Lo
 			continue
 		}
 
-		log.V(1).Info("fetching OCI credentials", "image", updates.ImageName)
-		password, err := r.getCredential(ctx, updates.Source.OCI.Password)
+		log.V(1).Info("retrieving source registry", "registry", updates.Source.OCI.Registry)
+		registryClient, err := r.RegistryProviderFunc(updates.Source.OCI.Registry)
 		if err != nil {
-			return r.failWithStatusUpdate(ctx, mcp, fmt.Errorf("failed to get credential for garbage collection: %w", err))
-		}
-
-		src, err := r.OCISourceFactory.Create(cloudprofilesync.OCIParams{
-			Registry:   updates.Source.OCI.Registry,
-			Repository: updates.Source.OCI.Repository,
-			Username:   updates.Source.OCI.Username,
-			Password:   string(password),
-			Parallel:   1,
-		}, updates.Source.OCI.Insecure)
-		if err != nil {
-			return r.failWithStatusUpdate(ctx, mcp, fmt.Errorf("failed to initialize OCI source for garbage collection: %w", err))
+			return r.failWithStatusUpdate(ctx, mcp,
+				fmt.Errorf("no registry provider found for registry %q: %w", updates.Source.OCI.Registry, err))
 		}
 
 		log.V(1).Info("retrieving source versions", "image", updates.ImageName)
-		versions, err := src.GetVersions(ctx)
+		ctx = logr.NewContext(ctx, log)
+		tags, err := registryClient.GetTags(
+			ctx,
+			updates.Source.OCI.Registry,
+			updates.Source.OCI.Repository,
+		)
 		if err != nil {
-			return r.failWithStatusUpdate(ctx, mcp, fmt.Errorf("failed to list source versions for garbage collection: %w", err))
+			return r.failWithStatusUpdate(ctx, mcp,
+				fmt.Errorf("failed to fetch tags: %w", err))
 		}
-		log.V(1).Info("retrieved source versions", "count", len(versions), "image", updates.ImageName)
+		log.V(1).Info("retrieved source versions", "count", len(tags))
 
 		referencedVersions, err := r.getReferencedVersions(ctx, mcp.Name, updates.ImageName, log)
 		if err != nil {
@@ -181,18 +206,14 @@ func (r *Reconciler) reconcileGarbageCollection(ctx context.Context, log logr.Lo
 		log.V(1).Info("referenced versions retrieved", "count", len(referencedVersions), "image", updates.ImageName)
 
 		versionsToDelete := make(map[string]struct{})
-		for _, v := range versions {
-			if v.CreatedAt.IsZero() {
-				log.V(1).Info("skipping version with zero CreatedAt", "version", v.Version)
+		for tag, pushedAt := range tags {
+			if _, isReferenced := referencedVersions[tag]; isReferenced {
+				log.V(2).Info("skipping referenced version", "version", tag)
 				continue
 			}
-			if _, isReferenced := referencedVersions[v.Version]; isReferenced {
-				log.V(2).Info("skipping referenced version", "version", v.Version)
-				continue
-			}
-			if v.CreatedAt.Before(cutoff) {
-				versionsToDelete[v.Version] = struct{}{}
-				log.V(1).Info("marking version for deletion", "version", v.Version)
+			if pushedAt.Before(cutoff) {
+				versionsToDelete[tag] = struct{}{}
+				log.V(1).Info("marking version for deletion", "version", tag, "pushedAt", pushedAt)
 			}
 		}
 
@@ -462,10 +483,186 @@ func (r *Reconciler) failWithStatusUpdate(ctx context.Context, mcp *v1alpha1.Man
 	return returnErr
 }
 
+func fetchKeppelTags(ctx context.Context, registry, repository string) (map[string]time.Time, error) {
+	log, err := logr.FromContext(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to extract logger from context: %w", err)
+	}
+	baseURL := registryBaseURL(log, registry, false)
+
+	keppelURL, err := keppelURL(log, baseURL, repository)
+	if err != nil {
+		log.Error(err, "failed to build keppel URL",
+			"registry", registry,
+			"repository", repository,
+		)
+		return nil, err
+	}
+
+	log.V(1).Info("fetching keppel tags",
+		"url", keppelURL,
+		"registry", registry,
+		"repository", repository,
+	)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, keppelURL, http.NoBody)
+	if err != nil {
+		log.Error(err, "failed to create keppel request")
+		return nil, err
+	}
+
+	tr := &http.Transport{
+		TLSHandshakeTimeout: 10 * time.Second,
+		TLSClientConfig: &tls.Config{
+			MinVersion: tls.VersionTLS12,
+		},
+	}
+
+	httpClient := &http.Client{
+		Timeout:   30 * time.Second,
+		Transport: tr,
+	}
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		log.Error(err, "keppel http request failed", "url", keppelURL)
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	log.V(1).Info("keppel response received", "status", resp.StatusCode)
+
+	if resp.StatusCode != http.StatusOK {
+		err := fmt.Errorf("keppel API returned status %d", resp.StatusCode)
+		log.Error(err, "unexpected keppel status code")
+		return nil, err
+	}
+
+	var result KeppelManifestsResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		log.Error(err, "failed to decode keppel response")
+		return nil, err
+	}
+
+	log.V(1).Info("decoded keppel response", "manifests", len(result.Manifests))
+
+	tagMap := make(map[string]time.Time)
+
+	for i, m := range result.Manifests {
+		log.V(2).Info("processing manifest",
+			"index", i,
+			"digest", m.Digest,
+			"tags", len(m.Tags),
+		)
+
+		for _, t := range m.Tags {
+			if t.PushedAt == 0 {
+				log.V(1).Info("tag without pushed at", "name", t.Name)
+				continue
+			}
+
+			log.V(2).Info("processing tag",
+				"tag", t.Name,
+				"pushedAt", t.PushedAt,
+			)
+			tagMap[t.Name] = time.Unix(t.PushedAt, 0)
+		}
+	}
+
+	log.V(1).Info("finished fetching keppel tags", "count", len(tagMap))
+
+	return tagMap, nil
+}
+
+func keppelURL(log logr.Logger, baseURL, repository string) (string, error) {
+	account, repo, err := splitKeppelRepository(log, repository)
+	if err != nil {
+		log.Error(err, "failed to split keppel repository", "repository", repository)
+		return "", err
+	}
+
+	keppelURL := fmt.Sprintf(
+		"%s/keppel/v1/accounts/%s/repositories/%s/_manifests",
+		baseURL,
+		account,
+		repo,
+	)
+
+	log.V(1).Info("constructed keppel url",
+		"baseURL", baseURL,
+		"account", account,
+		"repo", repo,
+		"url", keppelURL,
+	)
+
+	return keppelURL, nil
+}
+
+func registryBaseURL(log logr.Logger, registryHost string, insecure bool) string {
+	scheme := "https"
+	if insecure {
+		scheme = "http"
+	}
+
+	u := &url.URL{
+		Scheme: scheme,
+		Host:   registryHost,
+	}
+
+	base := u.String()
+
+	log.V(2).Info("computed registry base url",
+		"registryHost", registryHost,
+		"insecure", insecure,
+		"baseURL", base,
+	)
+
+	return base
+}
+
+func splitKeppelRepository(log logr.Logger, repository string) (account, repo string, err error) {
+	parts := strings.SplitN(repository, "/", 2)
+
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		err := fmt.Errorf("invalid repository format %q, must be <account>/<repository-path>", repository)
+
+		log.Error(err, "invalid keppel repository format",
+			"repository", repository,
+		)
+
+		return "", "", err
+	}
+
+	account = parts[0]
+	repo = parts[1]
+
+	log.V(2).Info("split keppel repository",
+		"repository", repository,
+		"account", account,
+		"repo", repo,
+	)
+
+	return account, repo, nil
+}
+
+func (r *Reconciler) getRegistryProvider(registry string) (registryClient RegistryClient, err error) {
+	if registry == "" {
+		return nil, errors.New("registry cannot be empty")
+	}
+	if strings.Contains(strings.ToLower(registry), "keppel") {
+		return &KeppelClient{}, nil
+	}
+
+	return nil, errors.New("no registry provider found for registry")
+}
+
 // SetupWithManager attaches the controller to the given manager.
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if r.OCISourceFactory == nil {
 		r.OCISourceFactory = &DefaultOCISourceFactory{}
+	}
+	if r.RegistryProviderFunc == nil {
+		r.RegistryProviderFunc = r.getRegistryProvider
 	}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1alpha1.ManagedCloudProfile{}).
