@@ -325,7 +325,7 @@ func (r *Reconciler) getReferencedVersions(ctx context.Context, cloudProfileName
 				if idx := strings.LastIndex(v.Image, ":"); idx != -1 {
 					version := v.Image[idx+1:]
 					referenced[version] = struct{}{}
-					log.V(2).Info("found referenced version in ProviderConfig", "version", version)
+					log.V(1).Info("found referenced version in ProviderConfig", "version", version)
 				}
 			}
 		}
@@ -347,7 +347,7 @@ func (r *Reconciler) getReferencedVersions(ctx context.Context, cloudProfileName
 			}
 			if worker.Machine.Image.Version != nil {
 				referenced[*worker.Machine.Image.Version] = struct{}{}
-				log.V(2).Info("found referenced version in Shoot", "shoot", shoot.Name, "worker", worker.Name, "version", *worker.Machine.Image.Version)
+				log.V(1).Info("found referenced version in Shoot", "shoot", shoot.Name, "worker", worker.Name, "version", *worker.Machine.Image.Version)
 			}
 		}
 	}
