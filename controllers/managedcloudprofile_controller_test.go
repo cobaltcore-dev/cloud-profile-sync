@@ -58,6 +58,17 @@ func (m *mockOCIFactory) Create(params cloudprofilesync.OCIParams, insecure bool
 	return m.createFunc(params, insecure)
 }
 
+type fakeRegistryClient struct{}
+
+func (f *fakeRegistryClient) GetTags(ctx context.Context, log logr.Logger, registry, repository string) (map[string]time.Time, error) {
+	now := time.Now()
+	return map[string]time.Time{
+		"0.1.0":     now.Add(-48 * time.Hour),
+		"1.0.0":     now.Add(-1 * time.Hour),
+		"1.0.1+abc": now.Add(-48 * time.Hour),
+	}, nil
+}
+
 var _ = Describe("The ManagedCloudProfile reconciler", func() {
 	amd64 := "amd64"
 
@@ -344,8 +355,8 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 				ImageName: "gc-image",
 				Source: v1alpha1.MachineImageUpdateSource{
 					OCI: &v1alpha1.MachineImageUpdateSourceOCI{
-						Registry:   "fake",
-						Repository: "repo",
+						Registry:   "keppel-fake",
+						Repository: "account/repo",
 						Insecure:   true,
 					},
 				},
@@ -388,14 +399,8 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 		reconciler := &controllers.Reconciler{
 			Client:           k8sClient,
 			OCISourceFactory: &fakeFactory{},
-			FetchKeppelTagsFunc: func(ctx context.Context, log logr.Logger, registry, repository string) (map[string]time.Time, error) {
-				base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-
-				return map[string]time.Time{
-					"0.1.0":     base.Add(-10 * time.Hour),
-					"1.0.0":     base.Add(-10 * time.Hour),
-					"1.0.1+abc": base.Add(-10 * time.Hour),
-				}, nil
+			RegistryProviderFunc: func(registry string) (controllers.RegistryClient, error) {
+				return &fakeRegistryClient{}, nil
 			},
 		}
 
@@ -409,8 +414,12 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 			g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: mcp.Name}, &cp)).To(Succeed())
 
 			var versions []string
-			for _, v := range cp.Spec.MachineImages[0].Versions {
-				versions = append(versions, v.Version)
+			for _, mi := range cp.Spec.MachineImages {
+				if mi.Name == "gc-image" {
+					for _, v := range mi.Versions {
+						versions = append(versions, v.Version)
+					}
+				}
 			}
 			return versions
 		}, 10*time.Second, 200*time.Millisecond).
@@ -577,8 +586,8 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 						ImageName: "shoot-preserve-image",
 						Source: v1alpha1.MachineImageUpdateSource{
 							OCI: &v1alpha1.MachineImageUpdateSourceOCI{
-								Registry:   "fake",
-								Repository: "repo",
+								Registry:   "keppel-fake",
+								Repository: "account/repo",
 								Insecure:   true,
 							},
 						},
@@ -595,18 +604,15 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 		reconciler := &controllers.Reconciler{
 			Client:           k8sClient,
 			OCISourceFactory: &fakeFactory{},
-			FetchKeppelTagsFunc: func(ctx context.Context, log logr.Logger, registry, repository string) (map[string]time.Time, error) {
-				now := time.Now()
-				return map[string]time.Time{
-					"1.0.0":     now.Add(-2 * time.Hour),
-					"1.0.1+abc": now.Add(-3 * time.Hour),
-				}, nil
+			RegistryProviderFunc: func(registry string) (controllers.RegistryClient, error) {
+				return &fakeRegistryClient{}, nil
 			},
 		}
 
 		req := ctrl.Request{
 			NamespacedName: client.ObjectKey{Name: mcp.Name},
 		}
+
 		res, err := reconciler.Reconcile(context.Background(), req)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(res.RequeueAfter).To(Equal(5 * time.Minute))

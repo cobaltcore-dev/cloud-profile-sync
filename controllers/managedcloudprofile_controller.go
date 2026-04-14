@@ -38,6 +38,16 @@ type OCISourceFactory interface {
 	Create(params cloudprofilesync.OCIParams, insecure bool) (cloudprofilesync.Source, error)
 }
 
+type RegistryClient interface {
+	GetTags(ctx context.Context, log logr.Logger, registry, repository string) (map[string]time.Time, error)
+}
+
+type KeppelClient struct{}
+
+func (k *KeppelClient) GetTags(ctx context.Context, log logr.Logger, registry, repository string) (map[string]time.Time, error) {
+	return fetchKeppelTags(ctx, log, registry, repository)
+}
+
 // DefaultOCISourceFactory is the default implementation of OCISourceFactory.
 type DefaultOCISourceFactory struct{}
 
@@ -47,8 +57,8 @@ func (f *DefaultOCISourceFactory) Create(params cloudprofilesync.OCIParams, inse
 
 type Reconciler struct {
 	client.Client
-	OCISourceFactory    OCISourceFactory
-	FetchKeppelTagsFunc func(ctx context.Context, log logr.Logger, registry, repository string) (map[string]time.Time, error)
+	OCISourceFactory     OCISourceFactory
+	RegistryProviderFunc func(registry string) (RegistryClient, error)
 }
 
 type KeppelTag struct {
@@ -168,34 +178,25 @@ func (r *Reconciler) reconcileGarbageCollection(ctx context.Context, log logr.Lo
 			continue
 		}
 
-		log.V(1).Info("fetching OCI credentials", "image", updates.ImageName)
-		password, err := r.getCredential(ctx, updates.Source.OCI.Password)
+		log.V(1).Info("retrieving source registry", "registry", updates.Source.OCI.Registry)
+		registryClient, err := r.RegistryProviderFunc(updates.Source.OCI.Registry)
 		if err != nil {
-			return r.failWithStatusUpdate(ctx, mcp, fmt.Errorf("failed to get credential for garbage collection: %w", err))
-		}
-
-		src, err := r.OCISourceFactory.Create(cloudprofilesync.OCIParams{
-			Registry:   updates.Source.OCI.Registry,
-			Repository: updates.Source.OCI.Repository,
-			Username:   updates.Source.OCI.Username,
-			Password:   string(password),
-			Parallel:   1,
-		}, updates.Source.OCI.Insecure)
-		if err != nil {
-			return r.failWithStatusUpdate(ctx, mcp, fmt.Errorf("failed to initialize OCI source for garbage collection: %w", err))
-		}
-
-		tags, err := r.FetchKeppelTagsFunc(ctx, log, updates.Source.OCI.Registry, updates.Source.OCI.Repository)
-		if err != nil {
-			return r.failWithStatusUpdate(ctx, mcp, fmt.Errorf("failed to fetch Keppel tags: %w", err))
+			return r.failWithStatusUpdate(ctx, mcp,
+				fmt.Errorf("no registry provider found for registry %q: %w", updates.Source.OCI.Registry, err))
 		}
 
 		log.V(1).Info("retrieving source versions", "image", updates.ImageName)
-		versions, err := src.GetVersions(ctx)
+		tags, err := registryClient.GetTags(
+			ctx,
+			log,
+			updates.Source.OCI.Registry,
+			updates.Source.OCI.Repository,
+		)
 		if err != nil {
-			return r.failWithStatusUpdate(ctx, mcp, fmt.Errorf("failed to list source versions for garbage collection: %w", err))
+			return r.failWithStatusUpdate(ctx, mcp,
+				fmt.Errorf("failed to fetch tags: %w", err))
 		}
-		log.V(1).Info("retrieved source versions", "count", len(versions), "image", updates.ImageName)
+		log.V(1).Info("retrieved source versions", "count", len(tags))
 
 		referencedVersions, err := r.getReferencedVersions(ctx, mcp.Name, updates.ImageName, log)
 		if err != nil {
@@ -550,16 +551,14 @@ func fetchKeppelTags(ctx context.Context, log logr.Logger, registry, repository 
 		)
 
 		for _, t := range m.Tags {
-			normalizedTag := strings.ReplaceAll(t.Name, "_", "+")
 			pushedAt := time.Unix(t.PushedAt, 0)
 
 			log.V(2).Info("processing tag",
-				"raw", t.Name,
-				"normalized", normalizedTag,
+				"tag", t.Name,
 				"pushedAt", pushedAt,
 			)
 
-			tagMap[normalizedTag] = pushedAt
+			tagMap[t.Name] = pushedAt
 		}
 	}
 
@@ -634,13 +633,24 @@ func splitKeppelRepository(log logr.Logger, repository string) (account, repo st
 	return account, repo, nil
 }
 
+func (r *Reconciler) getRegistryProvider(registry string) (registryClient RegistryClient, err error) {
+	if registry == "" {
+		return nil, errors.New("registry cannot be empty")
+	}
+	if strings.Contains(strings.ToLower(registry), "keppel") {
+		return &KeppelClient{}, nil
+	}
+
+	return nil, errors.New("no registry provider found for registry")
+}
+
 // SetupWithManager attaches the controller to the given manager.
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if r.OCISourceFactory == nil {
 		r.OCISourceFactory = &DefaultOCISourceFactory{}
 	}
-	if r.FetchKeppelTagsFunc == nil {
-		r.FetchKeppelTagsFunc = fetchKeppelTags
+	if r.RegistryProviderFunc == nil {
+		r.RegistryProviderFunc = r.getRegistryProvider
 	}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1alpha1.ManagedCloudProfile{}).
