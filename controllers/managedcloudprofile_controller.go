@@ -305,32 +305,6 @@ func (r *Reconciler) getReferencedVersions(ctx context.Context, cloudProfileName
 	referenced := make(map[string]struct{})
 	log.V(1).Info("retrieving referenced versions", "cloudProfile", cloudProfileName, "image", imageName)
 
-	var cp gardenerv1beta1.CloudProfile
-	if err := r.Get(ctx, types.NamespacedName{Name: cloudProfileName}, &cp); err != nil {
-		log.Error(err, "failed to get CloudProfile")
-		return nil, fmt.Errorf("failed to get CloudProfile: %w", err)
-	}
-
-	if cp.Spec.ProviderConfig != nil {
-		var cfg providercfg.CloudProfileConfig
-		if err := json.Unmarshal(cp.Spec.ProviderConfig.Raw, &cfg); err != nil {
-			log.Error(err, "failed to unmarshal ProviderConfig")
-			return nil, fmt.Errorf("failed to unmarshal ProviderConfig: %w", err)
-		}
-		for _, img := range cfg.MachineImages {
-			if img.Name != imageName {
-				continue
-			}
-			for _, v := range img.Versions {
-				if idx := strings.LastIndex(v.Image, ":"); idx != -1 {
-					version := v.Image[idx+1:]
-					referenced[version] = struct{}{}
-					log.V(1).Info("found referenced version in ProviderConfig", "version", version)
-				}
-			}
-		}
-	}
-
 	shootList := &gardenerv1beta1.ShootList{}
 	if err := r.List(ctx, shootList, client.InNamespace(metav1.NamespaceAll)); err != nil {
 		log.Error(err, "failed to list Shoots")
