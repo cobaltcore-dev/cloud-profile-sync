@@ -22,21 +22,25 @@ var log = ctrl.Log.WithName("filewatcher")
 func RerunOnFileUpdate(ctx context.Context, path string, runFunc func(ctx context.Context)) {
 	log.Info("watching file", "path", path)
 
-	reloadCh := make(<-chan struct{})
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		log.Error(err, "unable to create file watcher; hot-reload disabled")
-	} else {
-		defer watcher.Close()
-		// Watch the parent directory to handle Kubernetes atomic Secret volume
-		// updates which swap a "..data" symlink rather than writing the file directly.
-		if err := watcher.Add(filepath.Dir(path)); err != nil {
-			log.Error(err, "unable to watch file directory; hot-reload disabled")
-		} else {
-			reloadCh = debounceWatcher(watcher, filepath.Base(path))
-		}
+		runFunc(ctx)
+
+		return
 	}
 
+	defer watcher.Close()
+	// Watch the parent directory to handle Kubernetes atomic Secret volume
+	// updates which swap a "..data" symlink rather than writing the file directly.
+	if err := watcher.Add(filepath.Dir(path)); err != nil {
+		log.Error(err, "unable to watch file directory; hot-reload disabled")
+		runFunc(ctx)
+
+		return
+	}
+
+	reloadCh := debounceWatcher(watcher, filepath.Base(path))
 	for {
 		runCtx, runCancel := context.WithCancel(ctx)
 		go func() {
@@ -50,10 +54,10 @@ func RerunOnFileUpdate(ctx context.Context, path string, runFunc func(ctx contex
 
 		runFunc(runCtx)
 		runCancel()
-
 		if ctx.Err() != nil {
 			return
 		}
+
 		log.Info("restarting after file change", "path", path)
 	}
 }
@@ -92,5 +96,6 @@ func debounceWatcher(watcher *fsnotify.Watcher, filename string) <-chan struct{}
 			}
 		}
 	}()
+
 	return reloadCh
 }

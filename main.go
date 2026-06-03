@@ -14,7 +14,6 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/clientcmd"
 	ctrl "sigs.k8s.io/controller-runtime"
 	ctrlconfig "sigs.k8s.io/controller-runtime/pkg/client/config"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
@@ -28,6 +27,8 @@ var (
 	scheme   = runtime.NewScheme()
 	setupLog = ctrl.Log.WithName("setup")
 )
+
+const inClusterCertPath = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
 
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
@@ -48,7 +49,7 @@ func main() {
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 	ctx := ctrl.SetupSignalHandler()
 
-	filewatcher.RerunOnFileUpdate(ctx, getWatchPath(), func(ctx context.Context) {
+	filewatcher.RerunOnFileUpdate(ctx, inClusterCertPath, func(ctx context.Context) {
 		restConfig := getKubeconfigOrDie(kubecontext)
 		setupLog.Info("loaded kubeconfig", "context", kubecontext, "host", restConfig.Host)
 
@@ -74,18 +75,8 @@ func main() {
 			setupLog.Error(err, "problem running manager")
 			os.Exit(1)
 		}
-		setupLog.Info("received SIGTERM or SIGINT. See you later.")
 	})
-}
-
-const inClusterCertPath = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
-
-func getWatchPath() string {
-	if os.Getenv("KUBERNETES_SERVICE_HOST") != "" {
-		return inClusterCertPath
-	}
-
-	return clientcmd.NewDefaultClientConfigLoadingRules().GetLoadingPrecedence()[0]
+	setupLog.Info("received SIGTERM or SIGINT. See you later.")
 }
 
 func getKubeconfigOrDie(kubecontext string) *rest.Config {
