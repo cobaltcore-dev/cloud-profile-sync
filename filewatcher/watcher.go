@@ -6,6 +6,7 @@ package filewatcher
 import (
 	"context"
 	"path/filepath"
+	"slices"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
@@ -40,9 +41,11 @@ func RerunOnFileUpdate(ctx context.Context, path string, runFunc func(ctx contex
 		return
 	}
 
-	reloadCh := debounceWatcher(watcher, filepath.Base(path))
+	reloadCh := watchFileEvents(watcher, filepath.Base(path))
+
 	for {
 		runCtx, runCancel := context.WithCancel(ctx)
+
 		go func() {
 			select {
 			case <-runCtx.Done():
@@ -62,10 +65,14 @@ func RerunOnFileUpdate(ctx context.Context, path string, runFunc func(ctx contex
 	}
 }
 
-// debounceWatcher reads from watcher and returns a channel that receives a
-// signal after a 200ms quiet period whenever the watched file (or the
-// Kubernetes atomic-writer "..data" symlink) changes.
-func debounceWatcher(watcher *fsnotify.Watcher, filename string) <-chan struct{} {
+// watchFileEvents returns a channel that receives a signal after a 200ms quiet
+// period whenever the watched file (or the Kubernetes atomic-writer "..data"
+// symlink) changes. The debounce prevents multiple rapid filesystem events
+// (e.g. Write + Chmod from a single logical write) from triggering redundant
+// reloads. The channel has a buffer of 1: if a reload is already pending,
+// further signals are dropped — safe because the reload always reads the latest
+// state of the file.
+func watchFileEvents(watcher *fsnotify.Watcher, filename string) <-chan struct{} {
 	reloadCh := make(chan struct{}, 1)
 	go func() {
 		var debounce <-chan time.Time
@@ -81,10 +88,10 @@ func debounceWatcher(watcher *fsnotify.Watcher, filename string) <-chan struct{}
 					return
 				}
 				base := filepath.Base(event.Name)
+				notificationEvents := []fsnotify.Op{fsnotify.Create, fsnotify.Write, fsnotify.Rename}
+
 				if (base == filename || base == "..data") &&
-					(event.Has(fsnotify.Create) || event.Has(fsnotify.Write) || event.Has(fsnotify.Rename)) {
-					// Each matching event resets the timer. Only when 200ms pass
-					// with no further events does the reload signal fire.
+					slices.Contains(notificationEvents, event.Op) {
 					debounce = time.After(fileEventsDebouncePeriod)
 				}
 			case <-debounce:
