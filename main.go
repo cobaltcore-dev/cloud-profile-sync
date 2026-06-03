@@ -20,7 +20,7 @@ import (
 
 	"github.com/cobaltcore-dev/cloud-profile-sync/api/v1alpha1"
 	"github.com/cobaltcore-dev/cloud-profile-sync/controllers"
-	"github.com/cobaltcore-dev/cloud-profile-sync/filewatcher"
+	"github.com/cobaltcore-dev/cloud-profile-sync/util/filewatcher"
 )
 
 var (
