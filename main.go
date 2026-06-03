@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"os"
 
@@ -13,12 +14,14 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
 	ctrl "sigs.k8s.io/controller-runtime"
 	ctrlconfig "sigs.k8s.io/controller-runtime/pkg/client/config"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	"github.com/cobaltcore-dev/cloud-profile-sync/api/v1alpha1"
 	"github.com/cobaltcore-dev/cloud-profile-sync/controllers"
+	"github.com/cobaltcore-dev/cloud-profile-sync/filewatcher"
 )
 
 var (
@@ -43,34 +46,46 @@ func main() {
 	flag.Parse()
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
-	restConfig := getKubeconfigOrDie(kubecontext)
-	setupLog.Info("loaded kubeconfig", "context", kubecontext, "host", restConfig.Host)
-
-	mgr, err := ctrl.NewManager(restConfig, ctrl.Options{
-		Scheme:         scheme,
-		LeaderElection: false,
-	})
-	if err != nil {
-		setupLog.Error(err, "unable to start manager")
-		os.Exit(1)
-	}
-
 	ctx := ctrl.SetupSignalHandler()
 
-	reconciler := controllers.Reconciler{
-		Client: mgr.GetClient(),
-	}
-	if err := reconciler.SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "problem setting up ManagedCloudProfile reconciler")
-		os.Exit(1)
+	filewatcher.RerunOnFileUpdate(ctx, getWatchPath(), func(ctx context.Context) {
+		restConfig := getKubeconfigOrDie(kubecontext)
+		setupLog.Info("loaded kubeconfig", "context", kubecontext, "host", restConfig.Host)
+
+		mgr, err := ctrl.NewManager(restConfig, ctrl.Options{
+			Scheme:         scheme,
+			LeaderElection: false,
+		})
+		if err != nil {
+			setupLog.Error(err, "unable to start manager")
+			os.Exit(1)
+		}
+
+		reconciler := controllers.Reconciler{
+			Client: mgr.GetClient(),
+		}
+		if err := reconciler.SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "problem setting up ManagedCloudProfile reconciler")
+			os.Exit(1)
+		}
+
+		setupLog.Info("starting manager")
+		if err := mgr.Start(ctx); err != nil {
+			setupLog.Error(err, "problem running manager")
+			os.Exit(1)
+		}
+		setupLog.Info("received SIGTERM or SIGINT. See you later.")
+	})
+}
+
+const inClusterCertPath = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+
+func getWatchPath() string {
+	if os.Getenv("KUBERNETES_SERVICE_HOST") != "" {
+		return inClusterCertPath
 	}
 
-	setupLog.Info("starting manager")
-	if err := mgr.Start(ctx); err != nil {
-		setupLog.Error(err, "problem running manager")
-		os.Exit(1)
-	}
-	setupLog.Info("received SIGTERM or SIGINT. See you later.")
+	return clientcmd.NewDefaultClientConfigLoadingRules().GetLoadingPrecedence()[0]
 }
 
 func getKubeconfigOrDie(kubecontext string) *rest.Config {
