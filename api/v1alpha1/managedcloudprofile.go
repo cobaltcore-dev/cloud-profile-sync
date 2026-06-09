@@ -6,11 +6,14 @@ package v1alpha1
 import (
 	gardenerv1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	runtime "k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime"
 )
 
 func init() {
-	SchemeBuilder.Register(&ManagedCloudProfile{}, &ManagedCloudProfileList{})
+	SchemeBuilder.Register(func(s *runtime.Scheme) error {
+		s.AddKnownTypes(GroupVersion, &ManagedCloudProfile{}, &ManagedCloudProfileList{})
+		return nil
+	})
 }
 
 type ManagedCloudProfileSpec struct {
