@@ -3,7 +3,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.20.0
+    controller-gen.kubebuilder.io/version: v0.21.0
   name: managedcloudprofiles.cloudprofilesync.cobaltcore.dev
 spec:
   group: cloudprofilesync.cobaltcore.dev
@@ -85,19 +85,48 @@ spec:
                         description: Versions is the list of allowed Kubernetes versions
                           with optional expiration dates for Shoot clusters.
                         items:
-                          description: ExpirableVersion contains a version and an
-                            expiration date.
+                          description: ExpirableVersion contains a version with associated
+                            lifecycle information.
                           properties:
                             classification:
                               description: |-
                                 Classification defines the state of a version (preview, supported, deprecated).
-                                To get the currently valid classification, use CurrentLifecycleClassification().
+
+                                Deprecated: Is replaced by Lifecycle. mutually exclusive with it.
                               type: string
                             expirationDate:
-                              description: ExpirationDate defines the time at which
-                                this version expires.
+                              description: |-
+                                ExpirationDate defines the time at which this version expires.
+
+                                Deprecated: Is replaced by Lifecycle; mutually exclusive with it.
                               format: date-time
                               type: string
+                            lifecycle:
+                              description: |-
+                                Lifecycle defines the lifecycle stages for this version.
+                                Mutually exclusive with Classification and ExpirationDate.
+                                This can only be used when the VersionClassificationLifecycle feature gate is enabled.
+                              items:
+                                description: |-
+                                  LifecycleStage describes a stage in the versions lifecycle.
+                                  Each stage defines the classification of the version (e.g. unavailable, preview, supported, deprecated, expired)
+                                  and the time at which this classification becomes effective.
+                                properties:
+                                  classification:
+                                    description: Classification is the category of
+                                      this lifecycle stage (unavailable, preview,
+                                      supported, deprecated, expired).
+                                    type: string
+                                  startTime:
+                                    description: |-
+                                      StartTime defines when this lifecycle stage becomes active.
+                                      StartTime can be omitted for the first lifecycle stage, implying a start time in the past.
+                                    format: date-time
+                                    type: string
+                                required:
+                                - classification
+                                type: object
+                              type: array
                             version:
                               description: Version is the version identifier.
                               type: string
@@ -184,7 +213,8 @@ spec:
                               classification:
                                 description: |-
                                   Classification defines the state of a version (preview, supported, deprecated).
-                                  To get the currently valid classification, use CurrentLifecycleClassification().
+
+                                  Deprecated: Is replaced by Lifecycle. mutually exclusive with it.
                                 type: string
                               cri:
                                 description: CRI list of supported container runtime
@@ -223,8 +253,10 @@ spec:
                                   type: object
                                 type: array
                               expirationDate:
-                                description: ExpirationDate defines the time at which
-                                  this version expires.
+                                description: |-
+                                  ExpirationDate defines the time at which this version expires.
+
+                                  Deprecated: Is replaced by Lifecycle; mutually exclusive with it.
                                 format: date-time
                                 type: string
                               inPlaceUpdates:
@@ -253,6 +285,32 @@ spec:
                                   - '>= 1.26' - supports only kubelet versions greater than or equal to 1.26
                                   - '< 1.26' - supports only kubelet versions less than 1.26
                                 type: string
+                              lifecycle:
+                                description: |-
+                                  Lifecycle defines the lifecycle stages for this version.
+                                  Mutually exclusive with Classification and ExpirationDate.
+                                  This can only be used when the VersionClassificationLifecycle feature gate is enabled.
+                                items:
+                                  description: |-
+                                    LifecycleStage describes a stage in the versions lifecycle.
+                                    Each stage defines the classification of the version (e.g. unavailable, preview, supported, deprecated, expired)
+                                    and the time at which this classification becomes effective.
+                                  properties:
+                                    classification:
+                                      description: Classification is the category
+                                        of this lifecycle stage (unavailable, preview,
+                                        supported, deprecated, expired).
+                                      type: string
+                                    startTime:
+                                      description: |-
+                                        StartTime defines when this lifecycle stage becomes active.
+                                        StartTime can be omitted for the first lifecycle stage, implying a start time in the past.
+                                      format: date-time
+                                      type: string
+                                  required:
+                                  - classification
+                                  type: object
+                                type: array
                               version:
                                 description: Version is the version identifier.
                                 type: string
@@ -303,6 +361,17 @@ spec:
                             type.
                           pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                           x-kubernetes-int-or-string: true
+                        machineControllerManager:
+                          description: MachineControllerManagerSettings contains a
+                            subset of the MachineControllerManagerSettings which can
+                            be defaulted for a machine type in a CloudProfile.
+                          properties:
+                            machineCreationTimeout:
+                              description: MachineCreationTimeout is the period after
+                                which creation of a machine of this machine type is
+                                declared failed.
+                              type: string
+                          type: object
                         memory:
                           anyOf:
                           - type: integer
@@ -431,7 +500,7 @@ spec:
                     properties:
                       matchExpressions:
                         description: matchExpressions is a list of label selector
-                          requirements. The requirements are ANDead.
+                          requirements. The requirements are ANDed.
                         items:
                           description: |-
                             A label selector requirement is a selector that contains values, a key, and an operator that
@@ -468,7 +537,7 @@ spec:
                         description: |-
                           matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels
                           map is equivalent to an element of matchExpressions, whose key field is "key", the
-                          operator is "In", and the values array contains only "value". The requirements are ANDead.
+                          operator is "In", and the values array contains only "value". The requirements are ANDed.
                         type: object
                       providerTypes:
                         description: Providers is optional and can be used by restricting
@@ -521,7 +590,7 @@ spec:
                   garbage collection
                 properties:
                   enabled:
-                    description: Enabled toggles garbage collection for this resource.
+                    description: Enabled toggles garbage collection for this image.
                     type: boolean
                   maxAge:
                     description: |-
