@@ -67,7 +67,7 @@ func (p *IroncoreProvider) Configure(cpSpec *gardencorev1beta1.CloudProfileSpec,
 
 		// When capabilities are enabled and the image carries capability metadata,
 		// also write a CapabilityFlavors entry grouped under the clean version.
-		if p.EnableCapabilities && src.Capabilities != nil && src.CleanVersion != "" {
+		if p.EnableCapabilities && src.Capabilities != nil && src.CleanVersion != "" && src.CleanVersion != src.Version {
 			flavor := v1alpha1.MachineImageFlavor{
 				Image:        ref,
 				Capabilities: src.Capabilities,

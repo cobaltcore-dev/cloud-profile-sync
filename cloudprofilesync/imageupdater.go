@@ -50,7 +50,10 @@ func (iu *ImageUpdater) Update(ctx context.Context, cpSpec *gardenerv1beta1.Clou
 	// in the source images may lead to a changed order in the CloudProfile,
 	// causing unnecesscary reconciliations.
 	slices.SortFunc(sourceImages, func(a, b SourceImage) int {
-		return cmp.Compare(a.effectiveVersion(), b.effectiveVersion())
+		if c := cmp.Compare(a.effectiveVersion(), b.effectiveVersion()); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.Version, b.Version)
 	})
 	imageIndex := slices.IndexFunc(cpSpec.MachineImages, func(img gardenerv1beta1.MachineImage) bool {
 		return img.Name == iu.ImageName
