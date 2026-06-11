@@ -9,10 +9,6 @@ import (
 	runtime "k8s.io/apimachinery/pkg/runtime"
 )
 
-func init() {
-	SchemeBuilder.Register(&ManagedCloudProfile{}, &ManagedCloudProfileList{})
-}
-
 type ManagedCloudProfileSpec struct {
 	// CloudProfile contains the base spec of the CloudProfile.
 	CloudProfile CloudProfileSpec `json:"cloudProfile"`

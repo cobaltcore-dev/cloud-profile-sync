@@ -4,7 +4,12 @@
       "Bash(gh pr:*)",
       "WebFetch(domain:github.com)",
       "WebFetch(domain:raw.githubusercontent.com)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(go build *)",
+      "Bash(golangci-lint run *)",
+      "Bash(go test *)",
+      "Bash(gofmt *)",
+      "Bash(gmake *)"
     ]
   }
 }

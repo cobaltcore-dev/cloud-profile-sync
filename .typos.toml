@@ -4,6 +4,9 @@
 
 [default.extend-words]
 
+[default]
+extend-ignore-identifiers-re = ["ANDed"]
+
 [files]
 extend-exclude = [
   "go.mod",
