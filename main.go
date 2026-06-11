@@ -34,11 +34,13 @@ func init() {
 
 func main() {
 	var kubecontext string
+	var enableMachineImageCapabilities bool
 	opts := zap.Options{
 		Development: true,
 		TimeEncoder: zapcore.ISO8601TimeEncoder,
 	}
 	flag.StringVar(&kubecontext, "kubecontext", "", "The context to use from the kubeconfig (defaults to current-context)")
+	flag.BoolVar(&enableMachineImageCapabilities, "enable-machine-image-capabilities", false, "When enabled, cloud-profile-sync writes GEP-33 CapabilityFlavors in providerConfig alongside legacy entries")
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
 
@@ -58,7 +60,8 @@ func main() {
 	ctx := ctrl.SetupSignalHandler()
 
 	reconciler := controllers.Reconciler{
-		Client: mgr.GetClient(),
+		Client:             mgr.GetClient(),
+		EnableCapabilities: enableMachineImageCapabilities,
 	}
 	if err := reconciler.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "problem setting up ManagedCloudProfile reconciler")

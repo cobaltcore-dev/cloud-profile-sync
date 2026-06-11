@@ -7,13 +7,44 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 
+	gardencorev1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
 	"golang.org/x/sync/semaphore"
 	"oras.land/oras-go/v2/registry/remote"
 	"oras.land/oras-go/v2/registry/remote/auth"
 	"oras.land/oras-go/v2/registry/remote/retry"
 )
+
+// validFeatureValues is the allowlist of feature values extracted from the feature_set annotation.
+var validFeatureValues = map[string]struct{}{
+	"chost":   {},
+	"_pxe":    {},
+	"sci":     {},
+	"capi":    {},
+	"scibase": {},
+	"_usi":    {},
+	"_usidev": {},
+}
+
+func filterFeatureSet(featureSet string) []string {
+	raw := strings.Split(featureSet, ",")
+	seen := make(map[string]struct{}, len(raw))
+	result := make([]string, 0, len(raw))
+	for _, f := range raw {
+		f = strings.TrimSpace(f)
+		if _, valid := validFeatureValues[f]; !valid {
+			continue
+		}
+		if _, dup := seen[f]; dup {
+			continue
+		}
+		seen[f] = struct{}{}
+		result = append(result, f)
+	}
+	return result
+}
 
 type Result[T any] struct {
 	value T
@@ -21,8 +52,24 @@ type Result[T any] struct {
 }
 
 type SourceImage struct {
-	Version       string
+	// Version is the full tag from the registry (used as version key for legacy images).
+	Version string
+	// CleanVersion is the version from the "version" OCI annotation (e.g. "2262.0.0").
+	// When set, flavors are grouped under it in the CloudProfile instead of the full tag.
+	CleanVersion string
+	// TODO: deprecate once all images carry capability annotations; use Capabilities["architecture"] instead.
 	Architectures []string
+	// Capabilities holds parsed OCI manifest annotations. Nil means the image
+	// predates capability annotations and should use the legacy format.
+	Capabilities gardencorev1beta1.Capabilities
+}
+
+// effectiveVersion returns CleanVersion when available, falling back to Version.
+func (s SourceImage) effectiveVersion() string {
+	if s.CleanVersion != "" {
+		return s.CleanVersion
+	}
+	return s.Version
 }
 
 type Source interface {
@@ -101,13 +148,29 @@ func (o *OCI) GetVersions(ctx context.Context) ([]SourceImage, error) {
 			}
 			arch, ok := manifest.Annotations["architecture"]
 			if !ok {
-				out <- Result[SourceImage]{err: errors.New("architecture annotation not found in descriptor")}
+				out <- Result[SourceImage]{err: fmt.Errorf("architecture annotation not found in descriptor. tag: %s", tag)}
 				return
+			}
+			var capabilities gardencorev1beta1.Capabilities
+			var cleanVersion string
+			if featureSet, ok := manifest.Annotations["feature_set"]; ok {
+				if version, ok := manifest.Annotations["version"]; ok {
+					features := filterFeatureSet(featureSet)
+					if len(features) > 0 {
+						capabilities = gardencorev1beta1.Capabilities{
+							"architecture": {arch},
+							"feature":      features,
+						}
+						cleanVersion = version
+					}
+				}
 			}
 			out <- Result[SourceImage]{
 				value: SourceImage{
 					Version:       strings.ReplaceAll(tag, "_", "+"), // Follow the helm convention
+					CleanVersion:  cleanVersion,
 					Architectures: []string{arch},
+					Capabilities:  capabilities,
 				},
 			}
 		}()
