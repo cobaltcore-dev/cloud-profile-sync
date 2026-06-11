@@ -58,9 +58,9 @@ func (f *DefaultOCISourceFactory) Create(params cloudprofilesync.OCIParams, inse
 
 type Reconciler struct {
 	client.Client
-	OCISourceFactory       OCISourceFactory
-	RegistryProviderFunc   func(registry string) (RegistryClient, error)
-	EnableCapabilities     bool
+	OCISourceFactory     OCISourceFactory
+	RegistryProviderFunc func(registry string) (RegistryClient, error)
+	EnableCapabilities   bool
 }
 
 type KeppelTag struct {

@@ -113,7 +113,7 @@ var _ = Describe("OCISource", func() {
 		Expect(versions[0].Architectures).To(Equal([]string{"amd64"}))
 		Expect(versions[0].Capabilities).To(Equal(gardencorev1beta1.Capabilities{
 			"architecture": {"amd64"},
-			"feature":      {"sci", "_usi"},  // _rescue and log are filtered out
+			"feature":      {"sci", "_usi"}, // _rescue and log are filtered out
 		}))
 	})
 

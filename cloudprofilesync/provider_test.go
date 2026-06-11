@@ -81,8 +81,8 @@ var _ = Describe("IroncoreProvider", func() {
 			var cpSpec gardencorev1beta1.CloudProfileSpec
 			versions := []cloudprofilesync.SourceImage{
 				{
-					Version:      "2254.0.0-baremetal-sci-usi-amd64",
-					CleanVersion: "2254.0.0",
+					Version:       "2254.0.0-baremetal-sci-usi-amd64",
+					CleanVersion:  "2254.0.0",
 					Architectures: []string{"amd64"},
 					Capabilities: gardencorev1beta1.Capabilities{
 						"architecture": {"amd64"},

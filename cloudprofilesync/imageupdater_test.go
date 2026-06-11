@@ -6,7 +6,6 @@ package cloudprofilesync_test
 import (
 	"encoding/json"
 
-	"github.com/gardener/gardener/pkg/apis/core/v1beta1"
 	gardencorev1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
@@ -25,7 +24,7 @@ var _ = Describe("ImageUpdater", func() {
 				Source:    &mockSource,
 				ImageName: "test",
 			}
-			var cpSpec v1beta1.CloudProfileSpec
+			var cpSpec gardencorev1beta1.CloudProfileSpec
 			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
 			Expect(cpSpec.MachineImages[0].Versions).To(HaveLen(1))
 			Expect(cpSpec.MachineImages[0].Versions[0].Version).To(Equal("1.0.0"))
@@ -41,19 +40,19 @@ var _ = Describe("ImageUpdater", func() {
 				Source:    &mockSource,
 				ImageName: "test",
 			}
-			var cpSpec v1beta1.CloudProfileSpec
+			var cpSpec gardencorev1beta1.CloudProfileSpec
 			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
-			Expect(cpSpec.MachineImages[0].Versions).To(ConsistOf([]v1beta1.MachineImageVersion{
-				{ExpirableVersion: v1beta1.ExpirableVersion{Version: "1.0.0"}, Architectures: []string{"amd64"}},
-				{ExpirableVersion: v1beta1.ExpirableVersion{Version: "2.0.0"}, Architectures: []string{"arm64", "amd64"}},
+			Expect(cpSpec.MachineImages[0].Versions).To(ConsistOf([]gardencorev1beta1.MachineImageVersion{
+				{ExpirableVersion: gardencorev1beta1.ExpirableVersion{Version: "1.0.0"}, Architectures: []string{"amd64"}},
+				{ExpirableVersion: gardencorev1beta1.ExpirableVersion{Version: "2.0.0"}, Architectures: []string{"arm64", "amd64"}},
 			}))
 		})
 
 		It("updates an image from the source in the CloudProfile spec", func(ctx SpecContext) {
-			cpSpec := v1beta1.CloudProfileSpec{
-				MachineImages: []v1beta1.MachineImage{
-					{Name: "test", Versions: []v1beta1.MachineImageVersion{
-						{ExpirableVersion: v1beta1.ExpirableVersion{Version: "1.0.0"}, Architectures: []string{"amd64"}},
+			cpSpec := gardencorev1beta1.CloudProfileSpec{
+				MachineImages: []gardencorev1beta1.MachineImage{
+					{Name: "test", Versions: []gardencorev1beta1.MachineImageVersion{
+						{ExpirableVersion: gardencorev1beta1.ExpirableVersion{Version: "1.0.0"}, Architectures: []string{"amd64"}},
 					}},
 				},
 			}
@@ -66,26 +65,26 @@ var _ = Describe("ImageUpdater", func() {
 		})
 
 		It("does not change unrelated images in the CloudProfile spec", func(ctx SpecContext) {
-			cpSpec := v1beta1.CloudProfileSpec{
-				MachineImages: []v1beta1.MachineImage{
-					{Name: "test", Versions: []v1beta1.MachineImageVersion{
-						{ExpirableVersion: v1beta1.ExpirableVersion{Version: "1.0.0"}, Architectures: []string{"amd64"}},
+			cpSpec := gardencorev1beta1.CloudProfileSpec{
+				MachineImages: []gardencorev1beta1.MachineImage{
+					{Name: "test", Versions: []gardencorev1beta1.MachineImageVersion{
+						{ExpirableVersion: gardencorev1beta1.ExpirableVersion{Version: "1.0.0"}, Architectures: []string{"amd64"}},
 					}},
-					{Name: "other", Versions: []v1beta1.MachineImageVersion{
-						{ExpirableVersion: v1beta1.ExpirableVersion{Version: "2.0.0"}, Architectures: []string{"arm64"}},
+					{Name: "other", Versions: []gardencorev1beta1.MachineImageVersion{
+						{ExpirableVersion: gardencorev1beta1.ExpirableVersion{Version: "2.0.0"}, Architectures: []string{"arm64"}},
 					}},
 				},
 			}
 			mockSource.images = []cloudprofilesync.SourceImage{{Version: "1.1.0", Architectures: []string{"arm64"}}}
 			updater := cloudprofilesync.ImageUpdater{Log: GinkgoLogr, Source: &mockSource, ImageName: "test"}
 			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
-			Expect(cpSpec.MachineImages).To(ConsistOf([]v1beta1.MachineImage{
-				{Name: "test", Versions: []v1beta1.MachineImageVersion{
-					{ExpirableVersion: v1beta1.ExpirableVersion{Version: "1.0.0"}, Architectures: []string{"amd64"}},
-					{ExpirableVersion: v1beta1.ExpirableVersion{Version: "1.1.0"}, Architectures: []string{"arm64"}},
+			Expect(cpSpec.MachineImages).To(ConsistOf([]gardencorev1beta1.MachineImage{
+				{Name: "test", Versions: []gardencorev1beta1.MachineImageVersion{
+					{ExpirableVersion: gardencorev1beta1.ExpirableVersion{Version: "1.0.0"}, Architectures: []string{"amd64"}},
+					{ExpirableVersion: gardencorev1beta1.ExpirableVersion{Version: "1.1.0"}, Architectures: []string{"arm64"}},
 				}},
-				{Name: "other", Versions: []v1beta1.MachineImageVersion{
-					{ExpirableVersion: v1beta1.ExpirableVersion{Version: "2.0.0"}, Architectures: []string{"arm64"}},
+				{Name: "other", Versions: []gardencorev1beta1.MachineImageVersion{
+					{ExpirableVersion: gardencorev1beta1.ExpirableVersion{Version: "2.0.0"}, Architectures: []string{"arm64"}},
 				}},
 			}))
 		})
@@ -93,10 +92,10 @@ var _ = Describe("ImageUpdater", func() {
 		It("ignores CleanVersion when flag is OFF", func(ctx SpecContext) {
 			mockSource.images = []cloudprofilesync.SourceImage{
 				{
-					Version:      "2254.0.0-baremetal-sci-usi-amd64",
-					CleanVersion: "2254.0.0",
+					Version:       "2254.0.0-baremetal-sci-usi-amd64",
+					CleanVersion:  "2254.0.0",
 					Architectures: []string{"amd64"},
-					Capabilities: gardencorev1beta1.Capabilities{"architecture": {"amd64"}, "feature": {"sci", "_usi"}},
+					Capabilities:  gardencorev1beta1.Capabilities{"architecture": {"amd64"}, "feature": {"sci", "_usi"}},
 				},
 			}
 			updater := cloudprofilesync.ImageUpdater{
@@ -105,7 +104,7 @@ var _ = Describe("ImageUpdater", func() {
 				ImageName:          "test",
 				EnableCapabilities: false,
 			}
-			var cpSpec v1beta1.CloudProfileSpec
+			var cpSpec gardencorev1beta1.CloudProfileSpec
 			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
 			Expect(cpSpec.MachineImages[0].Versions).To(HaveLen(1))
 			Expect(cpSpec.MachineImages[0].Versions[0].Version).To(Equal("2254.0.0-baremetal-sci-usi-amd64"))
@@ -114,12 +113,12 @@ var _ = Describe("ImageUpdater", func() {
 		It("invokes the given provider", func(ctx SpecContext) {
 			mockSource.images = []cloudprofilesync.SourceImage{{Version: "1.0.0", Architectures: []string{"amd64"}}}
 			updater := cloudprofilesync.ImageUpdater{
-				Log:      GinkgoLogr,
-				Source:   &mockSource,
+				Log:       GinkgoLogr,
+				Source:    &mockSource,
 				ImageName: "test",
-				Provider: &MockProvider{},
+				Provider:  &MockProvider{},
 			}
-			var cpSpec v1beta1.CloudProfileSpec
+			var cpSpec gardencorev1beta1.CloudProfileSpec
 			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
 			var fromProvider []cloudprofilesync.SourceImage
 			Expect(json.Unmarshal(cpSpec.ProviderConfig.Raw, &fromProvider)).To(Succeed())
@@ -131,10 +130,10 @@ var _ = Describe("ImageUpdater", func() {
 		It("writes both full tag and clean version entries when CleanVersion differs", func(ctx SpecContext) {
 			mockSource.images = []cloudprofilesync.SourceImage{
 				{
-					Version:      "2254.0.0-baremetal-sci-usi-amd64",
-					CleanVersion: "2254.0.0",
+					Version:       "2254.0.0-baremetal-sci-usi-amd64",
+					CleanVersion:  "2254.0.0",
 					Architectures: []string{"amd64"},
-					Capabilities: gardencorev1beta1.Capabilities{"architecture": {"amd64"}, "feature": {"sci", "_usi"}},
+					Capabilities:  gardencorev1beta1.Capabilities{"architecture": {"amd64"}, "feature": {"sci", "_usi"}},
 				},
 			}
 			updater := cloudprofilesync.ImageUpdater{
@@ -143,7 +142,7 @@ var _ = Describe("ImageUpdater", func() {
 				ImageName:          "test",
 				EnableCapabilities: true,
 			}
-			var cpSpec v1beta1.CloudProfileSpec
+			var cpSpec gardencorev1beta1.CloudProfileSpec
 			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
 			Expect(cpSpec.MachineImages[0].Versions).To(HaveLen(2))
 
@@ -155,10 +154,10 @@ var _ = Describe("ImageUpdater", func() {
 		It("does not add a duplicate clean version entry on re-reconcile", func(ctx SpecContext) {
 			mockSource.images = []cloudprofilesync.SourceImage{
 				{
-					Version:      "2254.0.0-baremetal-sci-usi-amd64",
-					CleanVersion: "2254.0.0",
+					Version:       "2254.0.0-baremetal-sci-usi-amd64",
+					CleanVersion:  "2254.0.0",
 					Architectures: []string{"amd64"},
-					Capabilities: gardencorev1beta1.Capabilities{"architecture": {"amd64"}, "feature": {"sci", "_usi"}},
+					Capabilities:  gardencorev1beta1.Capabilities{"architecture": {"amd64"}, "feature": {"sci", "_usi"}},
 				},
 			}
 			updater := cloudprofilesync.ImageUpdater{
@@ -167,7 +166,7 @@ var _ = Describe("ImageUpdater", func() {
 				ImageName:          "test",
 				EnableCapabilities: true,
 			}
-			var cpSpec v1beta1.CloudProfileSpec
+			var cpSpec gardencorev1beta1.CloudProfileSpec
 			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
 			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
 			Expect(cpSpec.MachineImages[0].Versions).To(HaveLen(2))
@@ -183,7 +182,7 @@ var _ = Describe("ImageUpdater", func() {
 				ImageName:          "test",
 				EnableCapabilities: true,
 			}
-			var cpSpec v1beta1.CloudProfileSpec
+			var cpSpec gardencorev1beta1.CloudProfileSpec
 			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
 			Expect(cpSpec.MachineImages[0].Versions).To(HaveLen(1))
 			Expect(cpSpec.MachineImages[0].Versions[0].Version).To(Equal("1877.0.0"))
