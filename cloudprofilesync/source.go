@@ -148,13 +148,15 @@ func (o *OCI) GetVersions(ctx context.Context) ([]SourceImage, error) {
 			var capabilities gardencorev1beta1.Capabilities
 			var cleanVersion string
 			if featureSet, ok := manifest.Annotations["feature_set"]; ok {
-				features := filterFeatureSet(featureSet)
-				if len(features) > 0 {
-					capabilities = gardencorev1beta1.Capabilities{
-						"architecture": {arch},
-						"feature":      features,
+				if version, ok := manifest.Annotations["version"]; ok {
+					features := filterFeatureSet(featureSet)
+					if len(features) > 0 {
+						capabilities = gardencorev1beta1.Capabilities{
+							"architecture": {arch},
+							"feature":      features,
+						}
+						cleanVersion = version
 					}
-					cleanVersion = manifest.Annotations["version"]
 				}
 			}
 			out <- Result[SourceImage]{
