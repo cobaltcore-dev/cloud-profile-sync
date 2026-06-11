@@ -17,13 +17,14 @@ import (
 func filterImages(log logr.Logger, versions []SourceImage) []SourceImage {
 	filtered := make([]SourceImage, 0, len(versions))
 	for _, version := range versions {
-		_, err := semver.Parse(version.Version)
+		versionStr := version.effectiveVersion()
+		_, err := semver.Parse(versionStr)
 		if err != nil {
-			log.V(1).Info("skipping invalid version", "version", version.Version)
+			log.V(1).Info("skipping invalid version", "version", versionStr)
 			continue
 		}
 		if len(version.Architectures) == 0 {
-			log.V(1).Info("skipping version with no architectures", "version", version.Version)
+			log.V(1).Info("skipping version with no architectures", "version", versionStr)
 			continue
 		}
 		filtered = append(filtered, version)
@@ -32,10 +33,11 @@ func filterImages(log logr.Logger, versions []SourceImage) []SourceImage {
 }
 
 type ImageUpdater struct {
-	Log       logr.Logger
-	Source    Source
-	Provider  Provider
-	ImageName string
+	Log                logr.Logger
+	Source             Source
+	Provider           Provider
+	ImageName          string
+	EnableCapabilities bool
 }
 
 func (iu *ImageUpdater) Update(ctx context.Context, cpSpec *gardenerv1beta1.CloudProfileSpec) error {
@@ -48,7 +50,7 @@ func (iu *ImageUpdater) Update(ctx context.Context, cpSpec *gardenerv1beta1.Clou
 	// in the source images may lead to a changed order in the CloudProfile,
 	// causing unnecesscary reconciliations.
 	slices.SortFunc(sourceImages, func(a, b SourceImage) int {
-		return cmp.Compare(a.Version, b.Version)
+		return cmp.Compare(a.effectiveVersion(), b.effectiveVersion())
 	})
 	imageIndex := slices.IndexFunc(cpSpec.MachineImages, func(img gardenerv1beta1.MachineImage) bool {
 		return img.Name == iu.ImageName
@@ -62,7 +64,9 @@ func (iu *ImageUpdater) Update(ctx context.Context, cpSpec *gardenerv1beta1.Clou
 	for idx, version := range image.Versions {
 		existingVersions[version.Version] = idx
 	}
+
 	for _, sourceImage := range sourceImages {
+		// Always write the full tag version (legacy path, safe for running Shoots).
 		if idx, exists := existingVersions[sourceImage.Version]; exists {
 			image.Versions[idx].Architectures = sourceImage.Architectures
 		} else {
@@ -72,8 +76,23 @@ func (iu *ImageUpdater) Update(ctx context.Context, cpSpec *gardenerv1beta1.Clou
 				},
 				Architectures: sourceImage.Architectures,
 			})
+			existingVersions[sourceImage.Version] = len(image.Versions) - 1
+		}
+
+		// When capabilities are enabled, also write the clean version entry.
+		if iu.EnableCapabilities && sourceImage.CleanVersion != "" && sourceImage.CleanVersion != sourceImage.Version {
+			if _, exists := existingVersions[sourceImage.CleanVersion]; !exists {
+				image.Versions = append(image.Versions, gardenerv1beta1.MachineImageVersion{
+					ExpirableVersion: gardenerv1beta1.ExpirableVersion{
+						Version: sourceImage.CleanVersion,
+					},
+					Architectures: sourceImage.Architectures,
+				})
+				existingVersions[sourceImage.CleanVersion] = len(image.Versions) - 1
+			}
 		}
 	}
+
 	if iu.Provider != nil {
 		if err := iu.Provider.Configure(cpSpec, sourceImages); err != nil {
 			return fmt.Errorf("failed to invoke provider: %w", err)

@@ -58,8 +58,9 @@ func (f *DefaultOCISourceFactory) Create(params cloudprofilesync.OCIParams, inse
 
 type Reconciler struct {
 	client.Client
-	OCISourceFactory     OCISourceFactory
-	RegistryProviderFunc func(registry string) (RegistryClient, error)
+	OCISourceFactory       OCISourceFactory
+	RegistryProviderFunc   func(registry string) (RegistryClient, error)
+	EnableCapabilities     bool
 }
 
 type KeppelTag struct {
@@ -300,16 +301,18 @@ func (r *Reconciler) updateMachineImages(ctx context.Context, log logr.Logger, u
 	var provider cloudprofilesync.Provider
 	if update.Provider.IroncoreMetal != nil {
 		provider = &cloudprofilesync.IroncoreProvider{
-			Registry:   update.Provider.IroncoreMetal.Registry,
-			Repository: update.Provider.IroncoreMetal.Repository,
-			ImageName:  update.ImageName,
+			Registry:           update.Provider.IroncoreMetal.Registry,
+			Repository:         update.Provider.IroncoreMetal.Repository,
+			ImageName:          update.ImageName,
+			EnableCapabilities: r.EnableCapabilities,
 		}
 	}
 	imageUpdater := cloudprofilesync.ImageUpdater{
-		Log:       log,
-		Source:    source,
-		Provider:  provider,
-		ImageName: update.ImageName,
+		Log:                log,
+		Source:             source,
+		Provider:           provider,
+		ImageName:          update.ImageName,
+		EnableCapabilities: r.EnableCapabilities,
 	}
 	if err := imageUpdater.Update(ctx, cpSpec); err != nil {
 		return fmt.Errorf("updating machine images failed: %w", err)
