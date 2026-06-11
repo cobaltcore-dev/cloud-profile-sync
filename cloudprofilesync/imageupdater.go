@@ -84,12 +84,19 @@ func (iu *ImageUpdater) Update(ctx context.Context, cpSpec *gardenerv1beta1.Clou
 
 		// When capabilities are enabled, also write the clean version entry.
 		if iu.EnableCapabilities && sourceImage.CleanVersion != "" && sourceImage.CleanVersion != sourceImage.Version {
-			if _, exists := existingVersions[sourceImage.CleanVersion]; !exists {
+			if idx, exists := existingVersions[sourceImage.CleanVersion]; exists {
+				existing := &image.Versions[idx]
+				for _, arch := range sourceImage.Architectures {
+					if !slices.Contains(existing.Architectures, arch) {
+						existing.Architectures = append(existing.Architectures, arch)
+					}
+				}
+			} else {
 				image.Versions = append(image.Versions, gardenerv1beta1.MachineImageVersion{
 					ExpirableVersion: gardenerv1beta1.ExpirableVersion{
 						Version: sourceImage.CleanVersion,
 					},
-					Architectures: sourceImage.Architectures,
+					Architectures: slices.Clone(sourceImage.Architectures),
 				})
 				existingVersions[sourceImage.CleanVersion] = len(image.Versions) - 1
 			}

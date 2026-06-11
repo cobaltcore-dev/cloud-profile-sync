@@ -30,12 +30,18 @@ var validFeatureValues = map[string]struct{}{
 
 func filterFeatureSet(featureSet string) []string {
 	raw := strings.Split(featureSet, ",")
+	seen := make(map[string]struct{}, len(raw))
 	result := make([]string, 0, len(raw))
 	for _, f := range raw {
 		f = strings.TrimSpace(f)
-		if _, ok := validFeatureValues[f]; ok {
-			result = append(result, f)
+		if _, valid := validFeatureValues[f]; !valid {
+			continue
 		}
+		if _, dup := seen[f]; dup {
+			continue
+		}
+		seen[f] = struct{}{}
+		result = append(result, f)
 	}
 	return result
 }
