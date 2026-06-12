@@ -5,10 +5,10 @@ go 1.26.2
 require (
 	github.com/blang/semver/v4 v4.0.0
 	github.com/distribution/distribution/v3 v3.1.1
-	github.com/gardener/gardener/pkg/apis v1.144.0
+	github.com/gardener/gardener/pkg/apis v1.144.1
 	github.com/go-logr/logr v1.4.3
 	github.com/ironcore-dev/gardener-extension-provider-ironcore-metal v0.1.1-0.20260610093013-d6bdd61f63ae
-	github.com/onsi/ginkgo/v2 v2.29.0
+	github.com/onsi/ginkgo/v2 v2.30.0
 	github.com/onsi/gomega v1.41.0
 	github.com/opencontainers/image-spec v1.1.1
 	go.uber.org/zap v1.28.0
