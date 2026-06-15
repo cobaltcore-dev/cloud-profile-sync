@@ -150,19 +150,22 @@ func (o *OCI) GetVersions(ctx context.Context) ([]SourceImage, error) {
 				out <- Result[SourceImage]{err: fmt.Errorf("tag %s: failed to decode manifest: %w", tag, err)}
 				return
 			}
-			meta := manifest.Annotations
-			if len(meta) == 0 {
-				meta = manifest.Labels
+			lookup := func(key string) (string, bool) {
+				if v, ok := manifest.Annotations[key]; ok {
+					return v, true
+				}
+				v, ok := manifest.Labels[key]
+				return v, ok
 			}
-			arch, ok := meta["architecture"]
+			arch, ok := lookup("architecture")
 			if !ok {
-				out <- Result[SourceImage]{err: fmt.Errorf("tag %s: architecture annotation not found", tag)}
+				out <- Result[SourceImage]{err: fmt.Errorf("tag %s: architecture annotation/label not found", tag)}
 				return
 			}
 			var capabilities gardencorev1beta1.Capabilities
 			var cleanVersion string
-			if featureSet, ok := meta["feature_set"]; ok {
-				if version, ok := meta["version"]; ok {
+			if featureSet, ok := lookup("feature_set"); ok {
+				if version, ok := lookup("version"); ok {
 					features := filterFeatureSet(featureSet)
 					if len(features) > 0 {
 						capabilities = gardencorev1beta1.Capabilities{
