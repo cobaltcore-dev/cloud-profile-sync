@@ -194,5 +194,8 @@ func (o *OCI) GetVersions(ctx context.Context) ([]SourceImage, error) {
 		}
 		images = append(images, result.value)
 	}
+	if len(images) == 0 && len(tags) > 0 {
+		return nil, fmt.Errorf("all %d tags were skipped; possible registry issue", len(tags))
+	}
 	return images, errors.Join(errs...)
 }
