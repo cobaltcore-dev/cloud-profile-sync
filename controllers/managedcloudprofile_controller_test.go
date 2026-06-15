@@ -17,6 +17,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	gardenerv1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
+	"github.com/go-logr/logr"
 	providercfg "github.com/ironcore-dev/gardener-extension-provider-ironcore-metal/pkg/apis/metal/v1alpha1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -49,11 +50,11 @@ func (f *fakeOCISource) GetVersions(ctx context.Context) ([]cloudprofilesync.Sou
 
 type fakeFactory struct{}
 
-func (f *fakeFactory) Create(params cloudprofilesync.OCIParams, insecure bool) (cloudprofilesync.Source, error) {
+func (f *fakeFactory) Create(params cloudprofilesync.OCIParams, insecure bool, _ logr.Logger) (cloudprofilesync.Source, error) {
 	return &fakeOCISource{}, nil
 }
 
-func (m *mockOCIFactory) Create(params cloudprofilesync.OCIParams, insecure bool) (cloudprofilesync.Source, error) {
+func (m *mockOCIFactory) Create(params cloudprofilesync.OCIParams, insecure bool, _ logr.Logger) (cloudprofilesync.Source, error) {
 	return m.createFunc(params, insecure)
 }
 

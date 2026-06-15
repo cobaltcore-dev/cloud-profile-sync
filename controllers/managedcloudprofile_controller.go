@@ -36,7 +36,7 @@ const (
 
 // OCISourceFactory defines an interface for creating OCI sources.
 type OCISourceFactory interface {
-	Create(params cloudprofilesync.OCIParams, insecure bool) (cloudprofilesync.Source, error)
+	Create(params cloudprofilesync.OCIParams, insecure bool, log logr.Logger) (cloudprofilesync.Source, error)
 }
 
 type RegistryClient interface {
@@ -52,8 +52,8 @@ func (k *KeppelClient) GetTags(ctx context.Context, registry, repository string)
 // DefaultOCISourceFactory is the default implementation of OCISourceFactory.
 type DefaultOCISourceFactory struct{}
 
-func (f *DefaultOCISourceFactory) Create(params cloudprofilesync.OCIParams, insecure bool) (cloudprofilesync.Source, error) {
-	return cloudprofilesync.NewOCI(params, insecure)
+func (f *DefaultOCISourceFactory) Create(params cloudprofilesync.OCIParams, insecure bool, log logr.Logger) (cloudprofilesync.Source, error) {
+	return cloudprofilesync.NewOCI(params, insecure, log)
 }
 
 type Reconciler struct {
@@ -288,7 +288,7 @@ func (r *Reconciler) updateMachineImages(ctx context.Context, log logr.Logger, u
 			Username:   update.Source.OCI.Username,
 			Password:   string(password),
 			Parallel:   1,
-		}, update.Source.OCI.Insecure)
+		}, update.Source.OCI.Insecure, log)
 		if err != nil {
 			return fmt.Errorf("failed to initialize OCI source: %w", err)
 		}

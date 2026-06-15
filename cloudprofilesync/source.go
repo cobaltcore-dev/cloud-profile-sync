@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	gardencorev1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
+	"github.com/go-logr/logr"
 	"golang.org/x/sync/semaphore"
 	"oras.land/oras-go/v2/registry/remote"
 	"oras.land/oras-go/v2/registry/remote/auth"
@@ -77,6 +78,7 @@ type Source interface {
 }
 
 type OCI struct {
+	log  logr.Logger
 	repo *remote.Repository
 	sema *semaphore.Weighted
 }
@@ -89,7 +91,7 @@ type OCIParams struct {
 	Parallel   int64  `json:"parallel"`
 }
 
-func NewOCI(params OCIParams, insecure bool) (*OCI, error) {
+func NewOCI(params OCIParams, insecure bool, log logr.Logger) (*OCI, error) {
 	// Create a new OCI repository
 	repo, err := remote.NewRepository(params.Registry + "/" + params.Repository)
 	if err != nil {
@@ -109,6 +111,7 @@ func NewOCI(params OCIParams, insecure bool) (*OCI, error) {
 	repo.PlainHTTP = insecure
 
 	return &OCI{
+		log:  log,
 		repo: repo,
 		sema: semaphore.NewWeighted(params.Parallel),
 	}, nil
@@ -134,7 +137,7 @@ func (o *OCI) GetVersions(ctx context.Context) ([]SourceImage, error) {
 			defer o.sema.Release(1)
 			_, reader, err := o.repo.FetchReference(ctx, tag)
 			if err != nil {
-				out <- Result[SourceImage]{err: err}
+				out <- Result[SourceImage]{err: fmt.Errorf("tag %s: failed to fetch manifest: %w", tag, err)}
 				return
 			}
 			defer reader.Close()
@@ -143,12 +146,12 @@ func (o *OCI) GetVersions(ctx context.Context) ([]SourceImage, error) {
 			}{}
 			err = json.NewDecoder(reader).Decode(&manifest)
 			if err != nil {
-				out <- Result[SourceImage]{err: err}
+				out <- Result[SourceImage]{err: fmt.Errorf("tag %s: failed to decode manifest: %w", tag, err)}
 				return
 			}
 			arch, ok := manifest.Annotations["architecture"]
 			if !ok {
-				out <- Result[SourceImage]{err: fmt.Errorf("architecture annotation not found in descriptor. tag: %s", tag)}
+				out <- Result[SourceImage]{err: fmt.Errorf("tag %s: architecture annotation not found", tag)}
 				return
 			}
 			var capabilities gardencorev1beta1.Capabilities
@@ -177,14 +180,25 @@ func (o *OCI) GetVersions(ctx context.Context) ([]SourceImage, error) {
 	}
 
 	images := []SourceImage{}
-	errs := []error{}
+	var skipped []error
+	var errs []error
 	for range tags {
 		result := <-out
 		if result.err != nil {
-			errs = append(errs, result.err)
+			if errors.Is(result.err, context.Canceled) || errors.Is(result.err, context.DeadlineExceeded) {
+				errs = append(errs, result.err)
+			} else {
+				skipped = append(skipped, result.err)
+			}
 			continue
 		}
 		images = append(images, result.value)
+	}
+	if len(skipped) > 0 {
+		o.log.V(1).Info("skipped tags with errors", "count", len(skipped), "errors", errors.Join(skipped...))
+	}
+	if len(errs) == 0 && len(images) == 0 && len(tags) > 0 {
+		return nil, fmt.Errorf("all %d tags were skipped; possible registry issue", len(tags))
 	}
 	return images, errors.Join(errs...)
 }
