@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	gardencorev1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/opencontainers/image-spec/specs-go"
@@ -59,7 +60,7 @@ var _ = Describe("OCISource", func() {
 			Registry:   registryAddr,
 			Repository: "repo",
 			Parallel:   4,
-		}, true)
+		}, true, logr.Discard())
 		Expect(err).To(Succeed())
 		versions, err := oci.GetVersions(ctx)
 		Expect(err).To(Succeed())
@@ -103,7 +104,7 @@ var _ = Describe("OCISource", func() {
 			Registry:   registryAddr,
 			Repository: "repo-caps",
 			Parallel:   4,
-		}, true)
+		}, true, logr.Discard())
 		Expect(err).To(Succeed())
 		versions, err := oci.GetVersions(ctx)
 		Expect(err).To(Succeed())
@@ -148,12 +149,61 @@ var _ = Describe("OCISource", func() {
 			Registry:   registryAddr,
 			Repository: "repo-legacy",
 			Parallel:   4,
-		}, true)
+		}, true, logr.Discard())
 		Expect(err).To(Succeed())
 		versions, err := oci.GetVersions(ctx)
 		Expect(err).To(Succeed())
 		Expect(versions).To(HaveLen(1))
 		Expect(versions[0].Capabilities).To(BeNil())
+	})
+
+	It("skips tags without architecture annotation and returns remaining images", func(ctx SpecContext) {
+		repo, err := remote.NewRepository(registryAddr + "/repo-missing-arch")
+		Expect(err).To(Succeed())
+		repo.PlainHTTP = true
+
+		withArch := ocispec.Index{
+			Versioned: specs.Versioned{SchemaVersion: 2},
+			Manifests: []ocispec.Descriptor{
+				{MediaType: ocispec.MediaTypeImageManifest, Size: 0, Digest: ocispec.DescriptorEmptyJSON.Digest},
+			},
+			Annotations: map[string]string{
+				"architecture": "amd64",
+			},
+		}
+		withArchBlob, err := json.Marshal(withArch)
+		Expect(err).To(Succeed())
+		withArchDesc := content.NewDescriptorFromBytes(ocispec.MediaTypeImageIndex, withArchBlob)
+
+		noArch := ocispec.Index{
+			Versioned: specs.Versioned{SchemaVersion: 2},
+			Manifests: []ocispec.Descriptor{
+				{MediaType: ocispec.MediaTypeImageManifest, Size: 0, Digest: ocispec.DescriptorEmptyJSON.Digest},
+			},
+		}
+		noArchBlob, err := json.Marshal(noArch)
+		Expect(err).To(Succeed())
+		noArchDesc := content.NewDescriptorFromBytes(ocispec.MediaTypeImageIndex, noArchBlob)
+
+		err = repo.Push(ctx, ocispec.DescriptorEmptyJSON, strings.NewReader("{}"))
+		Expect(err).To(Succeed())
+		err = repo.PushReference(ctx, withArchDesc, bytes.NewReader(withArchBlob), "1.0.0")
+		Expect(err).To(Succeed())
+		err = repo.Push(ctx, ocispec.DescriptorEmptyJSON, strings.NewReader("{}"))
+		Expect(err).To(Succeed())
+		err = repo.PushReference(ctx, noArchDesc, bytes.NewReader(noArchBlob), "1.0.1")
+		Expect(err).To(Succeed())
+
+		oci, err := cloudprofilesync.NewOCI(cloudprofilesync.OCIParams{
+			Registry:   registryAddr,
+			Repository: "repo-missing-arch",
+			Parallel:   4,
+		}, true, logr.Discard())
+		Expect(err).To(Succeed())
+		versions, err := oci.GetVersions(ctx)
+		Expect(err).To(Succeed())
+		Expect(versions).To(HaveLen(1))
+		Expect(versions[0].Version).To(Equal("1.0.0"))
 	})
 
 	It("leaves Capabilities nil when feature_set contains no valid values", func(ctx SpecContext) {
@@ -185,7 +235,7 @@ var _ = Describe("OCISource", func() {
 			Registry:   registryAddr,
 			Repository: "repo-no-valid-features",
 			Parallel:   4,
-		}, true)
+		}, true, logr.Discard())
 		Expect(err).To(Succeed())
 		versions, err := oci.GetVersions(ctx)
 		Expect(err).To(Succeed())

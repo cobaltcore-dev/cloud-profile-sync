@@ -7,10 +7,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"strings"
 
 	gardencorev1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
+	"github.com/go-logr/logr"
 	"golang.org/x/sync/semaphore"
 	"oras.land/oras-go/v2/registry/remote"
 	"oras.land/oras-go/v2/registry/remote/auth"
@@ -77,6 +77,7 @@ type Source interface {
 }
 
 type OCI struct {
+	log  logr.Logger
 	repo *remote.Repository
 	sema *semaphore.Weighted
 }
@@ -89,7 +90,7 @@ type OCIParams struct {
 	Parallel   int64  `json:"parallel"`
 }
 
-func NewOCI(params OCIParams, insecure bool) (*OCI, error) {
+func NewOCI(params OCIParams, insecure bool, log logr.Logger) (*OCI, error) {
 	// Create a new OCI repository
 	repo, err := remote.NewRepository(params.Registry + "/" + params.Repository)
 	if err != nil {
@@ -109,6 +110,7 @@ func NewOCI(params OCIParams, insecure bool) (*OCI, error) {
 	repo.PlainHTTP = insecure
 
 	return &OCI{
+		log:  log,
 		repo: repo,
 		sema: semaphore.NewWeighted(params.Parallel),
 	}, nil
@@ -134,7 +136,8 @@ func (o *OCI) GetVersions(ctx context.Context) ([]SourceImage, error) {
 			defer o.sema.Release(1)
 			_, reader, err := o.repo.FetchReference(ctx, tag)
 			if err != nil {
-				out <- Result[SourceImage]{err: err}
+				o.log.V(1).Info("skipping tag: failed to fetch manifest", "tag", tag, "error", err)
+				out <- Result[SourceImage]{}
 				return
 			}
 			defer reader.Close()
@@ -143,12 +146,14 @@ func (o *OCI) GetVersions(ctx context.Context) ([]SourceImage, error) {
 			}{}
 			err = json.NewDecoder(reader).Decode(&manifest)
 			if err != nil {
-				out <- Result[SourceImage]{err: err}
+				o.log.V(1).Info("skipping tag: failed to decode manifest", "tag", tag, "error", err)
+				out <- Result[SourceImage]{}
 				return
 			}
 			arch, ok := manifest.Annotations["architecture"]
 			if !ok {
-				out <- Result[SourceImage]{err: fmt.Errorf("architecture annotation not found in descriptor. tag: %s", tag)}
+				o.log.V(1).Info("skipping tag: architecture annotation not found", "tag", tag)
+				out <- Result[SourceImage]{}
 				return
 			}
 			var capabilities gardencorev1beta1.Capabilities
@@ -182,6 +187,9 @@ func (o *OCI) GetVersions(ctx context.Context) ([]SourceImage, error) {
 		result := <-out
 		if result.err != nil {
 			errs = append(errs, result.err)
+			continue
+		}
+		if result.value.Version == "" {
 			continue
 		}
 		images = append(images, result.value)
