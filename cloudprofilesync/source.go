@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 
 	gardencorev1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
@@ -136,8 +137,7 @@ func (o *OCI) GetVersions(ctx context.Context) ([]SourceImage, error) {
 			defer o.sema.Release(1)
 			_, reader, err := o.repo.FetchReference(ctx, tag)
 			if err != nil {
-				o.log.V(1).Info("skipping tag: failed to fetch manifest", "tag", tag, "error", err)
-				out <- Result[SourceImage]{}
+				out <- Result[SourceImage]{err: fmt.Errorf("tag %s: failed to fetch manifest: %w", tag, err)}
 				return
 			}
 			defer reader.Close()
@@ -146,14 +146,12 @@ func (o *OCI) GetVersions(ctx context.Context) ([]SourceImage, error) {
 			}{}
 			err = json.NewDecoder(reader).Decode(&manifest)
 			if err != nil {
-				o.log.V(1).Info("skipping tag: failed to decode manifest", "tag", tag, "error", err)
-				out <- Result[SourceImage]{}
+				out <- Result[SourceImage]{err: fmt.Errorf("tag %s: failed to decode manifest: %w", tag, err)}
 				return
 			}
 			arch, ok := manifest.Annotations["architecture"]
 			if !ok {
-				o.log.V(1).Info("skipping tag: architecture annotation not found", "tag", tag)
-				out <- Result[SourceImage]{}
+				out <- Result[SourceImage]{err: fmt.Errorf("tag %s: architecture annotation not found", tag)}
 				return
 			}
 			var capabilities gardencorev1beta1.Capabilities
@@ -182,19 +180,24 @@ func (o *OCI) GetVersions(ctx context.Context) ([]SourceImage, error) {
 	}
 
 	images := []SourceImage{}
-	errs := []error{}
+	var skipped []error
+	var errs []error
 	for range tags {
 		result := <-out
 		if result.err != nil {
-			errs = append(errs, result.err)
-			continue
-		}
-		if result.value.Version == "" {
+			if errors.Is(result.err, context.Canceled) || errors.Is(result.err, context.DeadlineExceeded) {
+				errs = append(errs, result.err)
+			} else {
+				skipped = append(skipped, result.err)
+			}
 			continue
 		}
 		images = append(images, result.value)
 	}
-	if len(images) == 0 && len(tags) > 0 {
+	if len(skipped) > 0 {
+		o.log.V(1).Info("skipped tags with errors", "count", len(skipped), "errors", errors.Join(skipped...))
+	}
+	if len(errs) == 0 && len(images) == 0 && len(tags) > 0 {
 		return nil, fmt.Errorf("all %d tags were skipped; possible registry issue", len(tags))
 	}
 	return images, errors.Join(errs...)
