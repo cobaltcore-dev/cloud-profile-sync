@@ -143,21 +143,26 @@ func (o *OCI) GetVersions(ctx context.Context) ([]SourceImage, error) {
 			defer reader.Close()
 			manifest := struct {
 				Annotations map[string]string `json:"annotations"`
+				Labels      map[string]string `json:"labels"`
 			}{}
 			err = json.NewDecoder(reader).Decode(&manifest)
 			if err != nil {
 				out <- Result[SourceImage]{err: fmt.Errorf("tag %s: failed to decode manifest: %w", tag, err)}
 				return
 			}
-			arch, ok := manifest.Annotations["architecture"]
+			meta := manifest.Annotations
+			if len(meta) == 0 {
+				meta = manifest.Labels
+			}
+			arch, ok := meta["architecture"]
 			if !ok {
 				out <- Result[SourceImage]{err: fmt.Errorf("tag %s: architecture annotation not found", tag)}
 				return
 			}
 			var capabilities gardencorev1beta1.Capabilities
 			var cleanVersion string
-			if featureSet, ok := manifest.Annotations["feature_set"]; ok {
-				if version, ok := manifest.Annotations["version"]; ok {
+			if featureSet, ok := meta["feature_set"]; ok {
+				if version, ok := meta["version"]; ok {
 					features := filterFeatureSet(featureSet)
 					if len(features) > 0 {
 						capabilities = gardencorev1beta1.Capabilities{
