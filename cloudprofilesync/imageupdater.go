@@ -73,13 +73,21 @@ func (iu *ImageUpdater) Update(ctx context.Context, cpSpec *gardenerv1beta1.Clou
 		if idx, exists := existingVersions[sourceImage.Version]; exists {
 			image.Versions[idx].Architectures = sourceImage.Architectures
 		} else {
-			image.Versions = append(image.Versions, gardenerv1beta1.MachineImageVersion{
-				ExpirableVersion: gardenerv1beta1.ExpirableVersion{
-					Version: sourceImage.Version,
-				},
-				Architectures: sourceImage.Architectures,
-			})
-			existingVersions[sourceImage.Version] = len(image.Versions) - 1
+			// Moving this check to filterImages() would break the core architectural goal of GEP-33
+			// as it intentionally decouples the OCI registry tag from the semantic OS version
+			// In the future, teams might push images with tags like build-0849f313 or 2026-06-release
+			// As long as the CleanVersion annotation is a valid SemVer (e.g., 2262.0.0), the extension needs to route to it
+			if _, err = semver.Parse(sourceImage.Version); err != nil {
+				iu.Log.V(1).Info("skipping legacy entry in spec.machineImages because original tag is not valid semver", "version", sourceImage.Version)
+			} else {
+				image.Versions = append(image.Versions, gardenerv1beta1.MachineImageVersion{
+					ExpirableVersion: gardenerv1beta1.ExpirableVersion{
+						Version: sourceImage.Version,
+					},
+					Architectures: sourceImage.Architectures,
+				})
+				existingVersions[sourceImage.Version] = len(image.Versions) - 1
+			}
 		}
 
 		// When capabilities are enabled, also write the clean version entry.

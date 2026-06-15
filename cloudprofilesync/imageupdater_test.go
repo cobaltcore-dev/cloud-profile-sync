@@ -172,6 +172,37 @@ var _ = Describe("ImageUpdater", func() {
 			Expect(cpSpec.MachineImages[0].Versions).To(HaveLen(2))
 		})
 
+		It("skips legacy spec entry for non-semver raw tag but still passes image to provider", func(ctx SpecContext) {
+			mockSource.images = []cloudprofilesync.SourceImage{
+				{
+					Version:       "1877.9.2.0-metal-sci-pxe-amd64-1877-9-2-6bb2b442",
+					CleanVersion:  "1877.9.2",
+					Architectures: []string{"amd64"},
+					Capabilities:  gardencorev1beta1.Capabilities{"architecture": {"amd64"}, "feature": {"sci", "_pxe"}},
+				},
+			}
+			updater := cloudprofilesync.ImageUpdater{
+				Log:                GinkgoLogr,
+				Source:             &mockSource,
+				ImageName:          "test",
+				EnableCapabilities: true,
+				Provider:           &MockProvider{},
+			}
+			var cpSpec gardencorev1beta1.CloudProfileSpec
+			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
+
+			// Non-semver raw tag must not appear in spec.machineImages — Gardener would reject it.
+			// Only the clean version entry should be written.
+			Expect(cpSpec.MachineImages[0].Versions).To(HaveLen(1))
+			Expect(cpSpec.MachineImages[0].Versions[0].Version).To(Equal("1877.9.2"))
+
+			// The raw tag must still reach the provider (capabilityFlavors).
+			var fromProvider []cloudprofilesync.SourceImage
+			Expect(json.Unmarshal(cpSpec.ProviderConfig.Raw, &fromProvider)).To(Succeed())
+			Expect(fromProvider).To(HaveLen(1))
+			Expect(fromProvider[0].Version).To(Equal("1877.9.2.0-metal-sci-pxe-amd64-1877-9-2-6bb2b442"))
+		})
+
 		It("writes only full tag when CleanVersion is absent", func(ctx SpecContext) {
 			mockSource.images = []cloudprofilesync.SourceImage{
 				{Version: "1877.0.0", Architectures: []string{"amd64"}},

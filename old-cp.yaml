@@ -1,0 +1,1050 @@
+apiVersion: core.gardener.cloud/v1beta1
+kind: CloudProfile
+metadata:
+  creationTimestamp: "2026-04-30T12:13:16Z"
+  finalizers:
+  - gardener
+  labels:
+    provider.extensions.gardener.cloud/ironcore-metal: "true"
+  name: ironcore-metal
+  ownerReferences:
+  - apiVersion: cloudprofilesync.cobaltcore.dev/v1alpha1
+    blockOwnerDeletion: true
+    controller: true
+    kind: ManagedCloudProfile
+    name: ironcore-metal
+    uid: 51e11b41-46d8-48f5-a67a-3082e3691edd
+  resourceVersion: "8407246"
+  uid: 353215e2-6214-4b74-99d2-059c74ae16f9
+spec:
+  kubernetes:
+    versions:
+    - version: 1.34.8
+    - version: 1.33.6
+    - version: 1.32.6
+    - version: 1.31.5
+    - version: 1.30.0
+    - version: 1.29.0
+  machineImages:
+  - name: gardenlinux
+    updateStrategy: major
+    versions:
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 1890.0.0-sci-usi
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 1890.0.0-sci-usi-dev
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 1889.0.0-sci-usi
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 1889.0.0-sci-usi-dev
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 1881.0.0-sci-usi-dev
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 1872.0.0-sci-usi
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 1871.0.0-sci-usi
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 1868.0.0-sci-usi
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 1816.0.0-sci
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 1877.17.1-metal-sci-pxe-amd64-1877-17-1-b8bb1bad
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 1877.17.1-metal-sci-usi-amd64-1877-17-1-b8bb1bad
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 1877.17.1-metal-sci-usidev-amd64-1877-17-1-b8bb1bad
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 1877.17.1-metal-scibase-usi-amd64-1877-17-1-b8bb1bad
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 1877.17.2-metal-sci-pxe-amd64-1877-17-2-35d56479
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 1877.17.2-metal-sci-usi-amd64-1877-17-2-35d56479
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 1877.17.2-metal-sci-usidev-amd64-1877-17-2-35d56479
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 1877.17.2-metal-scibase-usi-amd64-1877-17-2-35d56479
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 1877.19.1-metal-sci-pxe-amd64-1877-19-1-6f52ae0e
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 1877.19.1-metal-sci-usi-amd64-1877-19-1-6f52ae0e
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 1877.19.1-metal-sci-usidev-amd64-1877-19-1-6f52ae0e
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 1877.19.1-metal-scibase-usi-amd64-1877-19-1-6f52ae0e
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 1877.19.2-metal-chost-pxe-amd64-1877-19-2-96c3b937
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 1877.19.2-metal-sci-pxe-amd64-1877-19-2-96c3b937
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 1877.19.2-metal-sci-usi-amd64-1877-19-2-96c3b937
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 1877.19.2-metal-sci-usidev-amd64-1877-19-2-96c3b937
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 1877.19.2-metal-scibase-usi-amd64-1877-19-2-96c3b937
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2225.0.0-baremetal-sci-pxe-amd64-2225-0-0-9706c3a5
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2225.0.0-baremetal-sci-usi-amd64-2225-0-0-9706c3a5
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2225.0.0-baremetal-sci-usidev-amd64-2225-0-0-9706c3a5
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2225.0.0-baremetal-scibase-usi-amd64-2225-0-0-9706c3a5
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2227.0.0-baremetal-sci-pxe-amd64-2227-0-0-9706c3a5
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2227.0.0-baremetal-sci-usi-amd64-2227-0-0-9706c3a5
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2227.0.0-baremetal-sci-usidev-amd64-2227-0-0-9706c3a5
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2227.0.0-baremetal-scibase-usi-amd64-2227-0-0-9706c3a5
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2229.0.0-baremetal-sci-pxe-amd64-2229-0-0-9706c3a5
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2229.0.0-baremetal-sci-usi-amd64-2229-0-0-9706c3a5
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2229.0.0-baremetal-sci-usidev-amd64-2229-0-0-9706c3a5
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2229.0.0-baremetal-scibase-usi-amd64-2229-0-0-9706c3a5
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2230.0.0-baremetal-sci-pxe-amd64-2230-0-0-9706c3a5
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2230.0.0-baremetal-sci-usi-amd64-2230-0-0-9706c3a5
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2230.0.0-baremetal-sci-usidev-amd64-2230-0-0-9706c3a5
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2230.0.0-baremetal-scibase-usi-amd64-2230-0-0-9706c3a5
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2232.0.0-baremetal-sci-pxe-amd64-2232-0-0-9706c3a5
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2232.0.0-baremetal-sci-usi-amd64-2232-0-0-9706c3a5
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2232.0.0-baremetal-sci-usidev-amd64-2232-0-0-9706c3a5
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2232.0.0-baremetal-scibase-usi-amd64-2232-0-0-9706c3a5
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2233.0.0-baremetal-sci-pxe-amd64-2233-0-0-9706c3a5
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2233.0.0-baremetal-sci-usi-amd64-2233-0-0-9706c3a5
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2233.0.0-baremetal-sci-usidev-amd64-2233-0-0-9706c3a5
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2233.0.0-baremetal-scibase-usi-amd64-2233-0-0-9706c3a5
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2234.0.0-baremetal-sci-pxe-amd64-2234-0-0-9706c3a5
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2234.0.0-baremetal-sci-usi-amd64-2234-0-0-9706c3a5
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2234.0.0-baremetal-sci-usidev-amd64-2234-0-0-9706c3a5
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2234.0.0-baremetal-scibase-usi-amd64-2234-0-0-9706c3a5
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2235.0.0-baremetal-sci-pxe-amd64-2235-0-0-9706c3a5
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2235.0.0-baremetal-sci-usi-amd64-2235-0-0-9706c3a5
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2235.0.0-baremetal-sci-usidev-amd64-2235-0-0-9706c3a5
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2235.0.0-baremetal-scibase-usi-amd64-2235-0-0-9706c3a5
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2237.0.0-baremetal-sci-pxe-amd64-2237-0-0-9706c3a5
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2237.0.0-baremetal-sci-usi-amd64-2237-0-0-9706c3a5
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2237.0.0-baremetal-sci-usidev-amd64-2237-0-0-9706c3a5
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2237.0.0-baremetal-scibase-usi-amd64-2237-0-0-9706c3a5
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2238.0.0-baremetal-sci-pxe-amd64-2238-0-0-9706c3a5
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2238.0.0-baremetal-sci-usi-amd64-2238-0-0-9706c3a5
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2238.0.0-baremetal-sci-usidev-amd64-2238-0-0-9706c3a5
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2238.0.0-baremetal-scibase-usi-amd64-2238-0-0-9706c3a5
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2239.0.0-baremetal-sci-pxe-amd64-2239-0-0-9706c3a5
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2239.0.0-baremetal-sci-usi-amd64-2239-0-0-9706c3a5
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2239.0.0-baremetal-sci-usidev-amd64-2239-0-0-9706c3a5
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2239.0.0-baremetal-scibase-usi-amd64-2239-0-0-9706c3a5
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2240.0.0-baremetal-sci-pxe-amd64-2240-0-0-9706c3a5
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2240.0.0-baremetal-sci-usi-amd64-2240-0-0-9706c3a5
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2240.0.0-baremetal-sci-usidev-amd64-2240-0-0-9706c3a5
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2240.0.0-baremetal-scibase-usi-amd64-2240-0-0-9706c3a5
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2241.0.0-baremetal-sci-pxe-amd64-2241-0-0-9706c3a5
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2241.0.0-baremetal-sci-usi-amd64-2241-0-0-9706c3a5
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2241.0.0-baremetal-sci-usidev-amd64-2241-0-0-9706c3a5
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2241.0.0-baremetal-scibase-usi-amd64-2241-0-0-9706c3a5
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2242.0.0-baremetal-sci-pxe-amd64-2242-0-0-9706c3a5
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2242.0.0-baremetal-sci-usi-amd64-2242-0-0-9706c3a5
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2242.0.0-baremetal-sci-usidev-amd64-2242-0-0-9706c3a5
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2242.0.0-baremetal-scibase-usi-amd64-2242-0-0-9706c3a5
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2243.0.0-baremetal-sci-pxe-amd64-2243-0-0-9706c3a5
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2243.0.0-baremetal-sci-usi-amd64-2243-0-0-9706c3a5
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2243.0.0-baremetal-sci-usidev-amd64-2243-0-0-9706c3a5
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2243.0.0-baremetal-scibase-usi-amd64-2243-0-0-9706c3a5
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2244.0.0-baremetal-sci-pxe-amd64-2244-0-0-bc27cc47
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2244.0.0-baremetal-sci-usi-amd64-2244-0-0-bc27cc47
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2244.0.0-baremetal-sci-usidev-amd64-2244-0-0-bc27cc47
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2244.0.0-baremetal-scibase-usi-amd64-2244-0-0-bc27cc47
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2245.0.0-baremetal-sci-pxe-amd64-2245-0-0-bc27cc47
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2245.0.0-baremetal-sci-usi-amd64-2245-0-0-bc27cc47
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2245.0.0-baremetal-sci-usidev-amd64-2245-0-0-bc27cc47
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2245.0.0-baremetal-scibase-usi-amd64-2245-0-0-bc27cc47
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2246.0.0-baremetal-sci-pxe-amd64-2246-0-0-bc27cc47
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2246.0.0-baremetal-sci-usi-amd64-2246-0-0-bc27cc47
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2246.0.0-baremetal-sci-usidev-amd64-2246-0-0-bc27cc47
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2246.0.0-baremetal-scibase-usi-amd64-2246-0-0-bc27cc47
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2247.0.0-baremetal-sci-pxe-amd64-2247-0-0-bc27cc47
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2247.0.0-baremetal-sci-usi-amd64-2247-0-0-bc27cc47
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2247.0.0-baremetal-sci-usidev-amd64-2247-0-0-bc27cc47
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2247.0.0-baremetal-scibase-usi-amd64-2247-0-0-bc27cc47
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2248.0.0-baremetal-sci-pxe-amd64-2248-0-0-bc27cc47
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2248.0.0-baremetal-sci-usi-amd64-2248-0-0-bc27cc47
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2248.0.0-baremetal-sci-usidev-amd64-2248-0-0-bc27cc47
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2248.0.0-baremetal-scibase-usi-amd64-2248-0-0-bc27cc47
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2249.0.0-baremetal-sci-pxe-amd64-2249-0-0-bc27cc47
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2249.0.0-baremetal-sci-usi-amd64-2249-0-0-bc27cc47
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2249.0.0-baremetal-sci-usidev-amd64-2249-0-0-bc27cc47
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2249.0.0-baremetal-scibase-usi-amd64-2249-0-0-bc27cc47
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2250.0.0-baremetal-sci-pxe-amd64-2250-0-0-bc27cc47
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2250.0.0-baremetal-sci-usi-amd64-2250-0-0-bc27cc47
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2250.0.0-baremetal-sci-usidev-amd64-2250-0-0-bc27cc47
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2250.0.0-baremetal-scibase-usi-amd64-2250-0-0-bc27cc47
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2252.0.0-baremetal-sci-pxe-amd64-2252-0-0-0849f313
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2252.0.0-baremetal-sci-usi-amd64-2252-0-0-0849f313
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2252.0.0-baremetal-sci-usidev-amd64-2252-0-0-0849f313
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2252.0.0-baremetal-scibase-usi-amd64-2252-0-0-0849f313
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2253.0.0-baremetal-sci-pxe-amd64-2253-0-0-0849f313
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2253.0.0-baremetal-sci-usi-amd64-2253-0-0-0849f313
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2253.0.0-baremetal-sci-usidev-amd64-2253-0-0-0849f313
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2253.0.0-baremetal-scibase-usi-amd64-2253-0-0-0849f313
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2254.0.0-baremetal-sci-pxe-amd64-2254-0-0-0849f313
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2254.0.0-baremetal-sci-usi-amd64-2254-0-0-0849f313
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2254.0.0-baremetal-sci-usidev-amd64-2254-0-0-0849f313
+    - architectures:
+      - amd64
+      cri:
+      - name: containerd
+      version: 2254.0.0-baremetal-scibase-usi-amd64-2254-0-0-0849f313
+  machineTypes:
+  - architecture: amd64
+    cpu: "4"
+    gpu: "0"
+    memory: 16Gi
+    name: baremetal
+    usable: true
+  providerConfig:
+    apiVersion: ironcore-metal.provider.extensions.gardener.cloud/v1alpha1
+    kind: CloudProfileConfig
+    machineImages:
+    - name: gardenlinux
+      versions:
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:1862.0-metal-sci_usi-amd64-1862.0-7c856e32-amd64
+        version: 1862.0.0-sci-usi
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:1843.0-metal-sci_usi-amd64-1843.0-74953381-amd64
+        version: 1843.0.0-sci-usi
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:1816.0-metal-sci_pxe-amd64-1816.0-67839a77-amd64
+        version: 1816.0.0-sci
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:1877.17.1-metal-sci-pxe-amd64-1877-17-1-b8bb1bad
+        version: 1877.17.1-metal-sci-pxe-amd64-1877-17-1-b8bb1bad
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:1877.17.1-metal-sci-usi-amd64-1877-17-1-b8bb1bad
+        version: 1877.17.1-metal-sci-usi-amd64-1877-17-1-b8bb1bad
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:1877.17.1-metal-sci-usidev-amd64-1877-17-1-b8bb1bad
+        version: 1877.17.1-metal-sci-usidev-amd64-1877-17-1-b8bb1bad
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:1877.17.1-metal-scibase-usi-amd64-1877-17-1-b8bb1bad
+        version: 1877.17.1-metal-scibase-usi-amd64-1877-17-1-b8bb1bad
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:1877.17.2-metal-sci-pxe-amd64-1877-17-2-35d56479
+        version: 1877.17.2-metal-sci-pxe-amd64-1877-17-2-35d56479
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:1877.17.2-metal-sci-usi-amd64-1877-17-2-35d56479
+        version: 1877.17.2-metal-sci-usi-amd64-1877-17-2-35d56479
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:1877.17.2-metal-sci-usidev-amd64-1877-17-2-35d56479
+        version: 1877.17.2-metal-sci-usidev-amd64-1877-17-2-35d56479
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:1877.17.2-metal-scibase-usi-amd64-1877-17-2-35d56479
+        version: 1877.17.2-metal-scibase-usi-amd64-1877-17-2-35d56479
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:1877.19.1-metal-sci-pxe-amd64-1877-19-1-6f52ae0e
+        version: 1877.19.1-metal-sci-pxe-amd64-1877-19-1-6f52ae0e
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:1877.19.1-metal-sci-usi-amd64-1877-19-1-6f52ae0e
+        version: 1877.19.1-metal-sci-usi-amd64-1877-19-1-6f52ae0e
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:1877.19.1-metal-sci-usidev-amd64-1877-19-1-6f52ae0e
+        version: 1877.19.1-metal-sci-usidev-amd64-1877-19-1-6f52ae0e
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:1877.19.1-metal-scibase-usi-amd64-1877-19-1-6f52ae0e
+        version: 1877.19.1-metal-scibase-usi-amd64-1877-19-1-6f52ae0e
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:1877.19.2-metal-chost-pxe-amd64-1877-19-2-96c3b937
+        version: 1877.19.2-metal-chost-pxe-amd64-1877-19-2-96c3b937
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:1877.19.2-metal-sci-pxe-amd64-1877-19-2-96c3b937
+        version: 1877.19.2-metal-sci-pxe-amd64-1877-19-2-96c3b937
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:1877.19.2-metal-sci-usi-amd64-1877-19-2-96c3b937
+        version: 1877.19.2-metal-sci-usi-amd64-1877-19-2-96c3b937
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:1877.19.2-metal-sci-usidev-amd64-1877-19-2-96c3b937
+        version: 1877.19.2-metal-sci-usidev-amd64-1877-19-2-96c3b937
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:1877.19.2-metal-scibase-usi-amd64-1877-19-2-96c3b937
+        version: 1877.19.2-metal-scibase-usi-amd64-1877-19-2-96c3b937
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2225.0.0-baremetal-sci-pxe-amd64-2225-0-0-9706c3a5
+        version: 2225.0.0-baremetal-sci-pxe-amd64-2225-0-0-9706c3a5
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2225.0.0-baremetal-sci-usi-amd64-2225-0-0-9706c3a5
+        version: 2225.0.0-baremetal-sci-usi-amd64-2225-0-0-9706c3a5
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2225.0.0-baremetal-sci-usidev-amd64-2225-0-0-9706c3a5
+        version: 2225.0.0-baremetal-sci-usidev-amd64-2225-0-0-9706c3a5
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2225.0.0-baremetal-scibase-usi-amd64-2225-0-0-9706c3a5
+        version: 2225.0.0-baremetal-scibase-usi-amd64-2225-0-0-9706c3a5
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2227.0.0-baremetal-sci-pxe-amd64-2227-0-0-9706c3a5
+        version: 2227.0.0-baremetal-sci-pxe-amd64-2227-0-0-9706c3a5
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2227.0.0-baremetal-sci-usi-amd64-2227-0-0-9706c3a5
+        version: 2227.0.0-baremetal-sci-usi-amd64-2227-0-0-9706c3a5
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2227.0.0-baremetal-sci-usidev-amd64-2227-0-0-9706c3a5
+        version: 2227.0.0-baremetal-sci-usidev-amd64-2227-0-0-9706c3a5
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2227.0.0-baremetal-scibase-usi-amd64-2227-0-0-9706c3a5
+        version: 2227.0.0-baremetal-scibase-usi-amd64-2227-0-0-9706c3a5
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2229.0.0-baremetal-sci-pxe-amd64-2229-0-0-9706c3a5
+        version: 2229.0.0-baremetal-sci-pxe-amd64-2229-0-0-9706c3a5
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2229.0.0-baremetal-sci-usi-amd64-2229-0-0-9706c3a5
+        version: 2229.0.0-baremetal-sci-usi-amd64-2229-0-0-9706c3a5
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2229.0.0-baremetal-sci-usidev-amd64-2229-0-0-9706c3a5
+        version: 2229.0.0-baremetal-sci-usidev-amd64-2229-0-0-9706c3a5
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2229.0.0-baremetal-scibase-usi-amd64-2229-0-0-9706c3a5
+        version: 2229.0.0-baremetal-scibase-usi-amd64-2229-0-0-9706c3a5
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2230.0.0-baremetal-sci-pxe-amd64-2230-0-0-9706c3a5
+        version: 2230.0.0-baremetal-sci-pxe-amd64-2230-0-0-9706c3a5
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2230.0.0-baremetal-sci-usi-amd64-2230-0-0-9706c3a5
+        version: 2230.0.0-baremetal-sci-usi-amd64-2230-0-0-9706c3a5
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2230.0.0-baremetal-sci-usidev-amd64-2230-0-0-9706c3a5
+        version: 2230.0.0-baremetal-sci-usidev-amd64-2230-0-0-9706c3a5
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2230.0.0-baremetal-scibase-usi-amd64-2230-0-0-9706c3a5
+        version: 2230.0.0-baremetal-scibase-usi-amd64-2230-0-0-9706c3a5
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2232.0.0-baremetal-sci-pxe-amd64-2232-0-0-9706c3a5
+        version: 2232.0.0-baremetal-sci-pxe-amd64-2232-0-0-9706c3a5
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2232.0.0-baremetal-sci-usi-amd64-2232-0-0-9706c3a5
+        version: 2232.0.0-baremetal-sci-usi-amd64-2232-0-0-9706c3a5
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2232.0.0-baremetal-sci-usidev-amd64-2232-0-0-9706c3a5
+        version: 2232.0.0-baremetal-sci-usidev-amd64-2232-0-0-9706c3a5
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2232.0.0-baremetal-scibase-usi-amd64-2232-0-0-9706c3a5
+        version: 2232.0.0-baremetal-scibase-usi-amd64-2232-0-0-9706c3a5
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2233.0.0-baremetal-sci-pxe-amd64-2233-0-0-9706c3a5
+        version: 2233.0.0-baremetal-sci-pxe-amd64-2233-0-0-9706c3a5
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2233.0.0-baremetal-sci-usi-amd64-2233-0-0-9706c3a5
+        version: 2233.0.0-baremetal-sci-usi-amd64-2233-0-0-9706c3a5
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2233.0.0-baremetal-sci-usidev-amd64-2233-0-0-9706c3a5
+        version: 2233.0.0-baremetal-sci-usidev-amd64-2233-0-0-9706c3a5
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2233.0.0-baremetal-scibase-usi-amd64-2233-0-0-9706c3a5
+        version: 2233.0.0-baremetal-scibase-usi-amd64-2233-0-0-9706c3a5
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2234.0.0-baremetal-sci-pxe-amd64-2234-0-0-9706c3a5
+        version: 2234.0.0-baremetal-sci-pxe-amd64-2234-0-0-9706c3a5
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2234.0.0-baremetal-sci-usi-amd64-2234-0-0-9706c3a5
+        version: 2234.0.0-baremetal-sci-usi-amd64-2234-0-0-9706c3a5
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2234.0.0-baremetal-sci-usidev-amd64-2234-0-0-9706c3a5
+        version: 2234.0.0-baremetal-sci-usidev-amd64-2234-0-0-9706c3a5
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2234.0.0-baremetal-scibase-usi-amd64-2234-0-0-9706c3a5
+        version: 2234.0.0-baremetal-scibase-usi-amd64-2234-0-0-9706c3a5
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2235.0.0-baremetal-sci-pxe-amd64-2235-0-0-9706c3a5
+        version: 2235.0.0-baremetal-sci-pxe-amd64-2235-0-0-9706c3a5
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2235.0.0-baremetal-sci-usi-amd64-2235-0-0-9706c3a5
+        version: 2235.0.0-baremetal-sci-usi-amd64-2235-0-0-9706c3a5
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2235.0.0-baremetal-sci-usidev-amd64-2235-0-0-9706c3a5
+        version: 2235.0.0-baremetal-sci-usidev-amd64-2235-0-0-9706c3a5
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2235.0.0-baremetal-scibase-usi-amd64-2235-0-0-9706c3a5
+        version: 2235.0.0-baremetal-scibase-usi-amd64-2235-0-0-9706c3a5
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2237.0.0-baremetal-sci-pxe-amd64-2237-0-0-9706c3a5
+        version: 2237.0.0-baremetal-sci-pxe-amd64-2237-0-0-9706c3a5
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2237.0.0-baremetal-sci-usi-amd64-2237-0-0-9706c3a5
+        version: 2237.0.0-baremetal-sci-usi-amd64-2237-0-0-9706c3a5
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2237.0.0-baremetal-sci-usidev-amd64-2237-0-0-9706c3a5
+        version: 2237.0.0-baremetal-sci-usidev-amd64-2237-0-0-9706c3a5
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2237.0.0-baremetal-scibase-usi-amd64-2237-0-0-9706c3a5
+        version: 2237.0.0-baremetal-scibase-usi-amd64-2237-0-0-9706c3a5
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2238.0.0-baremetal-sci-pxe-amd64-2238-0-0-9706c3a5
+        version: 2238.0.0-baremetal-sci-pxe-amd64-2238-0-0-9706c3a5
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2238.0.0-baremetal-sci-usi-amd64-2238-0-0-9706c3a5
+        version: 2238.0.0-baremetal-sci-usi-amd64-2238-0-0-9706c3a5
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2238.0.0-baremetal-sci-usidev-amd64-2238-0-0-9706c3a5
+        version: 2238.0.0-baremetal-sci-usidev-amd64-2238-0-0-9706c3a5
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2238.0.0-baremetal-scibase-usi-amd64-2238-0-0-9706c3a5
+        version: 2238.0.0-baremetal-scibase-usi-amd64-2238-0-0-9706c3a5
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2239.0.0-baremetal-sci-pxe-amd64-2239-0-0-9706c3a5
+        version: 2239.0.0-baremetal-sci-pxe-amd64-2239-0-0-9706c3a5
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2239.0.0-baremetal-sci-usi-amd64-2239-0-0-9706c3a5
+        version: 2239.0.0-baremetal-sci-usi-amd64-2239-0-0-9706c3a5
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2239.0.0-baremetal-sci-usidev-amd64-2239-0-0-9706c3a5
+        version: 2239.0.0-baremetal-sci-usidev-amd64-2239-0-0-9706c3a5
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2239.0.0-baremetal-scibase-usi-amd64-2239-0-0-9706c3a5
+        version: 2239.0.0-baremetal-scibase-usi-amd64-2239-0-0-9706c3a5
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2240.0.0-baremetal-sci-pxe-amd64-2240-0-0-9706c3a5
+        version: 2240.0.0-baremetal-sci-pxe-amd64-2240-0-0-9706c3a5
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2240.0.0-baremetal-sci-usi-amd64-2240-0-0-9706c3a5
+        version: 2240.0.0-baremetal-sci-usi-amd64-2240-0-0-9706c3a5
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2240.0.0-baremetal-sci-usidev-amd64-2240-0-0-9706c3a5
+        version: 2240.0.0-baremetal-sci-usidev-amd64-2240-0-0-9706c3a5
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2240.0.0-baremetal-scibase-usi-amd64-2240-0-0-9706c3a5
+        version: 2240.0.0-baremetal-scibase-usi-amd64-2240-0-0-9706c3a5
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2241.0.0-baremetal-sci-pxe-amd64-2241-0-0-9706c3a5
+        version: 2241.0.0-baremetal-sci-pxe-amd64-2241-0-0-9706c3a5
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2241.0.0-baremetal-sci-usi-amd64-2241-0-0-9706c3a5
+        version: 2241.0.0-baremetal-sci-usi-amd64-2241-0-0-9706c3a5
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2241.0.0-baremetal-sci-usidev-amd64-2241-0-0-9706c3a5
+        version: 2241.0.0-baremetal-sci-usidev-amd64-2241-0-0-9706c3a5
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2241.0.0-baremetal-scibase-usi-amd64-2241-0-0-9706c3a5
+        version: 2241.0.0-baremetal-scibase-usi-amd64-2241-0-0-9706c3a5
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2242.0.0-baremetal-sci-pxe-amd64-2242-0-0-9706c3a5
+        version: 2242.0.0-baremetal-sci-pxe-amd64-2242-0-0-9706c3a5
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2242.0.0-baremetal-sci-usi-amd64-2242-0-0-9706c3a5
+        version: 2242.0.0-baremetal-sci-usi-amd64-2242-0-0-9706c3a5
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2242.0.0-baremetal-sci-usidev-amd64-2242-0-0-9706c3a5
+        version: 2242.0.0-baremetal-sci-usidev-amd64-2242-0-0-9706c3a5
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2242.0.0-baremetal-scibase-usi-amd64-2242-0-0-9706c3a5
+        version: 2242.0.0-baremetal-scibase-usi-amd64-2242-0-0-9706c3a5
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2243.0.0-baremetal-sci-pxe-amd64-2243-0-0-9706c3a5
+        version: 2243.0.0-baremetal-sci-pxe-amd64-2243-0-0-9706c3a5
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2243.0.0-baremetal-sci-usi-amd64-2243-0-0-9706c3a5
+        version: 2243.0.0-baremetal-sci-usi-amd64-2243-0-0-9706c3a5
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2243.0.0-baremetal-sci-usidev-amd64-2243-0-0-9706c3a5
+        version: 2243.0.0-baremetal-sci-usidev-amd64-2243-0-0-9706c3a5
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2243.0.0-baremetal-scibase-usi-amd64-2243-0-0-9706c3a5
+        version: 2243.0.0-baremetal-scibase-usi-amd64-2243-0-0-9706c3a5
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2244.0.0-baremetal-sci-pxe-amd64-2244-0-0-bc27cc47
+        version: 2244.0.0-baremetal-sci-pxe-amd64-2244-0-0-bc27cc47
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2244.0.0-baremetal-sci-usi-amd64-2244-0-0-bc27cc47
+        version: 2244.0.0-baremetal-sci-usi-amd64-2244-0-0-bc27cc47
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2244.0.0-baremetal-sci-usidev-amd64-2244-0-0-bc27cc47
+        version: 2244.0.0-baremetal-sci-usidev-amd64-2244-0-0-bc27cc47
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2244.0.0-baremetal-scibase-usi-amd64-2244-0-0-bc27cc47
+        version: 2244.0.0-baremetal-scibase-usi-amd64-2244-0-0-bc27cc47
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2245.0.0-baremetal-sci-pxe-amd64-2245-0-0-bc27cc47
+        version: 2245.0.0-baremetal-sci-pxe-amd64-2245-0-0-bc27cc47
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2245.0.0-baremetal-sci-usi-amd64-2245-0-0-bc27cc47
+        version: 2245.0.0-baremetal-sci-usi-amd64-2245-0-0-bc27cc47
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2245.0.0-baremetal-sci-usidev-amd64-2245-0-0-bc27cc47
+        version: 2245.0.0-baremetal-sci-usidev-amd64-2245-0-0-bc27cc47
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2245.0.0-baremetal-scibase-usi-amd64-2245-0-0-bc27cc47
+        version: 2245.0.0-baremetal-scibase-usi-amd64-2245-0-0-bc27cc47
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2246.0.0-baremetal-sci-pxe-amd64-2246-0-0-bc27cc47
+        version: 2246.0.0-baremetal-sci-pxe-amd64-2246-0-0-bc27cc47
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2246.0.0-baremetal-sci-usi-amd64-2246-0-0-bc27cc47
+        version: 2246.0.0-baremetal-sci-usi-amd64-2246-0-0-bc27cc47
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2246.0.0-baremetal-sci-usidev-amd64-2246-0-0-bc27cc47
+        version: 2246.0.0-baremetal-sci-usidev-amd64-2246-0-0-bc27cc47
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2246.0.0-baremetal-scibase-usi-amd64-2246-0-0-bc27cc47
+        version: 2246.0.0-baremetal-scibase-usi-amd64-2246-0-0-bc27cc47
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2247.0.0-baremetal-sci-pxe-amd64-2247-0-0-bc27cc47
+        version: 2247.0.0-baremetal-sci-pxe-amd64-2247-0-0-bc27cc47
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2247.0.0-baremetal-sci-usi-amd64-2247-0-0-bc27cc47
+        version: 2247.0.0-baremetal-sci-usi-amd64-2247-0-0-bc27cc47
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2247.0.0-baremetal-sci-usidev-amd64-2247-0-0-bc27cc47
+        version: 2247.0.0-baremetal-sci-usidev-amd64-2247-0-0-bc27cc47
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2247.0.0-baremetal-scibase-usi-amd64-2247-0-0-bc27cc47
+        version: 2247.0.0-baremetal-scibase-usi-amd64-2247-0-0-bc27cc47
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2248.0.0-baremetal-sci-pxe-amd64-2248-0-0-bc27cc47
+        version: 2248.0.0-baremetal-sci-pxe-amd64-2248-0-0-bc27cc47
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2248.0.0-baremetal-sci-usi-amd64-2248-0-0-bc27cc47
+        version: 2248.0.0-baremetal-sci-usi-amd64-2248-0-0-bc27cc47
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2248.0.0-baremetal-sci-usidev-amd64-2248-0-0-bc27cc47
+        version: 2248.0.0-baremetal-sci-usidev-amd64-2248-0-0-bc27cc47
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2248.0.0-baremetal-scibase-usi-amd64-2248-0-0-bc27cc47
+        version: 2248.0.0-baremetal-scibase-usi-amd64-2248-0-0-bc27cc47
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2249.0.0-baremetal-sci-pxe-amd64-2249-0-0-bc27cc47
+        version: 2249.0.0-baremetal-sci-pxe-amd64-2249-0-0-bc27cc47
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2249.0.0-baremetal-sci-usi-amd64-2249-0-0-bc27cc47
+        version: 2249.0.0-baremetal-sci-usi-amd64-2249-0-0-bc27cc47
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2249.0.0-baremetal-sci-usidev-amd64-2249-0-0-bc27cc47
+        version: 2249.0.0-baremetal-sci-usidev-amd64-2249-0-0-bc27cc47
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2249.0.0-baremetal-scibase-usi-amd64-2249-0-0-bc27cc47
+        version: 2249.0.0-baremetal-scibase-usi-amd64-2249-0-0-bc27cc47
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2250.0.0-baremetal-sci-pxe-amd64-2250-0-0-bc27cc47
+        version: 2250.0.0-baremetal-sci-pxe-amd64-2250-0-0-bc27cc47
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2250.0.0-baremetal-sci-usi-amd64-2250-0-0-bc27cc47
+        version: 2250.0.0-baremetal-sci-usi-amd64-2250-0-0-bc27cc47
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2250.0.0-baremetal-sci-usidev-amd64-2250-0-0-bc27cc47
+        version: 2250.0.0-baremetal-sci-usidev-amd64-2250-0-0-bc27cc47
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2250.0.0-baremetal-scibase-usi-amd64-2250-0-0-bc27cc47
+        version: 2250.0.0-baremetal-scibase-usi-amd64-2250-0-0-bc27cc47
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2252.0.0-baremetal-sci-pxe-amd64-2252-0-0-0849f313
+        version: 2252.0.0-baremetal-sci-pxe-amd64-2252-0-0-0849f313
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2252.0.0-baremetal-sci-usi-amd64-2252-0-0-0849f313
+        version: 2252.0.0-baremetal-sci-usi-amd64-2252-0-0-0849f313
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2252.0.0-baremetal-sci-usidev-amd64-2252-0-0-0849f313
+        version: 2252.0.0-baremetal-sci-usidev-amd64-2252-0-0-0849f313
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2252.0.0-baremetal-scibase-usi-amd64-2252-0-0-0849f313
+        version: 2252.0.0-baremetal-scibase-usi-amd64-2252-0-0-0849f313
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2253.0.0-baremetal-sci-pxe-amd64-2253-0-0-0849f313
+        version: 2253.0.0-baremetal-sci-pxe-amd64-2253-0-0-0849f313
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2253.0.0-baremetal-sci-usi-amd64-2253-0-0-0849f313
+        version: 2253.0.0-baremetal-sci-usi-amd64-2253-0-0-0849f313
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2253.0.0-baremetal-sci-usidev-amd64-2253-0-0-0849f313
+        version: 2253.0.0-baremetal-sci-usidev-amd64-2253-0-0-0849f313
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2253.0.0-baremetal-scibase-usi-amd64-2253-0-0-0849f313
+        version: 2253.0.0-baremetal-scibase-usi-amd64-2253-0-0-0849f313
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2254.0.0-baremetal-sci-pxe-amd64-2254-0-0-0849f313
+        version: 2254.0.0-baremetal-sci-pxe-amd64-2254-0-0-0849f313
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2254.0.0-baremetal-sci-usi-amd64-2254-0-0-0849f313
+        version: 2254.0.0-baremetal-sci-usi-amd64-2254-0-0-0849f313
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2254.0.0-baremetal-sci-usidev-amd64-2254-0-0-0849f313
+        version: 2254.0.0-baremetal-sci-usidev-amd64-2254-0-0-0849f313
+      - architecture: amd64
+        image: keppel.global.cloud.sap/ccloud-ghcr-io-mirror/gardenlinux/gardenlinux-ccloud:2254.0.0-baremetal-scibase-usi-amd64-2254-0-0-0849f313
+        version: 2254.0.0-baremetal-scibase-usi-amd64-2254-0-0-0849f313
+    machineTypes:
+    - name: baremetal
+    regionConfigs:
+    - certificateAuthorityData: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUQ1ekNDQWsrZ0F3SUJBZ0lSQUlHeHJLKzRHYUprYWNsSWRIMkl5WGd3RFFZSktvWklodmNOQVFFTEJRQXcKRFRFTE1Ba0dBMVVFQXhNQ1kyRXdIaGNOTWpReE1URXpNVE13TXpNNFdoY05NelF4TVRFek1UTXdNek00V2pBTgpNUXN3Q1FZRFZRUURFd0pqWVRDQ0FhSXdEUVlKS29aSWh2Y05BUUVCQlFBRGdnR1BBRENDQVlvQ2dnR0JBT2tYCndrQXNlTCtCV25CK2R0aDlNYmJqd3VlQkVJbjBidVJFUWFMMnZCUmVUUG4rbmN3aWYwc3ZxRlZra0o1eVhqdWwKN0lMZHlXaUVTNmdnY0w0aW03TEtKdVdXaDhCQ3BXcFBuODRxcW1YRzZGTWh0T2hqOG9TV1ZBSEpmQXVLVy9MVgo3SDJTWVpEaXJGcmVBV1hFRE5sZTluZHBXZDVvTyszTytFTVNlSGRKcmtkMUJ4bDdhRmdmc2dJYkJvdGVVcG8wCkNjUDU3WHhRMjBSc1d1ekxMcWdRazk2VmJIQ3hTcUpPTTVMSW5xbUo2WExxdC9RWjJrVXF0ZmlsU3JiM1ZLOXEKVTRkRmFzZXZYRHZYRlBsbUw2NVcrQXFuZ0FHVkZTaDJkSlUwS0JDSmhGZ2wyUW5ia0RGNmYyNFhmY3lNSU85NApEMW5LQVI3U2I3ZmZBRjdsSC9jaUlRSGFIRWQ5QlVCUlMrNTJ3Um94dU1CQVlPT2tKeUdCT0JaNnNNOSt0VkpjCktndjFieE9hVkRjK2xXcjRIVzloM3o2VlM4MURKSUhXZ1VGQU0zTGRlYnlRWkE0NjkrMHNFY3NXNlNhREs1SEoKNmM4UnJPRTBBSE9kZVAzUTAvU3pCM1dwQ1FKbjN1dlVDRTNNN3RUWVR4VEhVYkNSZ21MNW9sUHlZQkNKc1FJRApBUUFCbzBJd1FEQU9CZ05WSFE4QkFmOEVCQU1DQWFZd0R3WURWUjBUQVFIL0JBVXdBd0VCL3pBZEJnTlZIUTRFCkZnUVVrUitOL0FaKzlYUnkvZ0pDR0pZdDhhRUZkNUl3RFFZSktvWklodmNOQVFFTEJRQURnZ0dCQU12bjNQYWIKY2ovK2Z2dkRKNzlqSFVITU9FY2JJUzNqUmlUL2dsMERxTngydXpVMUU3M0RONVgzT2tZSFJsTy9Hak9yckJXOAoxVCtsWFV2VGhBSVVKOUgvWDRJWG0wY3dRNlNEQVRXYzIvQXFsckRtM1F6VktkNVU2aHdtYkJSYTc0WkxNOFJsCmpma1RZWEMxaVhoU3BUN0t0ZkkzNDJYYllDWDh6Z3hxa3RwWmFXRFFjWDlVU2lUTTJxM1dtZWZOb1lma2JXTmkKVnFwWU1FNUMyazV1UXVXZ2ZmSldlL1VjcDd1emMxbE1XT0hkdy9PaWQvczlleVVzcEEyUGZYTThJL2RUSHMzbApUWmgrcDBaNGh4M2pHREp3dzFxNUNQY3RCdE1kc01VVm1Gc2hVU3ZOcFhnbmJsS0JVNUFHeGIwNy9hdWZDRXRlCm81VDhnOGNuY0dOTEl4bHVoWVFtU3ZFQ2RUUUtVVUFHQy80ZUJOb2NrZ1ZSdEdXcnBXL2FEWmxXSWhNbGRCdkwKcm1IUUR6Z2M5Tkc5ckc0eFBzN05SWkVlZnEwalVmU3o3ZzBZWjVjRXYybVlPN25xL1B1SkxPaXl0T2pCOHIzSgozVFhRaGhaa25ZNHVOM0l1cHhtZE9CKytVK29rbklseXdZbldCVEdTNTg5clc4eUFNc1crWnllZ1ZRPT0KLS0tLS1FTkQgQ0VSVElGSUNBVEUtLS0tLQo=
+      name: qa-de-1
+      server: https://api.metal-operator.ccloud.internal.a-qa-de-200.soil-garden.qa-de-1.cloud.sap
+  regions:
+  - name: qa-de-1
+    zones:
+    - name: qa-de-1a
+    - name: qa-de-1b
+  seedSelector:
+    providerTypes:
+    - '*'
+  type: ironcore-metal
+status: {}
