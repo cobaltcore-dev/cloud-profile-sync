@@ -1263,4 +1263,89 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 		Expect(k8sClient.Delete(ctx, mcp)).To(Succeed())
 	})
 
+	It("cascade-deletes clean version entry with zero flavors from spec.machineImages", func(ctx SpecContext) {
+		// Simulates a second GC run where the clean version entry already has no flavors
+		// (they were removed in a previous run), but the clean version still lingers in
+		// spec.machineImages. It must be removed.
+		cleanVersion := "2254.0.0"
+
+		cfg := providercfg.CloudProfileConfig{
+			MachineImages: []providercfg.MachineImages{
+				{
+					Name: "stale-clean-image",
+					Versions: []providercfg.MachineImageVersion{
+						// Clean version entry with no flavors — already emptied by a prior GC run.
+						{Version: cleanVersion},
+					},
+				},
+			},
+		}
+		raw, err := json.Marshal(cfg)
+		Expect(err).To(Succeed())
+
+		mcp := &v1alpha1.ManagedCloudProfile{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-gc-stale-clean"},
+			Spec: v1alpha1.ManagedCloudProfileSpec{
+				CloudProfile: v1alpha1.CloudProfileSpec{
+					Regions:      []gardenerv1beta1.Region{{Name: "foo"}},
+					MachineTypes: []gardenerv1beta1.MachineType{{Name: "baz"}},
+					MachineImages: []gardenerv1beta1.MachineImage{
+						{
+							Name: "stale-clean-image",
+							Versions: []gardenerv1beta1.MachineImageVersion{
+								{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: cleanVersion}, Architectures: []string{"amd64"}},
+							},
+						},
+					},
+					ProviderConfig: &runtime.RawExtension{Raw: raw},
+				},
+				MachineImageUpdates: []v1alpha1.MachineImageUpdate{
+					{
+						ImageName: "stale-clean-image",
+						Source: v1alpha1.MachineImageUpdateSource{
+							OCI: &v1alpha1.MachineImageUpdateSourceOCI{
+								Registry:   "keppel-fake",
+								Repository: "account/stale-clean-repo",
+								Insecure:   true,
+							},
+						},
+					},
+				},
+				GarbageCollection: &v1alpha1.GarbageCollectionConfig{
+					Enabled: true,
+					MaxAge:  metav1.Duration{Duration: 0},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, mcp)).To(Succeed())
+
+		r := &controllers.Reconciler{
+			Client:           k8sClient,
+			OCISourceFactory: &emptyFactory{},
+			RegistryProviderFunc: func(registry string) (controllers.RegistryClient, error) {
+				// Registry returns no tags — nothing to protect, triggers cascade cleanup.
+				return &fakeRegistryClientWithTags{tags: map[string]time.Time{}}, nil
+			},
+		}
+		req := ctrl.Request{NamespacedName: client.ObjectKey{Name: mcp.Name}}
+		_, err = r.Reconcile(ctx, req)
+		Expect(err).ToNot(HaveOccurred())
+
+		cp := &gardenerv1beta1.CloudProfile{}
+		Expect(k8sClient.Get(ctx, client.ObjectKey{Name: mcp.Name}, cp)).To(Succeed())
+
+		// Stale clean version entry must be gone from spec.machineImages.
+		var machineVersions []string
+		for _, mi := range cp.Spec.MachineImages {
+			if mi.Name == "stale-clean-image" {
+				for _, v := range mi.Versions {
+					machineVersions = append(machineVersions, v.Version)
+				}
+			}
+		}
+		Expect(machineVersions).To(BeEmpty())
+
+		Expect(k8sClient.Delete(ctx, mcp)).To(Succeed())
+	})
+
 })

@@ -190,13 +190,11 @@ func (r *Reconciler) reconcileGarbageCollection(ctx context.Context, mcp *v1alph
 			}
 		}
 
-		if len(versionsToDelete) > 0 {
-			if err := r.deleteVersions(ctx, mcp.Name, updates.ImageName, versionsToDelete); err != nil {
-				if apierrors.IsInvalid(err) {
-					continue
-				}
-				return r.failWithStatusUpdate(ctx, mcp, fmt.Errorf("failed to delete image versions: %w", err))
+		if err := r.deleteVersions(ctx, mcp.Name, updates.ImageName, versionsToDelete); err != nil {
+			if apierrors.IsInvalid(err) {
+				continue
 			}
+			return r.failWithStatusUpdate(ctx, mcp, fmt.Errorf("failed to delete image versions: %w", err))
 		}
 	}
 
@@ -225,11 +223,15 @@ func (r *Reconciler) deleteVersions(ctx context.Context, cloudProfileName, image
 			}
 			for j := range cfg.MachineImages[i].Versions {
 				v := &cfg.MachineImages[i].Versions[j]
+				if v.Image != "" {
+					// Legacy flat entry — not a clean version, skip.
+					continue
+				}
+				// Mark as a clean version entry; value indicates whether any flavors remain.
+				cleanVersionsWithFlavors[v.Version] = len(v.CapabilityFlavors) > 0
 				if len(v.CapabilityFlavors) == 0 {
 					continue
 				}
-				// Mark this as a clean version entry (key present = was a clean version).
-				cleanVersionsWithFlavors[v.Version] = true
 				v.CapabilityFlavors = slices.DeleteFunc(v.CapabilityFlavors, func(f providercfg.MachineImageFlavor) bool {
 					idx := strings.LastIndex(f.Image, ":")
 					if idx == -1 {
