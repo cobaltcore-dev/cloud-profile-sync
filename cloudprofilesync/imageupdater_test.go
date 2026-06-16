@@ -113,6 +113,7 @@ var _ = Describe("filterImages", func() {
 		})
 		Expect(result).To(BeEmpty())
 	})
+})
 
 var _ = Describe("ImageUpdater", func() {
 	Describe("flag OFF (default behavior)", func() {
