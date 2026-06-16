@@ -93,7 +93,7 @@ linters:
         - pattern: ^http\.Handle(?:Func)?$
         - pkg: ^gopkg\.in/square/go-jose\.v2
           msg: gopk.in/square/go-jose is archived and has CVEs. Replace it with gopkg.in/go-jose/go-jose.v2
-        - pkg: ^github\.com/coreos/go-oidc
+        - pkg: ^github\.com/coreos/go-oidc$
           msg: github.com/coreos/go-oidc depends on gopkg.in/square/go-jose which has CVEs. Replace it with github.com/coreos/go-oidc/v3
         - pkg: ^github\.com/howeyc/gopass
           msg: github.com/howeyc/gopass is archived, use golang.org/x/term instead
@@ -101,6 +101,9 @@ linters:
           msg: github.com/containers/image/v5 is deprecated and was replaced with go.podman.io/image/v5
     goconst:
       min-occurrences: 5
+      ignore-tests: true
+      ignore-string-values:
+        - '^[a-zA-Z_-]{1,16}$' # ignore short identifiers like "account" or "project_id"
     gocritic:
       enabled-checks:
         - boolExprSimplify
@@ -132,10 +135,8 @@ linters:
         - github.com/mdlayher/arp
         # for github.com/sapcc/vpa_butler
         - k8s.io/client-go
-        # for github.com/sapcc/keppel et al
-        - github.com/go-gorp/gorp/v3
       toolchain-forbidden: true
-      go-version-pattern: 1\.\d+(\.\d+)?$
+      go-version-pattern: 1\.\d+(\.0)?$
     gosec:
       excludes:
         # gosec wants us to set a short ReadHeaderTimeout to avoid Slowloris attacks, but doing so would expose us to Keep-Alive race conditions (see https://iximiuz.com/en/posts/reverse-proxy-http-keep-alive-and-502s/
@@ -172,6 +173,7 @@ linters:
         - github.com/majewsky/gg/option
         - github.com/onsi/ginkgo/v2
         - github.com/onsi/gomega
+        - go.xyrillian.de/gg/option
     usestdlibvars:
       http-method: true
       http-status-code: true
