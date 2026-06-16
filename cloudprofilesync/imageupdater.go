@@ -17,16 +17,33 @@ import (
 func filterImages(log logr.Logger, versions []SourceImage) []SourceImage {
 	filtered := make([]SourceImage, 0, len(versions))
 	for _, version := range versions {
-		versionStr := version.effectiveVersion()
-		_, err := semver.Parse(versionStr)
-		if err != nil {
-			log.V(1).Info("skipping invalid version", "version", versionStr)
-			continue
-		}
 		if len(version.Architectures) == 0 {
-			log.V(1).Info("skipping version with no architectures", "version", versionStr)
+			log.V(1).Info("skipping version with no architectures", "version", version.Version)
 			continue
 		}
+
+		validLegacyTag := false
+		if _, err := semver.Parse(version.Version); err == nil {
+			validLegacyTag = true
+		}
+
+		validCleanVersion := false
+		if version.CleanVersion != "" {
+			// Found that we can have "1921.0" in annotations. It will be transformed to "1921.0.0"
+			if parsed, err := semver.ParseTolerant(version.CleanVersion); err == nil {
+				validCleanVersion = true
+				version.CleanVersion = parsed.String()
+			} else {
+				log.V(1).Info("ignoring invalid clean version annotation", "tag", version.Version, "cleanVersion", version.CleanVersion)
+				version.CleanVersion = ""
+			}
+		}
+
+		if !validLegacyTag && !validCleanVersion {
+			log.V(1).Info("skipping invalid version (both tag and clean version are bad)", "tag", version.Version)
+			continue
+		}
+
 		filtered = append(filtered, version)
 	}
 	return filtered
@@ -73,13 +90,21 @@ func (iu *ImageUpdater) Update(ctx context.Context, cpSpec *gardenerv1beta1.Clou
 		if idx, exists := existingVersions[sourceImage.Version]; exists {
 			image.Versions[idx].Architectures = sourceImage.Architectures
 		} else {
-			image.Versions = append(image.Versions, gardenerv1beta1.MachineImageVersion{
-				ExpirableVersion: gardenerv1beta1.ExpirableVersion{
-					Version: sourceImage.Version,
-				},
-				Architectures: sourceImage.Architectures,
-			})
-			existingVersions[sourceImage.Version] = len(image.Versions) - 1
+			// Moving this check to filterImages() would break the core architectural goal of GEP-33
+			// as it intentionally decouples the OCI registry tag from the semantic OS version
+			// In the future, teams might push images with tags like build-0849f313 or 2026-06-release
+			// As long as the CleanVersion annotation is a valid SemVer (e.g., 2262.0.0), the extension needs to route to it
+			if _, err = semver.Parse(sourceImage.Version); err != nil {
+				iu.Log.V(1).Info("skipping legacy entry in spec.machineImages because original tag is not valid semver", "version", sourceImage.Version)
+			} else {
+				image.Versions = append(image.Versions, gardenerv1beta1.MachineImageVersion{
+					ExpirableVersion: gardenerv1beta1.ExpirableVersion{
+						Version: sourceImage.Version,
+					},
+					Architectures: sourceImage.Architectures,
+				})
+				existingVersions[sourceImage.Version] = len(image.Versions) - 1
+			}
 		}
 
 		// When capabilities are enabled, also write the clean version entry.
