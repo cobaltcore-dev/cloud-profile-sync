@@ -95,13 +95,24 @@ var _ = Describe("filterImages", func() {
 		Expect(versionStrings).To(ContainElements("1921.0.0-metal-sci-usi-amd64", "1921.0.0"))
 	})
 
+	It("valid tag + unparseable clean version: does not write clean version entry", func(ctx SpecContext) {
+		result := versions(ctx, []cloudprofilesync.SourceImage{
+			{
+				Version:       "1921.0.0-metal-sci-usi-amd64",
+				CleanVersion:  "not-a-version",
+				Architectures: []string{"amd64"},
+			},
+		})
+		Expect(result).To(HaveLen(1))
+		Expect(result[0].Version).To(Equal("1921.0.0-metal-sci-usi-amd64"))
+	})
+
 	It("no architectures: drops the image entirely", func(ctx SpecContext) {
 		result := versions(ctx, []cloudprofilesync.SourceImage{
 			{Version: "1.0.0"},
 		})
 		Expect(result).To(BeEmpty())
 	})
-})
 
 var _ = Describe("ImageUpdater", func() {
 	Describe("flag OFF (default behavior)", func() {
