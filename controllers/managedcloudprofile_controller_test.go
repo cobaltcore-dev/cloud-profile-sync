@@ -997,7 +997,7 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 		}
 		Expect(k8sClient.Create(ctx, mcp)).To(Succeed())
 
-		reconciler := &controllers.Reconciler{
+		r := &controllers.Reconciler{
 			Client:           k8sClient,
 			OCISourceFactory: &fakeFactory{},
 			RegistryProviderFunc: func(registry string) (controllers.RegistryClient, error) {
@@ -1007,7 +1007,7 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 			},
 		}
 		req := ctrl.Request{NamespacedName: client.ObjectKey{Name: mcp.Name}}
-		_, err = reconciler.Reconcile(ctx, req)
+		_, err = r.Reconcile(ctx, req)
 		Expect(err).ToNot(HaveOccurred())
 
 		// Raw tag must still be present in spec.machineImages because the Shoot protects it.
@@ -1122,7 +1122,7 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 		}
 		Expect(k8sClient.Create(ctx, mcp)).To(Succeed())
 
-		reconciler := &controllers.Reconciler{
+		r := &controllers.Reconciler{
 			Client:           k8sClient,
 			OCISourceFactory: &fakeFactory{},
 			RegistryProviderFunc: func(registry string) (controllers.RegistryClient, error) {
@@ -1133,7 +1133,7 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 			},
 		}
 		req := ctrl.Request{NamespacedName: client.ObjectKey{Name: mcp.Name}}
-		_, err = reconciler.Reconcile(ctx, req)
+		_, err = r.Reconcile(ctx, req)
 		Expect(err).ToNot(HaveOccurred())
 
 		// Old flavor must be gone; new flavor and clean version entry must remain.
@@ -1254,7 +1254,7 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 		}
 		Expect(k8sClient.Create(ctx, mcp)).To(Succeed())
 
-		reconciler := &controllers.Reconciler{
+		r := &controllers.Reconciler{
 			Client:           k8sClient,
 			OCISourceFactory: &fakeFactory{},
 			RegistryProviderFunc: func(registry string) (controllers.RegistryClient, error) {
@@ -1264,7 +1264,7 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 			},
 		}
 		req := ctrl.Request{NamespacedName: client.ObjectKey{Name: mcp.Name}}
-		_, err = reconciler.Reconcile(ctx, req)
+		_, err = r.Reconcile(ctx, req)
 		Expect(err).ToNot(HaveOccurred())
 
 		// Both raw tag and clean version must be removed from spec.machineImages.
