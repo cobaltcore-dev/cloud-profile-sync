@@ -95,7 +95,7 @@ var _ = Describe("filterImages", func() {
 		Expect(versionStrings).To(ContainElements("1921.0.0-metal-sci-usi-amd64", "1921.0.0"))
 	})
 
-	It("valid tag + unparseable clean version: does not write clean version entry", func(ctx SpecContext) {
+	It("valid tag + unparsable clean version: does not write clean version entry", func(ctx SpecContext) {
 		result := versions(ctx, []cloudprofilesync.SourceImage{
 			{
 				Version:       "1921.0.0-metal-sci-usi-amd64",
