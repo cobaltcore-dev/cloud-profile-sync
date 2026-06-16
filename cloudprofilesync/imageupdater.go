@@ -33,6 +33,9 @@ func filterImages(log logr.Logger, versions []SourceImage) []SourceImage {
 			if parsed, err := semver.ParseTolerant(version.CleanVersion); err == nil {
 				validCleanVersion = true
 				version.CleanVersion = parsed.String()
+			} else {
+				log.V(1).Info("ignoring invalid clean version annotation", "tag", version.Version, "cleanVersion", version.CleanVersion)
+				version.CleanVersion = ""
 			}
 		}
 
