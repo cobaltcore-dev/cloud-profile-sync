@@ -69,6 +69,14 @@ func (f *fakeRegistryClient) GetTags(ctx context.Context, registry, repository s
 	}, nil
 }
 
+type fakeRegistryClientWithTags struct {
+	tags map[string]time.Time
+}
+
+func (f *fakeRegistryClientWithTags) GetTags(ctx context.Context, registry, repository string) (map[string]time.Time, error) {
+	return f.tags, nil
+}
+
 var _ = Describe("The ManagedCloudProfile reconciler", func() {
 	amd64 := "amd64"
 
@@ -896,6 +904,403 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 
 		Expect(k8sClient.Delete(ctx, &mcp)).To(Succeed())
 		Expect(k8sClient.Delete(ctx, &cloudProfile)).To(Succeed())
+	})
+
+	It("preserves raw OCI tags backing a clean version referenced by a Shoot", func(ctx SpecContext) {
+		// Shoot references clean version "2254.0.0"; GC must not delete the raw tag
+		// "2254.0.0-baremetal-sci-usi-amd64" because it backs that clean version via capabilityFlavors.
+		rawTag := "2254.0.0-baremetal-sci-usi-amd64"
+		cleanVersion := "2254.0.0"
+
+		cfg := providercfg.CloudProfileConfig{
+			MachineImages: []providercfg.MachineImages{
+				{
+					Name: "cap-image",
+					Versions: []providercfg.MachineImageVersion{
+						{
+							Version: cleanVersion,
+							CapabilityFlavors: []providercfg.MachineImageFlavor{
+								{Image: "repo/cap-image:" + rawTag},
+							},
+						},
+					},
+				},
+			},
+		}
+		raw, err := json.Marshal(cfg)
+		Expect(err).To(Succeed())
+
+		cp := &gardenerv1beta1.CloudProfile{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-gc-protect-flavors"},
+			Spec: gardenerv1beta1.CloudProfileSpec{
+				Regions:      []gardenerv1beta1.Region{{Name: "foo"}},
+				MachineTypes: []gardenerv1beta1.MachineType{{Name: "baz"}},
+				MachineImages: []gardenerv1beta1.MachineImage{
+					{
+						Name: "cap-image",
+						Versions: []gardenerv1beta1.MachineImageVersion{
+							{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: rawTag}, Architectures: []string{"amd64"}},
+							{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: cleanVersion}, Architectures: []string{"amd64"}},
+						},
+					},
+				},
+				ProviderConfig: &runtime.RawExtension{Raw: raw},
+			},
+		}
+		Expect(k8sClient.Create(ctx, cp)).To(Succeed())
+
+		shoot := &gardenerv1beta1.Shoot{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-shoot-cap", Namespace: metav1.NamespaceDefault},
+			Spec: gardenerv1beta1.ShootSpec{
+				CloudProfile: &gardenerv1beta1.CloudProfileReference{Name: cp.Name},
+				Provider: gardenerv1beta1.Provider{
+					Workers: []gardenerv1beta1.Worker{
+						{
+							Name: "worker1",
+							Machine: gardenerv1beta1.Machine{
+								Image: &gardenerv1beta1.ShootMachineImage{
+									Name:    "cap-image",
+									Version: &cleanVersion,
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, shoot)).To(Succeed())
+
+		mcp := &v1alpha1.ManagedCloudProfile{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-gc-protect-flavors"},
+			Spec: v1alpha1.ManagedCloudProfileSpec{
+				CloudProfile: v1alpha1.CloudProfileSpec{
+					Regions:      []gardenerv1beta1.Region{{Name: "foo"}},
+					MachineTypes: []gardenerv1beta1.MachineType{{Name: "baz"}},
+				},
+				MachineImageUpdates: []v1alpha1.MachineImageUpdate{
+					{
+						ImageName: "cap-image",
+						Source: v1alpha1.MachineImageUpdateSource{
+							OCI: &v1alpha1.MachineImageUpdateSourceOCI{
+								Registry:   "keppel-fake",
+								Repository: "account/cap-repo",
+								Insecure:   true,
+							},
+						},
+					},
+				},
+				GarbageCollection: &v1alpha1.GarbageCollectionConfig{
+					Enabled: true,
+					MaxAge:  metav1.Duration{Duration: 0},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, mcp)).To(Succeed())
+
+		reconciler := &controllers.Reconciler{
+			Client:           k8sClient,
+			OCISourceFactory: &fakeFactory{},
+			RegistryProviderFunc: func(registry string) (controllers.RegistryClient, error) {
+				return &fakeRegistryClientWithTags{tags: map[string]time.Time{
+					rawTag: time.Now().Add(-48 * time.Hour),
+				}}, nil
+			},
+		}
+		req := ctrl.Request{NamespacedName: client.ObjectKey{Name: mcp.Name}}
+		_, err = reconciler.Reconcile(ctx, req)
+		Expect(err).ToNot(HaveOccurred())
+
+		// Raw tag must still be present in spec.machineImages because the Shoot protects it.
+		Eventually(func(g Gomega) []string {
+			updated := &gardenerv1beta1.CloudProfile{}
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cp), updated)).To(Succeed())
+			var versions []string
+			for _, mi := range updated.Spec.MachineImages {
+				if mi.Name == "cap-image" {
+					for _, v := range mi.Versions {
+						versions = append(versions, v.Version)
+					}
+				}
+			}
+			return versions
+		}).Should(ContainElement(rawTag))
+
+		// Flavor must still be present in providerConfig.
+		Eventually(func(g Gomega) []string {
+			updated := &gardenerv1beta1.CloudProfile{}
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cp), updated)).To(Succeed())
+			g.Expect(updated.Spec.ProviderConfig).ToNot(BeNil())
+			var updatedCfg providercfg.CloudProfileConfig
+			g.Expect(json.Unmarshal(updated.Spec.ProviderConfig.Raw, &updatedCfg)).To(Succeed())
+			var flavors []string
+			for _, img := range updatedCfg.MachineImages {
+				if img.Name == "cap-image" {
+					for _, v := range img.Versions {
+						for _, f := range v.CapabilityFlavors {
+							flavors = append(flavors, f.Image)
+						}
+					}
+				}
+			}
+			return flavors
+		}).Should(ContainElement("repo/cap-image:" + rawTag))
+
+		Expect(k8sClient.Delete(ctx, mcp)).To(Succeed())
+		Expect(k8sClient.Delete(ctx, cp)).To(Succeed())
+		Expect(k8sClient.Delete(ctx, shoot)).To(Succeed())
+	})
+
+	It("deletes only old flavors from a clean version entry, keeping new ones", func(ctx SpecContext) {
+		// Clean version "2254.0.0" has two flavors: one old (should be deleted), one recent (should stay).
+		oldTag := "2254.0.0-baremetal-sci-usi-amd64"
+		newTag := "2254.0.0-baremetal-sci-usi-arm64"
+		cleanVersion := "2254.0.0"
+
+		cfg := providercfg.CloudProfileConfig{
+			MachineImages: []providercfg.MachineImages{
+				{
+					Name: "multi-flavor-image",
+					Versions: []providercfg.MachineImageVersion{
+						{
+							Version: cleanVersion,
+							CapabilityFlavors: []providercfg.MachineImageFlavor{
+								{Image: "repo/multi-flavor-image:" + oldTag},
+								{Image: "repo/multi-flavor-image:" + newTag},
+							},
+						},
+					},
+				},
+			},
+		}
+		raw, err := json.Marshal(cfg)
+		Expect(err).To(Succeed())
+
+		cp := &gardenerv1beta1.CloudProfile{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-gc-partial-flavor"},
+			Spec: gardenerv1beta1.CloudProfileSpec{
+				Regions:      []gardenerv1beta1.Region{{Name: "foo"}},
+				MachineTypes: []gardenerv1beta1.MachineType{{Name: "baz"}},
+				MachineImages: []gardenerv1beta1.MachineImage{
+					{
+						Name: "multi-flavor-image",
+						Versions: []gardenerv1beta1.MachineImageVersion{
+							{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: oldTag}, Architectures: []string{"amd64"}},
+							{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: newTag}, Architectures: []string{"arm64"}},
+							{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: cleanVersion}, Architectures: []string{"amd64", "arm64"}},
+						},
+					},
+				},
+				ProviderConfig: &runtime.RawExtension{Raw: raw},
+			},
+		}
+		Expect(k8sClient.Create(ctx, cp)).To(Succeed())
+
+		mcp := &v1alpha1.ManagedCloudProfile{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-gc-partial-flavor"},
+			Spec: v1alpha1.ManagedCloudProfileSpec{
+				CloudProfile: v1alpha1.CloudProfileSpec{
+					Regions:      []gardenerv1beta1.Region{{Name: "foo"}},
+					MachineTypes: []gardenerv1beta1.MachineType{{Name: "baz"}},
+				},
+				MachineImageUpdates: []v1alpha1.MachineImageUpdate{
+					{
+						ImageName: "multi-flavor-image",
+						Source: v1alpha1.MachineImageUpdateSource{
+							OCI: &v1alpha1.MachineImageUpdateSourceOCI{
+								Registry:   "keppel-fake",
+								Repository: "account/multi-flavor-repo",
+								Insecure:   true,
+							},
+						},
+					},
+				},
+				GarbageCollection: &v1alpha1.GarbageCollectionConfig{
+					Enabled: true,
+					MaxAge:  metav1.Duration{Duration: 0},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, mcp)).To(Succeed())
+
+		reconciler := &controllers.Reconciler{
+			Client:           k8sClient,
+			OCISourceFactory: &fakeFactory{},
+			RegistryProviderFunc: func(registry string) (controllers.RegistryClient, error) {
+				return &fakeRegistryClientWithTags{tags: map[string]time.Time{
+					oldTag: time.Now().Add(-48 * time.Hour),
+					newTag: time.Now().Add(-1 * time.Minute),
+				}}, nil
+			},
+		}
+		req := ctrl.Request{NamespacedName: client.ObjectKey{Name: mcp.Name}}
+		_, err = reconciler.Reconcile(ctx, req)
+		Expect(err).ToNot(HaveOccurred())
+
+		// Old flavor must be gone; new flavor and clean version entry must remain.
+		Eventually(func(g Gomega) providercfg.CloudProfileConfig {
+			updated := &gardenerv1beta1.CloudProfile{}
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cp), updated)).To(Succeed())
+			g.Expect(updated.Spec.ProviderConfig).ToNot(BeNil())
+			var updatedCfg providercfg.CloudProfileConfig
+			g.Expect(json.Unmarshal(updated.Spec.ProviderConfig.Raw, &updatedCfg)).To(Succeed())
+			return updatedCfg
+		}).Should(SatisfyAll(
+			WithTransform(func(c providercfg.CloudProfileConfig) []string {
+				var flavors []string
+				for _, img := range c.MachineImages {
+					if img.Name == "multi-flavor-image" {
+						for _, v := range img.Versions {
+							if v.Version == cleanVersion {
+								for _, f := range v.CapabilityFlavors {
+									flavors = append(flavors, f.Image)
+								}
+							}
+						}
+					}
+				}
+				return flavors
+			}, And(
+				Not(ContainElement("repo/multi-flavor-image:"+oldTag)),
+				ContainElement("repo/multi-flavor-image:"+newTag),
+			)),
+		))
+
+		// Clean version entry must still be present in spec.machineImages (has remaining flavor).
+		Eventually(func(g Gomega) []string {
+			updated := &gardenerv1beta1.CloudProfile{}
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cp), updated)).To(Succeed())
+			var versions []string
+			for _, mi := range updated.Spec.MachineImages {
+				if mi.Name == "multi-flavor-image" {
+					for _, v := range mi.Versions {
+						versions = append(versions, v.Version)
+					}
+				}
+			}
+			return versions
+		}).Should(ContainElement(cleanVersion))
+
+		Expect(k8sClient.Delete(ctx, mcp)).To(Succeed())
+		Expect(k8sClient.Delete(ctx, cp)).To(Succeed())
+	})
+
+	It("cascade-deletes clean version entry when all its flavors are garbage collected", func(ctx SpecContext) {
+		// Clean version "2254.0.0" has one old flavor; after GC removes it, the clean version
+		// entry must be removed from both providerConfig and spec.machineImages.
+		oldTag := "2254.0.0-baremetal-sci-usi-amd64"
+		cleanVersion := "2254.0.0"
+
+		cfg := providercfg.CloudProfileConfig{
+			MachineImages: []providercfg.MachineImages{
+				{
+					Name: "cascade-image",
+					Versions: []providercfg.MachineImageVersion{
+						{
+							Version: cleanVersion,
+							CapabilityFlavors: []providercfg.MachineImageFlavor{
+								{Image: "repo/cascade-image:" + oldTag},
+							},
+						},
+					},
+				},
+			},
+		}
+		raw, err := json.Marshal(cfg)
+		Expect(err).To(Succeed())
+
+		cp := &gardenerv1beta1.CloudProfile{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-gc-cascade"},
+			Spec: gardenerv1beta1.CloudProfileSpec{
+				Regions:      []gardenerv1beta1.Region{{Name: "foo"}},
+				MachineTypes: []gardenerv1beta1.MachineType{{Name: "baz"}},
+				MachineImages: []gardenerv1beta1.MachineImage{
+					{
+						Name: "cascade-image",
+						Versions: []gardenerv1beta1.MachineImageVersion{
+							{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: oldTag}, Architectures: []string{"amd64"}},
+							{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: cleanVersion}, Architectures: []string{"amd64"}},
+						},
+					},
+				},
+				ProviderConfig: &runtime.RawExtension{Raw: raw},
+			},
+		}
+		Expect(k8sClient.Create(ctx, cp)).To(Succeed())
+
+		mcp := &v1alpha1.ManagedCloudProfile{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-gc-cascade"},
+			Spec: v1alpha1.ManagedCloudProfileSpec{
+				CloudProfile: v1alpha1.CloudProfileSpec{
+					Regions:      []gardenerv1beta1.Region{{Name: "foo"}},
+					MachineTypes: []gardenerv1beta1.MachineType{{Name: "baz"}},
+				},
+				MachineImageUpdates: []v1alpha1.MachineImageUpdate{
+					{
+						ImageName: "cascade-image",
+						Source: v1alpha1.MachineImageUpdateSource{
+							OCI: &v1alpha1.MachineImageUpdateSourceOCI{
+								Registry:   "keppel-fake",
+								Repository: "account/cascade-repo",
+								Insecure:   true,
+							},
+						},
+					},
+				},
+				GarbageCollection: &v1alpha1.GarbageCollectionConfig{
+					Enabled: true,
+					MaxAge:  metav1.Duration{Duration: 0},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, mcp)).To(Succeed())
+
+		reconciler := &controllers.Reconciler{
+			Client:           k8sClient,
+			OCISourceFactory: &fakeFactory{},
+			RegistryProviderFunc: func(registry string) (controllers.RegistryClient, error) {
+				return &fakeRegistryClientWithTags{tags: map[string]time.Time{
+					oldTag: time.Now().Add(-48 * time.Hour),
+				}}, nil
+			},
+		}
+		req := ctrl.Request{NamespacedName: client.ObjectKey{Name: mcp.Name}}
+		_, err = reconciler.Reconcile(ctx, req)
+		Expect(err).ToNot(HaveOccurred())
+
+		// Both raw tag and clean version must be removed from spec.machineImages.
+		Eventually(func(g Gomega) []string {
+			updated := &gardenerv1beta1.CloudProfile{}
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cp), updated)).To(Succeed())
+			var versions []string
+			for _, mi := range updated.Spec.MachineImages {
+				if mi.Name == "cascade-image" {
+					for _, v := range mi.Versions {
+						versions = append(versions, v.Version)
+					}
+				}
+			}
+			return versions
+		}).Should(BeEmpty())
+
+		// Clean version entry must be gone from providerConfig as well.
+		Eventually(func(g Gomega) []providercfg.MachineImageVersion {
+			updated := &gardenerv1beta1.CloudProfile{}
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cp), updated)).To(Succeed())
+			if updated.Spec.ProviderConfig == nil {
+				return nil
+			}
+			var updatedCfg providercfg.CloudProfileConfig
+			g.Expect(json.Unmarshal(updated.Spec.ProviderConfig.Raw, &updatedCfg)).To(Succeed())
+			for _, img := range updatedCfg.MachineImages {
+				if img.Name == "cascade-image" {
+					return img.Versions
+				}
+			}
+			return nil
+		}).Should(BeEmpty())
+
+		Expect(k8sClient.Delete(ctx, mcp)).To(Succeed())
+		Expect(k8sClient.Delete(ctx, cp)).To(Succeed())
 	})
 
 })
