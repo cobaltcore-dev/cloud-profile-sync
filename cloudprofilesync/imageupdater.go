@@ -17,16 +17,30 @@ import (
 func filterImages(log logr.Logger, versions []SourceImage) []SourceImage {
 	filtered := make([]SourceImage, 0, len(versions))
 	for _, version := range versions {
-		versionStr := version.effectiveVersion()
-		_, err := semver.Parse(versionStr)
-		if err != nil {
-			log.V(1).Info("skipping invalid version", "version", versionStr)
-			continue
-		}
 		if len(version.Architectures) == 0 {
-			log.V(1).Info("skipping version with no architectures", "version", versionStr)
+			log.V(1).Info("skipping version with no architectures", "version", version.Version)
 			continue
 		}
+
+		validLegacyTag := false
+		if _, err := semver.Parse(version.Version); err == nil {
+			validLegacyTag = true
+		}
+
+		validCleanVersion := false
+		if version.CleanVersion != "" {
+			// Found that we can have "1921.0" in annotations. It will be transformed to "1921.0.0"
+			if parsed, err := semver.ParseTolerant(version.CleanVersion); err == nil {
+				validCleanVersion = true
+				version.CleanVersion = parsed.String()
+			}
+		}
+
+		if !validLegacyTag && !validCleanVersion {
+			log.V(1).Info("skipping invalid version (both tag and clean version are bad)", "tag", version.Version)
+			continue
+		}
+
 		filtered = append(filtered, version)
 	}
 	return filtered

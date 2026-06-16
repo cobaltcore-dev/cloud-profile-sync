@@ -14,8 +14,96 @@ import (
 	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync"
 )
 
-var _ = Describe("ImageUpdater", func() {
+var _ = Describe("filterImages", func() {
+	// helper: run Update and return the versions written to spec.machineImages
+	versions := func(ctx SpecContext, images []cloudprofilesync.SourceImage) []gardencorev1beta1.MachineImageVersion {
+		mockSource.images = images
+		updater := cloudprofilesync.ImageUpdater{
+			Log:                GinkgoLogr,
+			Source:             &mockSource,
+			ImageName:          "test",
+			EnableCapabilities: true,
+		}
+		var cpSpec gardencorev1beta1.CloudProfileSpec
+		Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
+		if len(cpSpec.MachineImages) == 0 {
+			return nil
+		}
+		return cpSpec.MachineImages[0].Versions
+	}
 
+	It("invalid tag + no clean version: drops the image entirely", func(ctx SpecContext) {
+		result := versions(ctx, []cloudprofilesync.SourceImage{
+			{Version: "not-a-version", Architectures: []string{"amd64"}},
+		})
+		Expect(result).To(BeEmpty())
+	})
+
+	It("invalid tag + invalid clean version: drops the image entirely", func(ctx SpecContext) {
+		result := versions(ctx, []cloudprofilesync.SourceImage{
+			{Version: "not-a-version", CleanVersion: "also-not-a-version", Architectures: []string{"amd64"}},
+		})
+		Expect(result).To(BeEmpty())
+	})
+
+	It("invalid tag + valid clean version: NEW format only (no legacy entry)", func(ctx SpecContext) {
+		result := versions(ctx, []cloudprofilesync.SourceImage{
+			{
+				Version:       "1877.9.2.0-metal-sci-pxe-amd64",
+				CleanVersion:  "1877.9.2",
+				Architectures: []string{"amd64"},
+				Capabilities:  gardencorev1beta1.Capabilities{"architecture": {"amd64"}, "feature": {"sci", "_pxe"}},
+			},
+		})
+		Expect(result).To(HaveLen(1))
+		Expect(result[0].Version).To(Equal("1877.9.2"))
+	})
+
+	It("valid tag + valid clean version: BOTH formats", func(ctx SpecContext) {
+		result := versions(ctx, []cloudprofilesync.SourceImage{
+			{
+				Version:       "2254.0.0-baremetal-sci-usi-amd64",
+				CleanVersion:  "2254.0.0",
+				Architectures: []string{"amd64"},
+				Capabilities:  gardencorev1beta1.Capabilities{"architecture": {"amd64"}, "feature": {"sci", "_usi"}},
+			},
+		})
+		Expect(result).To(HaveLen(2))
+		versionStrings := []string{result[0].Version, result[1].Version}
+		Expect(versionStrings).To(ContainElements("2254.0.0-baremetal-sci-usi-amd64", "2254.0.0"))
+	})
+
+	It("valid tag + no clean version: OLD format only", func(ctx SpecContext) {
+		result := versions(ctx, []cloudprofilesync.SourceImage{
+			{Version: "1921.0.0", Architectures: []string{"amd64"}},
+		})
+		Expect(result).To(HaveLen(1))
+		Expect(result[0].Version).To(Equal("1921.0.0"))
+	})
+
+	It("valid tag + invalid clean version: BOTH formats with clean version normalized", func(ctx SpecContext) {
+		result := versions(ctx, []cloudprofilesync.SourceImage{
+			{
+				Version:       "1921.0.0-metal-sci-usi-amd64",
+				CleanVersion:  "1921.0",
+				Architectures: []string{"amd64"},
+				Capabilities:  gardencorev1beta1.Capabilities{"architecture": {"amd64"}, "feature": {"sci", "_usi"}},
+			},
+		})
+		Expect(result).To(HaveLen(2))
+		versionStrings := []string{result[0].Version, result[1].Version}
+		Expect(versionStrings).To(ContainElements("1921.0.0-metal-sci-usi-amd64", "1921.0.0"))
+	})
+
+	It("no architectures: drops the image entirely", func(ctx SpecContext) {
+		result := versions(ctx, []cloudprofilesync.SourceImage{
+			{Version: "1.0.0"},
+		})
+		Expect(result).To(BeEmpty())
+	})
+})
+
+var _ = Describe("ImageUpdater", func() {
 	Describe("flag OFF (default behavior)", func() {
 		It("adds an image from the source to the CloudProfile spec", func(ctx SpecContext) {
 			mockSource.images = []cloudprofilesync.SourceImage{{Version: "1.0.0", Architectures: []string{"amd64"}}}
