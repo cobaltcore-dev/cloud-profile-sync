@@ -190,13 +190,11 @@ func (r *Reconciler) reconcileGarbageCollection(ctx context.Context, mcp *v1alph
 			}
 		}
 
-		if len(versionsToDelete) > 0 {
-			if err := r.deleteVersions(ctx, mcp.Name, updates.ImageName, versionsToDelete); err != nil {
-				if apierrors.IsInvalid(err) {
-					continue
-				}
-				return r.failWithStatusUpdate(ctx, mcp, fmt.Errorf("failed to delete image versions: %w", err))
+		if err := r.deleteVersions(ctx, mcp.Name, updates.ImageName, versionsToDelete); err != nil {
+			if apierrors.IsInvalid(err) {
+				continue
 			}
+			return r.failWithStatusUpdate(ctx, mcp, fmt.Errorf("failed to delete image versions: %w", err))
 		}
 	}
 
@@ -209,15 +207,11 @@ func (r *Reconciler) deleteVersions(ctx context.Context, cloudProfileName, image
 		return err
 	}
 
-	for i := range cp.Spec.MachineImages {
-		if cp.Spec.MachineImages[i].Name != imageName {
-			continue
-		}
-		cp.Spec.MachineImages[i].Versions = slices.DeleteFunc(cp.Spec.MachineImages[i].Versions, func(mv gardenerv1beta1.MachineImageVersion) bool {
-			_, exists := versionsToDelete[mv.Version]
-			return exists
-		})
-	}
+	// Track which clean versions still have remaining capability flavors after deletion,
+	// so we can cascade-delete empty clean version entries from spec.machineImages.
+	// A version present in this map was a clean version entry; true means it still has flavors.
+	cleanVersionsWithFlavors := make(map[string]bool)
+
 	if cp.Spec.ProviderConfig != nil {
 		var cfg providercfg.CloudProfileConfig
 		if err := json.Unmarshal(cp.Spec.ProviderConfig.Raw, &cfg); err != nil {
@@ -227,14 +221,40 @@ func (r *Reconciler) deleteVersions(ctx context.Context, cloudProfileName, image
 			if cfg.MachineImages[i].Name != imageName {
 				continue
 			}
-			cfg.MachineImages[i].Versions = slices.DeleteFunc(cfg.MachineImages[i].Versions, func(mv providercfg.MachineImageVersion) bool {
-				idx := strings.LastIndex(mv.Image, ":")
-				if idx == -1 {
-					return false
+			for j := range cfg.MachineImages[i].Versions {
+				v := &cfg.MachineImages[i].Versions[j]
+				if v.Image != "" {
+					// Legacy flat entry — not a clean version, skip.
+					continue
 				}
-				version := mv.Image[idx+1:]
-				_, exists := versionsToDelete[version]
-				return exists
+				// Mark as a clean version entry; value indicates whether any flavors remain.
+				cleanVersionsWithFlavors[v.Version] = len(v.CapabilityFlavors) > 0
+				if len(v.CapabilityFlavors) == 0 {
+					continue
+				}
+				v.CapabilityFlavors = slices.DeleteFunc(v.CapabilityFlavors, func(f providercfg.MachineImageFlavor) bool {
+					idx := strings.LastIndex(f.Image, ":")
+					if idx == -1 {
+						return false
+					}
+					_, exists := versionsToDelete[f.Image[idx+1:]]
+					return exists
+				})
+				cleanVersionsWithFlavors[v.Version] = len(v.CapabilityFlavors) > 0
+			}
+			// Remove version entries that have no legacy image ref and no remaining flavors.
+			cfg.MachineImages[i].Versions = slices.DeleteFunc(cfg.MachineImages[i].Versions, func(mv providercfg.MachineImageVersion) bool {
+				if mv.Image != "" {
+					// Legacy flat entry — delete if its tag is in versionsToDelete.
+					idx := strings.LastIndex(mv.Image, ":")
+					if idx == -1 {
+						return false
+					}
+					_, exists := versionsToDelete[mv.Image[idx+1:]]
+					return exists
+				}
+				// Clean version entry — delete if all flavors were removed.
+				return !cleanVersionsWithFlavors[mv.Version]
 			})
 		}
 		raw, err := json.Marshal(cfg)
@@ -243,6 +263,22 @@ func (r *Reconciler) deleteVersions(ctx context.Context, cloudProfileName, image
 		}
 		cp.Spec.ProviderConfig.Raw = raw
 	}
+
+	for i := range cp.Spec.MachineImages {
+		if cp.Spec.MachineImages[i].Name != imageName {
+			continue
+		}
+		cp.Spec.MachineImages[i].Versions = slices.DeleteFunc(cp.Spec.MachineImages[i].Versions, func(mv gardenerv1beta1.MachineImageVersion) bool {
+			if _, exists := versionsToDelete[mv.Version]; exists {
+				return true
+			}
+			// Cascade-delete clean version entry if all its capability flavors were removed.
+			// Only entries tracked as clean versions (present in the map) are eligible.
+			hasRemainingFlavors, isCleanVersion := cleanVersionsWithFlavors[mv.Version]
+			return isCleanVersion && !hasRemainingFlavors
+		})
+	}
+
 	if err := r.Update(ctx, &cp); err != nil {
 		return err
 	}
@@ -267,6 +303,39 @@ func (r *Reconciler) getReferencedVersions(ctx context.Context, cloudProfileName
 			}
 			if worker.Machine.Image.Version != nil {
 				referenced[*worker.Machine.Image.Version] = struct{}{}
+			}
+		}
+	}
+
+	// For any clean version referenced by a Shoot, also protect the raw OCI tags
+	// that back it via capabilityFlavors — otherwise GC would delete the images
+	// that the clean version depends on.
+	if len(referenced) > 0 {
+		var cp gardenerv1beta1.CloudProfile
+		if err := r.Get(ctx, types.NamespacedName{Name: cloudProfileName}, &cp); err != nil {
+			return nil, fmt.Errorf("failed to get CloudProfile: %w", err)
+		}
+		if cp.Spec.ProviderConfig != nil {
+			var cfg providercfg.CloudProfileConfig
+			if err := json.Unmarshal(cp.Spec.ProviderConfig.Raw, &cfg); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal ProviderConfig: %w", err)
+			}
+			for _, img := range cfg.MachineImages {
+				if img.Name != imageName {
+					continue
+				}
+				for _, v := range img.Versions {
+					if _, isReferenced := referenced[v.Version]; !isReferenced {
+						continue
+					}
+					for _, flavor := range v.CapabilityFlavors {
+						idx := strings.LastIndex(flavor.Image, ":")
+						if idx == -1 {
+							continue
+						}
+						referenced[flavor.Image[idx+1:]] = struct{}{}
+					}
+				}
 			}
 		}
 	}
