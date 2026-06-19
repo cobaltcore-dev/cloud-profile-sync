@@ -18,15 +18,31 @@ import (
 	"oras.land/oras-go/v2/registry/remote/retry"
 )
 
+type Feature string
+
+const (
+	//ChostFeature represent having containerd
+	ChostFeature = "chost"
+	//PXEFeature represent pxe boot build
+	PXEFeature     = "_pxe"
+	SCIFeature     = "sci"
+	SCIBaseFeature = "scibase"
+	//CAPIFeature includes server, khost, and PXE; excludes SELinux and firewall
+	CAPIFeature = "capi"
+	// USIFeature shows UEFI build
+	USIFeature    = "_usi"
+	USIDevFeatrue = "_usidev"
+)
+
 // validFeatureValues is the allowlist of feature values extracted from the feature_set annotation.
 var validFeatureValues = map[string]struct{}{
-	"chost":   {},
-	"_pxe":    {},
-	"sci":     {},
-	"capi":    {},
-	"scibase": {},
-	"_usi":    {},
-	"_usidev": {},
+	ChostFeature:   {},
+	PXEFeature:     {},
+	SCIFeature:     {},
+	SCIBaseFeature: {},
+	CAPIFeature:    {},
+	USIFeature:     {},
+	USIDevFeatrue:  {},
 }
 
 func filterFeatureSet(featureSet string) []string {

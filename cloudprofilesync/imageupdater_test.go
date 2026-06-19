@@ -224,6 +224,25 @@ var _ = Describe("ImageUpdater", func() {
 			Expect(json.Unmarshal(cpSpec.ProviderConfig.Raw, &fromProvider)).To(Succeed())
 			Expect(fromProvider).To(Equal(mockSource.images))
 		})
+
+		It("reflect inplace update ability to machineimage", func(ctx SpecContext) {
+			mockSource.images = []cloudprofilesync.SourceImage{{
+				Version:       "1.0.0",
+				Architectures: []string{"amd64"},
+				Capabilities:  map[string]gardencorev1beta1.CapabilityValues{"feature": {cloudprofilesync.USIFeature}}},
+			}
+			updater := cloudprofilesync.ImageUpdater{
+				Log:       logr.Discard(),
+				Source:    &mockSource,
+				ImageName: "test",
+			}
+			var cpSpec gardencorev1beta1.CloudProfileSpec
+			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
+			Expect(cpSpec.MachineImages[0].Versions).To(HaveLen(1))
+			Expect(cpSpec.MachineImages[0].Versions[0].Version).To(Equal("1.0.0"))
+			Expect(cpSpec.MachineImages[0].Versions[0].InPlaceUpdates.Supported).To(Equal(true))
+		})
+
 	})
 
 	Describe("flag ON (dual-write clean version)", func() {
@@ -317,6 +336,25 @@ var _ = Describe("ImageUpdater", func() {
 			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
 			Expect(cpSpec.MachineImages[0].Versions).To(HaveLen(1))
 			Expect(cpSpec.MachineImages[0].Versions[0].Version).To(Equal("1877.0.0"))
+		})
+
+		It("reflect inplace update ability to machineimage", func(ctx SpecContext) {
+			mockSource.images = []cloudprofilesync.SourceImage{{
+				Version:       "1.0.0",
+				Architectures: []string{"amd64"},
+				Capabilities:  map[string]gardencorev1beta1.CapabilityValues{"feature": {cloudprofilesync.USIFeature}}},
+			}
+			updater := cloudprofilesync.ImageUpdater{
+				Log:                logr.Discard(),
+				Source:             &mockSource,
+				ImageName:          "test",
+				EnableCapabilities: true,
+			}
+			var cpSpec gardencorev1beta1.CloudProfileSpec
+			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
+			Expect(cpSpec.MachineImages[0].Versions).To(HaveLen(1))
+			Expect(cpSpec.MachineImages[0].Versions[0].Version).To(Equal("1.0.0"))
+			Expect(cpSpec.MachineImages[0].Versions[0].InPlaceUpdates.Supported).To(Equal(true))
 		})
 	})
 })
