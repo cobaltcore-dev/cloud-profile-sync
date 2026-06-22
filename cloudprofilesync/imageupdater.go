@@ -122,6 +122,11 @@ func (iu *ImageUpdater) Update(ctx context.Context, cpSpec *gardenerv1beta1.Clou
 						existing.Architectures = append(existing.Architectures, arch)
 					}
 				}
+				if supportInPlaceUpdate {
+					existing.InPlaceUpdates = &gardenerv1beta1.InPlaceUpdates{
+						Supported: supportInPlaceUpdate,
+					}
+				}
 			} else {
 				image.Versions = append(image.Versions, gardenerv1beta1.MachineImageVersion{
 					ExpirableVersion: gardenerv1beta1.ExpirableVersion{

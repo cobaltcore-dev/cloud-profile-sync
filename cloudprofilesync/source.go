@@ -18,8 +18,6 @@ import (
 	"oras.land/oras-go/v2/registry/remote/retry"
 )
 
-type Feature string
-
 const (
 	// ChostFeature represent having containerd
 	ChostFeature = "chost"
@@ -31,7 +29,7 @@ const (
 	CAPIFeature = "capi"
 	// USIFeature shows UEFI build
 	USIFeature    = "_usi"
-	USIDevFeatrue = "_usidev"
+	USIDevFeature = "_usidev"
 
 	ArchitectureCapability = "architecture"
 	FeatureCapability      = "feature"
@@ -45,7 +43,7 @@ var validFeatureValues = map[string]struct{}{
 	SCIBaseFeature: {},
 	CAPIFeature:    {},
 	USIFeature:     {},
-	USIDevFeatrue:  {},
+	USIDevFeature:  {},
 }
 
 func filterFeatureSet(featureSet string) []string {

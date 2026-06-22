@@ -225,7 +225,7 @@ var _ = Describe("ImageUpdater", func() {
 			Expect(fromProvider).To(Equal(mockSource.images))
 		})
 
-		It("reflect inplace update ability to machineimage", func(ctx SpecContext) {
+		It("in-place update support", func(ctx SpecContext) {
 			mockSource.images = []cloudprofilesync.SourceImage{{
 				Version:       "1.0.0",
 				Architectures: []string{"amd64"},
@@ -339,7 +339,7 @@ var _ = Describe("ImageUpdater", func() {
 			Expect(cpSpec.MachineImages[0].Versions[0].Version).To(Equal("1877.0.0"))
 		})
 
-		It("reflect inplace update ability to machineimage", func(ctx SpecContext) {
+		It("in-place update support", func(ctx SpecContext) {
 			mockSource.images = []cloudprofilesync.SourceImage{{
 				Version:       "1.0.0",
 				CleanVersion:  "1.1",
