@@ -18,15 +18,32 @@ import (
 	"oras.land/oras-go/v2/registry/remote/retry"
 )
 
+const (
+	// ChostFeature represent having containerd
+	ChostFeature = "chost"
+	// PXEFeature represent pxe boot build
+	PXEFeature     = "_pxe"
+	SCIFeature     = "sci"
+	SCIBaseFeature = "scibase"
+	// CAPIFeature includes server, khost, and PXE; excludes SELinux and firewall
+	CAPIFeature = "capi"
+	// USIFeature shows UEFI build
+	USIFeature    = "_usi"
+	USIDevFeature = "_usidev"
+
+	ArchitectureCapability = "architecture"
+	FeatureCapability      = "feature"
+)
+
 // validFeatureValues is the allowlist of feature values extracted from the feature_set annotation.
 var validFeatureValues = map[string]struct{}{
-	"chost":   {},
-	"_pxe":    {},
-	"sci":     {},
-	"capi":    {},
-	"scibase": {},
-	"_usi":    {},
-	"_usidev": {},
+	ChostFeature:   {},
+	PXEFeature:     {},
+	SCIFeature:     {},
+	SCIBaseFeature: {},
+	CAPIFeature:    {},
+	USIFeature:     {},
+	USIDevFeature:  {},
 }
 
 func filterFeatureSet(featureSet string) []string {
@@ -161,8 +178,8 @@ func (o *OCI) GetVersions(ctx context.Context) ([]SourceImage, error) {
 					features := filterFeatureSet(featureSet)
 					if len(features) > 0 {
 						capabilities = gardencorev1beta1.Capabilities{
-							"architecture": {arch},
-							"feature":      features,
+							ArchitectureCapability: {arch},
+							FeatureCapability:      features,
 						}
 						cleanVersion = version
 					}

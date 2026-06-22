@@ -86,6 +86,7 @@ func (iu *ImageUpdater) Update(ctx context.Context, cpSpec *gardenerv1beta1.Clou
 	}
 
 	for _, sourceImage := range sourceImages {
+		supportInPlaceUpdate := slices.Contains(sourceImage.Capabilities[FeatureCapability], USIFeature)
 		// Always write the full tag version (legacy path, safe for running Shoots).
 		if idx, exists := existingVersions[sourceImage.Version]; exists {
 			image.Versions[idx].Architectures = sourceImage.Architectures
@@ -103,6 +104,11 @@ func (iu *ImageUpdater) Update(ctx context.Context, cpSpec *gardenerv1beta1.Clou
 					},
 					Architectures: sourceImage.Architectures,
 				})
+				if supportInPlaceUpdate {
+					image.Versions[len(image.Versions)-1].InPlaceUpdates = &gardenerv1beta1.InPlaceUpdates{
+						Supported: supportInPlaceUpdate,
+					}
+				}
 				existingVersions[sourceImage.Version] = len(image.Versions) - 1
 			}
 		}
@@ -116,6 +122,11 @@ func (iu *ImageUpdater) Update(ctx context.Context, cpSpec *gardenerv1beta1.Clou
 						existing.Architectures = append(existing.Architectures, arch)
 					}
 				}
+				if supportInPlaceUpdate {
+					existing.InPlaceUpdates = &gardenerv1beta1.InPlaceUpdates{
+						Supported: supportInPlaceUpdate,
+					}
+				}
 			} else {
 				image.Versions = append(image.Versions, gardenerv1beta1.MachineImageVersion{
 					ExpirableVersion: gardenerv1beta1.ExpirableVersion{
@@ -123,6 +134,11 @@ func (iu *ImageUpdater) Update(ctx context.Context, cpSpec *gardenerv1beta1.Clou
 					},
 					Architectures: slices.Clone(sourceImage.Architectures),
 				})
+				if supportInPlaceUpdate {
+					image.Versions[len(image.Versions)-1].InPlaceUpdates = &gardenerv1beta1.InPlaceUpdates{
+						Supported: supportInPlaceUpdate,
+					}
+				}
 				existingVersions[sourceImage.CleanVersion] = len(image.Versions) - 1
 			}
 		}
