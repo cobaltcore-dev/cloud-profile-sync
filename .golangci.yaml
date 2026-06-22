@@ -74,7 +74,7 @@ linters:
   settings:
     dupword:
       # Do not choke on SQL statements like `INSERT INTO things (foo, bar, baz) VALUES (TRUE, TRUE, TRUE)`.
-      ignore: ["TRUE", "FALSE", "NULL"]
+      ignore: [ "TRUE", "FALSE", "NULL" ]
     errcheck:
       check-type-assertions: false
       # Report about assignment of errors to blank identifier.
@@ -103,7 +103,7 @@ linters:
       min-occurrences: 5
       ignore-tests: true
       ignore-string-values:
-        - "^[a-zA-Z_-]{1,16}$" # ignore short identifiers like "account" or "project_id"
+        - '^[a-zA-Z_-]{1,16}$' # ignore short identifiers like "account" or "project_id"
     gocritic:
       enabled-checks:
         - boolExprSimplify
@@ -136,7 +136,7 @@ linters:
         # for github.com/sapcc/vpa_butler
         - k8s.io/client-go
       toolchain-forbidden: true
-      go-version-pattern: 1\.\d+(\.\d+)?$
+      go-version-pattern: 1\.\d+(\.0)?$
     gosec:
       excludes:
         # gosec wants us to set a short ReadHeaderTimeout to avoid Slowloris attacks, but doing so would expose us to Keep-Alive race conditions (see https://iximiuz.com/en/posts/reverse-proxy-http-keep-alive-and-502s/
