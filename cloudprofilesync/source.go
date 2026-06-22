@@ -32,6 +32,9 @@ const (
 	// USIFeature shows UEFI build
 	USIFeature    = "_usi"
 	USIDevFeatrue = "_usidev"
+
+	ArchitectureCapability = "architecture"
+	FeatureCapability      = "feature"
 )
 
 // validFeatureValues is the allowlist of feature values extracted from the feature_set annotation.
@@ -177,8 +180,8 @@ func (o *OCI) GetVersions(ctx context.Context) ([]SourceImage, error) {
 					features := filterFeatureSet(featureSet)
 					if len(features) > 0 {
 						capabilities = gardencorev1beta1.Capabilities{
-							"architecture": {arch},
-							"feature":      features,
+							ArchitectureCapability: {arch},
+							FeatureCapability:      features,
 						}
 						cleanVersion = version
 					}

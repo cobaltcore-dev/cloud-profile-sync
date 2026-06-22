@@ -86,7 +86,7 @@ func (iu *ImageUpdater) Update(ctx context.Context, cpSpec *gardenerv1beta1.Clou
 	}
 
 	for _, sourceImage := range sourceImages {
-		supportInPlaceUpdate := slices.Contains(sourceImage.Capabilities["feature"], USIFeature)
+		supportInPlaceUpdate := slices.Contains(sourceImage.Capabilities[FeatureCapability], USIFeature)
 		// Always write the full tag version (legacy path, safe for running Shoots).
 		if idx, exists := existingVersions[sourceImage.Version]; exists {
 			image.Versions[idx].Architectures = sourceImage.Architectures
