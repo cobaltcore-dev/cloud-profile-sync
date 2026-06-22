@@ -4,9 +4,9 @@ metadata:
   url: https://github.com/cobaltcore-dev/cloud-profile-sync
 
 binaries:
-  - name:        cloud-profile-sync
+  - name: cloud-profile-sync
     fromPackage: .
-    installTo:   bin/
+    installTo: bin/
 
 golang:
   setGoModVersion: true
@@ -35,12 +35,16 @@ renovate:
 
 reuse:
   annotations:
-  - paths:
-    - '**/zz_generated.deepcopy.go'
-    - 'crd/*'
-    SPDX-FileCopyrightText: 2020 The Kubernetes Authors # this is the copyright line for kubebuilder which generates those files
-    SPDX-License-Identifier: Apache-2.0
+    - paths:
+        - "**/zz_generated.deepcopy.go"
+        - "crd/*"
+      SPDX-FileCopyrightText: 2020 The Kubernetes Authors # this is the copyright line for kubebuilder which generates those files
+      SPDX-License-Identifier: Apache-2.0
 
 verbatim: |
   gardener-crds: install-controller-gen
     @controller-gen crd paths="github.com/gardener/gardener/pkg/apis/core/v1beta1" output:crd:artifacts:config=crd
+
+typos:
+  extendWords:
+    ded: ded
