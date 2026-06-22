@@ -240,7 +240,7 @@ var _ = Describe("ImageUpdater", func() {
 			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
 			Expect(cpSpec.MachineImages[0].Versions).To(HaveLen(1))
 			Expect(cpSpec.MachineImages[0].Versions[0].Version).To(Equal("1.0.0"))
-			Expect(cpSpec.MachineImages[0].Versions[0].InPlaceUpdates.Supported).To(Equal(true))
+			Expect(cpSpec.MachineImages[0].Versions[0].InPlaceUpdates.Supported).To(BeTrue())
 		})
 
 	})
@@ -268,6 +268,7 @@ var _ = Describe("ImageUpdater", func() {
 			versions := cpSpec.MachineImages[0].Versions
 			versionStrings := []string{versions[0].Version, versions[1].Version}
 			Expect(versionStrings).To(ContainElements("2254.0.0-baremetal-sci-usi-amd64", "2254.0.0"))
+			Expect(versions[0].InPlaceUpdates.Supported).To(BeTrue())
 		})
 
 		It("does not add a duplicate clean version entry on re-reconcile", func(ctx SpecContext) {
@@ -354,7 +355,6 @@ var _ = Describe("ImageUpdater", func() {
 			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
 			Expect(cpSpec.MachineImages[0].Versions).To(HaveLen(1))
 			Expect(cpSpec.MachineImages[0].Versions[0].Version).To(Equal("1.0.0"))
-			Expect(cpSpec.MachineImages[0].Versions[0].InPlaceUpdates.Supported).To(Equal(true))
 		})
 	})
 })

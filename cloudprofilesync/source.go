@@ -21,13 +21,13 @@ import (
 type Feature string
 
 const (
-	//ChostFeature represent having containerd
+	// ChostFeature represent having containerd
 	ChostFeature = "chost"
-	//PXEFeature represent pxe boot build
+	// PXEFeature represent pxe boot build
 	PXEFeature     = "_pxe"
 	SCIFeature     = "sci"
 	SCIBaseFeature = "scibase"
-	//CAPIFeature includes server, khost, and PXE; excludes SELinux and firewall
+	// CAPIFeature includes server, khost, and PXE; excludes SELinux and firewall
 	CAPIFeature = "capi"
 	// USIFeature shows UEFI build
 	USIFeature    = "_usi"
