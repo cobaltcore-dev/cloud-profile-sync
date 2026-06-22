@@ -342,6 +342,7 @@ var _ = Describe("ImageUpdater", func() {
 		It("reflect inplace update ability to machineimage", func(ctx SpecContext) {
 			mockSource.images = []cloudprofilesync.SourceImage{{
 				Version:       "1.0.0",
+				CleanVersion:  "1.1",
 				Architectures: []string{"amd64"},
 				Capabilities:  map[string]gardencorev1beta1.CapabilityValues{"feature": {cloudprofilesync.USIFeature}}},
 			}
@@ -353,8 +354,13 @@ var _ = Describe("ImageUpdater", func() {
 			}
 			var cpSpec gardencorev1beta1.CloudProfileSpec
 			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
-			Expect(cpSpec.MachineImages[0].Versions).To(HaveLen(1))
+			Expect(cpSpec.MachineImages[0].Versions).To(HaveLen(2))
 			Expect(cpSpec.MachineImages[0].Versions[0].Version).To(Equal("1.0.0"))
+			Expect(cpSpec.MachineImages[0].Versions[0].InPlaceUpdates).NotTo(BeNil())
+			Expect(cpSpec.MachineImages[0].Versions[0].InPlaceUpdates.Supported).To(BeTrue())
+			Expect(cpSpec.MachineImages[0].Versions[1].Version).To(Equal("1.1.0"))
+			Expect(cpSpec.MachineImages[0].Versions[1].InPlaceUpdates).NotTo(BeNil())
+			Expect(cpSpec.MachineImages[0].Versions[1].InPlaceUpdates.Supported).To(BeTrue())
 		})
 	})
 })
