@@ -224,6 +224,25 @@ var _ = Describe("ImageUpdater", func() {
 			Expect(json.Unmarshal(cpSpec.ProviderConfig.Raw, &fromProvider)).To(Succeed())
 			Expect(fromProvider).To(Equal(mockSource.images))
 		})
+
+		It("in-place update support", func(ctx SpecContext) {
+			mockSource.images = []cloudprofilesync.SourceImage{{
+				Version:       "1.0.0",
+				Architectures: []string{"amd64"},
+				Capabilities:  map[string]gardencorev1beta1.CapabilityValues{"feature": {cloudprofilesync.USIFeature}}},
+			}
+			updater := cloudprofilesync.ImageUpdater{
+				Log:       logr.Discard(),
+				Source:    &mockSource,
+				ImageName: "test",
+			}
+			var cpSpec gardencorev1beta1.CloudProfileSpec
+			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
+			Expect(cpSpec.MachineImages[0].Versions).To(HaveLen(1))
+			Expect(cpSpec.MachineImages[0].Versions[0].Version).To(Equal("1.0.0"))
+			Expect(cpSpec.MachineImages[0].Versions[0].InPlaceUpdates.Supported).To(BeTrue())
+		})
+
 	})
 
 	Describe("flag ON (dual-write clean version)", func() {
@@ -249,6 +268,7 @@ var _ = Describe("ImageUpdater", func() {
 			versions := cpSpec.MachineImages[0].Versions
 			versionStrings := []string{versions[0].Version, versions[1].Version}
 			Expect(versionStrings).To(ContainElements("2254.0.0-baremetal-sci-usi-amd64", "2254.0.0"))
+			Expect(versions[0].InPlaceUpdates.Supported).To(BeTrue())
 		})
 
 		It("does not add a duplicate clean version entry on re-reconcile", func(ctx SpecContext) {
@@ -317,6 +337,30 @@ var _ = Describe("ImageUpdater", func() {
 			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
 			Expect(cpSpec.MachineImages[0].Versions).To(HaveLen(1))
 			Expect(cpSpec.MachineImages[0].Versions[0].Version).To(Equal("1877.0.0"))
+		})
+
+		It("in-place update support", func(ctx SpecContext) {
+			mockSource.images = []cloudprofilesync.SourceImage{{
+				Version:       "1.0.0",
+				CleanVersion:  "1.1",
+				Architectures: []string{"amd64"},
+				Capabilities:  map[string]gardencorev1beta1.CapabilityValues{"feature": {cloudprofilesync.USIFeature}}},
+			}
+			updater := cloudprofilesync.ImageUpdater{
+				Log:                logr.Discard(),
+				Source:             &mockSource,
+				ImageName:          "test",
+				EnableCapabilities: true,
+			}
+			var cpSpec gardencorev1beta1.CloudProfileSpec
+			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
+			Expect(cpSpec.MachineImages[0].Versions).To(HaveLen(2))
+			Expect(cpSpec.MachineImages[0].Versions[0].Version).To(Equal("1.0.0"))
+			Expect(cpSpec.MachineImages[0].Versions[0].InPlaceUpdates).NotTo(BeNil())
+			Expect(cpSpec.MachineImages[0].Versions[0].InPlaceUpdates.Supported).To(BeTrue())
+			Expect(cpSpec.MachineImages[0].Versions[1].Version).To(Equal("1.1.0"))
+			Expect(cpSpec.MachineImages[0].Versions[1].InPlaceUpdates).NotTo(BeNil())
+			Expect(cpSpec.MachineImages[0].Versions[1].InPlaceUpdates.Supported).To(BeTrue())
 		})
 	})
 })
