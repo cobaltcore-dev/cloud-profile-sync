@@ -5,7 +5,7 @@ go 1.26.0
 require (
 	github.com/blang/semver/v4 v4.0.0
 	github.com/distribution/distribution/v3 v3.1.1
-	github.com/gardener/gardener/pkg/apis v1.144.0
+	github.com/gardener/gardener/pkg/apis v1.145.0
 	github.com/go-logr/logr v1.4.3
 	github.com/ironcore-dev/gardener-extension-provider-ironcore-metal v0.1.1-0.20260624151759-9166baa81e86
 	github.com/onsi/ginkgo/v2 v2.32.0
