@@ -3,8 +3,11 @@
 # SPDX-License-Identifier: Apache-2.0
 
 [default.extend-words]
-ded = "ded"
 
+[default]
+extend-ignore-identifiers-re = [
+  "ANDed",
+]
 
 [files]
 extend-exclude = [
