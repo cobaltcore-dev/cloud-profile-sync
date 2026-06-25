@@ -5,6 +5,7 @@
 [default.extend-words]
 ded = "ded"
 
+
 [files]
 extend-exclude = [
   "go.mod",
