@@ -48,7 +48,3 @@ reuse:
 verbatim: |
   gardener-crds: install-controller-gen
     @controller-gen crd paths="github.com/gardener/gardener/pkg/apis/core/v1beta1" output:crd:artifacts:config=crd
-
-typos:
-  extendWords:
-    ded: ded
