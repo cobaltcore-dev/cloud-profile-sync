@@ -11,6 +11,10 @@ binaries:
 golang:
   setGoModVersion: true
 
+typos:
+  extendIgnoreIdentifiersRe:
+    - "ANDed"
+
 golangciLint:
   createConfig: true
 
