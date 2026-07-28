@@ -19,6 +19,10 @@ type ManagedCloudProfileSpec struct {
 	// GarbageCollection contains configuration for automated garbage collection
 	// +optional
 	GarbageCollection *GarbageCollectionConfig `json:"garbageCollection,omitempty"`
+
+	// KubernetesVersionUpdateConfig contains the source and provider information to automate Kubernetes version updates.
+	// +optional
+	KubernetesVersionUpdateConfig *KubernetesVersionUpdateConfig `json:"kubernetesVersionUpdateConfig,omitempty"`
 }
 
 // Copy the cloud profile spec to override some validation
@@ -107,6 +111,59 @@ type GarbageCollectionConfig struct {
 	// +optional
 	// +kubebuilder:validation:XValidation:rule="duration(self) >= duration('0s')",message="maxAge must not be negative"
 	MaxAge metav1.Duration `json:"maxAge,omitempty"`
+}
+
+type KubernetesVersionUpdateConfig struct {
+	// ExpirationThreshold defines the threshold for expiring Kubernetes versions.
+	// Versions that are expiring within this threshold will be removed from the CloudProfile.
+	// +optional
+	ExpirationThreshold metav1.Duration `json:"expirationThreshold,omitempty"`
+
+	// Source contains configuration for a source for Kubernetes versions.
+	Source KubernetesVersionSource `json:"kubernetesVersionSource"`
+}
+
+type KubernetesVersionSource struct {
+	// Github contains configuration for a GitHub source.
+	// +optional
+	Github *KubernetesVersionSourceGithub `json:"github,omitempty"`
+	// Keppel contains configuration for a Keppel component-descriptor source.
+	// +optional
+	Keppel *KubernetesVersionSourceKeppel `json:"keppel,omitempty"`
+}
+
+// KubernetesVersionSourceGithub configures fetching Kubernetes versions from a
+// YAML file in a GitHub repository. The file has a providers[].versions[] shape.
+type KubernetesVersionSourceGithub struct {
+	// URL is the GitHub contents API endpoint for the versions file.
+	URL string `json:"url"`
+	// PersonalAccessTokenSecret is a reference to a secret containing a GitHub personal access token.
+	PersonalAccessTokenSecret SecretReference `json:"personalAccessTokenSecret"`
+	// Provider is the provider whose Kubernetes versions are read from the file.
+	Provider string `json:"provider"`
+}
+
+// KubernetesVersionSourceKeppel configures fetching Kubernetes versions from an
+// OCM component artifact in a Keppel registry. The latest tag is read and the
+// versions of ResourceName are extracted from component-descriptor.yaml.
+type KubernetesVersionSourceKeppel struct {
+	// Registry contains the hostname and port of the Keppel registry.
+	Registry string `json:"registry"`
+	// Repository contains the component-descriptor repository to read.
+	Repository string `json:"repository"`
+	// Username for authentication.
+	// +optional
+	Username string `json:"username,omitempty"`
+	// Password for authentication.
+	// +optional
+	Password SecretReference `json:"password,omitempty"`
+	// ResourceName is the component resource whose versions are used as
+	// Kubernetes versions. Defaults to "kube-apiserver" when empty.
+	// +optional
+	ResourceName string `json:"resourceName,omitempty"`
+	// Insecure disables TLS.
+	// +optional
+	Insecure bool `json:"insecure,omitempty"`
 }
 
 type MachineImageUpdateSource struct {

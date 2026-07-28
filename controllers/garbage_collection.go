@@ -1,9 +1,12 @@
+// SPDX-FileCopyrightText: 2025 SAP SE or an SAP affiliate company
+// SPDX-License-Identifier: Apache-2.0
 package controllers
 
 import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -11,13 +14,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cobaltcore-dev/cloud-profile-sync/api/v1alpha1"
 	gardenerv1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
 	providercfg "github.com/ironcore-dev/gardener-extension-provider-ironcore-metal/pkg/apis/metal/v1alpha1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/cobaltcore-dev/cloud-profile-sync/api/v1alpha1"
 )
 
 type KeppelClient struct{}
@@ -28,12 +32,12 @@ func (k *KeppelClient) GetTags(ctx context.Context, registry, repository string)
 
 func (r *Reconciler) getRegistryProvider(registry string) (RegistryClient, error) {
 	if registry == "" {
-		return nil, fmt.Errorf("registry cannot be empty")
+		return nil, errors.New("registry cannot be empty")
 	}
 	if strings.Contains(strings.ToLower(registry), "keppel") {
 		return &KeppelClient{}, nil
 	}
-	return nil, fmt.Errorf("no registry provider found for registry")
+	return nil, errors.New("no registry provider found for registry")
 }
 
 type KeppelTag struct {

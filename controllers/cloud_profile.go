@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2025 SAP SE or an SAP affiliate company
+// SPDX-License-Identifier: Apache-2.0
 package controllers
 
 import (
@@ -5,8 +7,6 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/cobaltcore-dev/cloud-profile-sync/api/v1alpha1"
-	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync"
 	gardenerv1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
@@ -14,6 +14,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+
+	"github.com/cobaltcore-dev/cloud-profile-sync/api/v1alpha1"
+	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync"
 )
 
 // DefaultOCISourceFactory is the default implementation of OCISourceFactory.
@@ -35,6 +38,11 @@ func (r *Reconciler) reconcileCloudProfile(ctx context.Context, log logr.Logger,
 		errs := make([]error, 0)
 		for _, updates := range mcp.Spec.MachineImageUpdates {
 			if updateErr := r.updateMachineImages(ctx, log, updates, &cloudProfile.Spec); updateErr != nil {
+				errs = append(errs, updateErr)
+			}
+		}
+		if mcp.Spec.KubernetesVersionUpdateConfig != nil {
+			if updateErr := r.updateKubernetesVersions(ctx, *mcp.Spec.KubernetesVersionUpdateConfig, &cloudProfile.Spec); updateErr != nil {
 				errs = append(errs, updateErr)
 			}
 		}
@@ -131,4 +139,41 @@ func (r *Reconciler) getCredential(ctx context.Context, ref v1alpha1.SecretRefer
 		return nil, fmt.Errorf("secret %s/%s does not have key %s", ref.Namespace, ref.Name, ref.Key)
 	}
 	return data, nil
+}
+
+func (r *Reconciler) updateKubernetesVersions(ctx context.Context, update v1alpha1.KubernetesVersionUpdateConfig, cpSpec *gardenerv1beta1.CloudProfileSpec) error {
+	var source cloudprofilesync.KubernetesImageProvider
+	switch {
+	case update.Source.Github != nil:
+		pat, err := r.getCredential(ctx, update.Source.Github.PersonalAccessTokenSecret)
+		if err != nil {
+			return err
+		}
+		source = cloudprofilesync.NewGithubKubernetesSource(update.Source.Github.URL, string(pat), update.Source.Github.Provider)
+	case update.Source.Keppel != nil:
+		password, err := r.getCredential(ctx, update.Source.Keppel.Password)
+		if err != nil {
+			return err
+		}
+		src, err := cloudprofilesync.NewKeppelKubernetesSource(cloudprofilesync.KeppelParams{
+			Registry:     update.Source.Keppel.Registry,
+			Repository:   update.Source.Keppel.Repository,
+			Username:     update.Source.Keppel.Username,
+			Password:     string(password),
+			ResourceName: update.Source.Keppel.ResourceName,
+		}, update.Source.Keppel.Insecure)
+		if err != nil {
+			return fmt.Errorf("failed to initialize Keppel source: %w", err)
+		}
+		source = src
+	default:
+		return errors.New("no kubernetes version provider configured")
+	}
+
+	kubernetesUpdater := cloudprofilesync.NewKubernetesImageUpdater(source, update.ExpirationThreshold.Duration)
+	if err := kubernetesUpdater.Update(ctx, cpSpec); err != nil {
+		return fmt.Errorf("updating kubernetes versions failed: %w", err)
+	}
+
+	return nil
 }

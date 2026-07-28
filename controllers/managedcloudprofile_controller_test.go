@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -21,6 +22,7 @@ import (
 	providercfg "github.com/ironcore-dev/gardener-extension-provider-ironcore-metal/pkg/apis/metal/v1alpha1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/onsi/gomega/types"
 
 	"github.com/cobaltcore-dev/cloud-profile-sync/api/v1alpha1"
 	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync"
@@ -87,6 +89,101 @@ type fakeRegistryClientWithTags struct {
 
 func (f *fakeRegistryClientWithTags) GetTags(ctx context.Context, registry, repository string) (map[string]time.Time, error) {
 	return f.tags, nil
+}
+
+// --- shared test helpers ---
+
+// validMachineImage returns a machine image that satisfies Gardener CloudProfile
+// validation (CRI, architecture and update strategy set).
+func validMachineImage(name string, versions ...string) gardenerv1beta1.MachineImage {
+	mivs := make([]gardenerv1beta1.MachineImageVersion, 0, len(versions))
+	for _, v := range versions {
+		mivs = append(mivs, gardenerv1beta1.MachineImageVersion{
+			ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: v},
+			CRI:              []gardenerv1beta1.CRI{{Name: "containerd"}},
+			Architectures:    []string{"amd64"},
+		})
+	}
+	return gardenerv1beta1.MachineImage{
+		Name:           name,
+		Versions:       mivs,
+		UpdateStrategy: ptr.To(gardenerv1beta1.UpdateStrategyMajor),
+	}
+}
+
+// expectReconcileStatus waits until the ManagedCloudProfile reaches the given
+// reconcile status, surfacing its conditions on failure.
+func expectReconcileStatus(ctx context.Context, mcp *v1alpha1.ManagedCloudProfile, status v1alpha1.ReconcileStatus) {
+	GinkgoHelper()
+	Eventually(func(g Gomega) v1alpha1.ReconcileStatus {
+		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mcp), mcp)).To(Succeed())
+		return mcp.Status.Status
+	}).Should(Equal(status), func() string {
+		return fmt.Sprintf("conditions: %+v", mcp.Status.Conditions)
+	})
+}
+
+// expectAppliedCondition asserts the CloudProfileApplied condition has the given
+// status. Extra matchers (e.g. on Reason/Message) may be appended.
+func expectAppliedCondition(mcp *v1alpha1.ManagedCloudProfile, status metav1.ConditionStatus, extra ...types.GomegaMatcher) {
+	GinkgoHelper()
+	matchers := append([]types.GomegaMatcher{
+		HaveField("Type", controllers.CloudProfileAppliedConditionType),
+		HaveField("Status", status),
+	}, extra...)
+	Expect(mcp.Status.Conditions).To(ContainElement(SatisfyAll(matchers...)))
+}
+
+// getCloudProfile fetches the CloudProfile named after the MCP, waiting for it
+// to exist, and returns it.
+func getCloudProfile(ctx context.Context, name string) *gardenerv1beta1.CloudProfile {
+	GinkgoHelper()
+	cp := &gardenerv1beta1.CloudProfile{}
+	Eventually(func() error {
+		return k8sClient.Get(ctx, client.ObjectKey{Name: name}, cp)
+	}).Should(Succeed())
+	return cp
+}
+
+// versionsByMachineImage returns the version strings of the named machine image in
+// the CloudProfile spec.
+func versionsByMachineImage(cp *gardenerv1beta1.CloudProfile, imageName string) []string {
+	var versions []string
+	for _, mi := range cp.Spec.MachineImages {
+		if mi.Name == imageName {
+			for _, v := range mi.Versions {
+				versions = append(versions, v.Version)
+			}
+		}
+	}
+	return versions
+}
+
+// baseCloudProfileSpec returns a minimal valid CloudProfileSpec with regions,
+// machine types, Kubernetes versions, and optional machine images. Callers should
+// override other fields as needed.
+func baseCloudProfileSpec(machineImages ...gardenerv1beta1.MachineImage) v1alpha1.CloudProfileSpec {
+	amd64 := "amd64"
+	usable := true
+	spec := v1alpha1.CloudProfileSpec{
+		Regions: []gardenerv1beta1.Region{
+			{
+				Name: "foo",
+			},
+		},
+		MachineTypes: []gardenerv1beta1.MachineType{
+			{
+				Name:         "baz",
+				Architecture: &amd64,
+				Usable:       &usable,
+			},
+		},
+		MachineImages: machineImages,
+		Kubernetes: gardenerv1beta1.KubernetesSettings{
+			Versions: []gardenerv1beta1.ExpirableVersion{{Version: "1.30.0"}},
+		},
+	}
+	return spec
 }
 
 var _ = Describe("The ManagedCloudProfile reconciler", func() {
@@ -165,53 +262,17 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 	It("should copy the spec of a ManagedCloudProfile to the respective CloudProfile", func(ctx SpecContext) {
 		var mcp v1alpha1.ManagedCloudProfile
 		mcp.Name = "test-mcp"
-		usable := true
-		mcp.Spec.CloudProfile = v1alpha1.CloudProfileSpec{
-			Regions: []gardenerv1beta1.Region{{Name: "foo"}},
-			MachineImages: []gardenerv1beta1.MachineImage{
-				{
-					Name: "bar",
-					Versions: []gardenerv1beta1.MachineImageVersion{
-						{
-							ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: "0.3.0"},
-							CRI:              []gardenerv1beta1.CRI{{Name: "containerd"}},
-							Architectures:    []string{"amd64"},
-						},
-					},
-					UpdateStrategy: ptr.To(gardenerv1beta1.UpdateStrategyMajor),
-				},
-			},
-			MachineTypes: []gardenerv1beta1.MachineType{
-				{
-					Name:         "baz",
-					Architecture: &amd64,
-					Usable:       &usable,
-				},
-			},
-		}
+		mcp.Spec.CloudProfile = baseCloudProfileSpec(validMachineImage("bar", "0.3.0"))
 		Expect(k8sClient.Create(ctx, &mcp)).To(Succeed())
 
-		Eventually(func(g Gomega) v1alpha1.ReconcileStatus {
-			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(&mcp), &mcp)).To(Succeed())
-			return mcp.Status.Status
-		}).Should(Equal(v1alpha1.SucceededReconcileStatus))
-		Expect(mcp.Status.Conditions).To(ContainElement(SatisfyAll(
-			HaveField("Type", controllers.CloudProfileAppliedConditionType),
-			HaveField("Status", metav1.ConditionTrue),
-		)))
-		var cloudProfile gardenerv1beta1.CloudProfile
-		cloudProfile.Name = mcp.Name
-		Eventually(func() error {
-			return k8sClient.Get(ctx, client.ObjectKeyFromObject(&cloudProfile), &cloudProfile)
-		}).Should(Succeed())
+		expectReconcileStatus(ctx, &mcp, v1alpha1.SucceededReconcileStatus)
+		expectAppliedCondition(&mcp, metav1.ConditionTrue)
 
+		cloudProfile := getCloudProfile(ctx, mcp.Name)
 		Expect(cloudProfile.Spec).To(Equal(controllers.CloudProfileSpecToGardener(&mcp.Spec.CloudProfile)))
 
-		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(&mcp), &mcp)).To(Succeed())
-		Expect(mcp.Status.Status).To(Equal(v1alpha1.SucceededReconcileStatus))
-
 		Expect(k8sClient.Delete(ctx, &mcp)).To(Succeed())
-		Expect(k8sClient.Delete(ctx, &cloudProfile)).To(Succeed())
+		Expect(k8sClient.Delete(ctx, cloudProfile)).To(Succeed())
 	})
 
 	It("reports failure given an invalid cloudprofile", func(ctx SpecContext) {
@@ -219,14 +280,8 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 		mcp.Name = "test-invalid"
 		Expect(k8sClient.Create(ctx, &mcp)).To(Succeed())
 
-		Eventually(func(g Gomega) v1alpha1.ReconcileStatus {
-			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(&mcp), &mcp)).To(Succeed())
-			return mcp.Status.Status
-		}).Should(Equal(v1alpha1.FailedReconcileStatus))
-		Expect(mcp.Status.Conditions).To(ContainElement(SatisfyAll(
-			HaveField("Type", controllers.CloudProfileAppliedConditionType),
-			HaveField("Status", metav1.ConditionFalse),
-		)))
+		expectReconcileStatus(ctx, &mcp, v1alpha1.FailedReconcileStatus)
+		expectAppliedCondition(&mcp, metav1.ConditionFalse)
 
 		Expect(k8sClient.Delete(ctx, &mcp)).To(Succeed())
 	})
@@ -234,17 +289,7 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 	It("invokes the image updater based on an image source", func(ctx SpecContext) {
 		var mcp v1alpha1.ManagedCloudProfile
 		mcp.Name = "test-oci"
-		usable := true
-		mcp.Spec.CloudProfile = v1alpha1.CloudProfileSpec{
-			Regions: []gardenerv1beta1.Region{{Name: "foo"}},
-			MachineTypes: []gardenerv1beta1.MachineType{
-				{
-					Name:         "baz",
-					Architecture: &amd64,
-					Usable:       &usable,
-				},
-			},
-		}
+		mcp.Spec.CloudProfile = baseCloudProfileSpec()
 		mcp.Spec.MachineImageUpdates = []v1alpha1.MachineImageUpdate{
 			{
 				Source: v1alpha1.MachineImageUpdateSource{
@@ -259,20 +304,10 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 		}
 		Expect(k8sClient.Create(ctx, &mcp)).To(Succeed())
 
-		Eventually(func(g Gomega) v1alpha1.ReconcileStatus {
-			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(&mcp), &mcp)).To(Succeed())
-			return mcp.Status.Status
-		}).Should(Equal(v1alpha1.SucceededReconcileStatus))
-		Expect(mcp.Status.Conditions).To(ContainElement(SatisfyAll(
-			HaveField("Type", controllers.CloudProfileAppliedConditionType),
-			HaveField("Status", metav1.ConditionTrue),
-		)))
-		var cloudProfile gardenerv1beta1.CloudProfile
-		cloudProfile.Name = mcp.Name
-		Eventually(func() error {
-			return k8sClient.Get(ctx, client.ObjectKeyFromObject(&cloudProfile), &cloudProfile)
-		}).Should(Succeed())
+		expectReconcileStatus(ctx, &mcp, v1alpha1.SucceededReconcileStatus)
+		expectAppliedCondition(&mcp, metav1.ConditionTrue)
 
+		cloudProfile := getCloudProfile(ctx, mcp.Name)
 		Expect(cloudProfile.Spec.Regions).To(Equal(mcp.Spec.CloudProfile.Regions))
 		Expect(cloudProfile.Spec.MachineTypes).To(Equal(mcp.Spec.CloudProfile.MachineTypes))
 		mi := cloudProfile.Spec.MachineImages
@@ -282,11 +317,8 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 		Expect(vers).To(ContainElement(gardenerv1beta1.MachineImageVersion{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: "1.0.0"}, Architectures: []string{"amd64"}, CRI: []gardenerv1beta1.CRI{{Name: "containerd"}}}))
 		Expect(vers).To(ContainElement(gardenerv1beta1.MachineImageVersion{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: "1.0.1+abc"}, Architectures: []string{"amd64"}, CRI: []gardenerv1beta1.CRI{{Name: "containerd"}}}))
 
-		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(&mcp), &mcp)).To(Succeed())
-		Expect(mcp.Status.Status).To(Equal(v1alpha1.SucceededReconcileStatus))
-
 		Expect(k8sClient.Delete(ctx, &mcp)).To(Succeed())
-		Expect(k8sClient.Delete(ctx, &cloudProfile)).To(Succeed())
+		Expect(k8sClient.Delete(ctx, cloudProfile)).To(Succeed())
 	})
 
 	It("fetches a secret for the OCI source", func(ctx SpecContext) {
@@ -298,10 +330,7 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 
 		var mcp v1alpha1.ManagedCloudProfile
 		mcp.Name = "test-secret"
-		mcp.Spec.CloudProfile = v1alpha1.CloudProfileSpec{
-			Regions:      []gardenerv1beta1.Region{{Name: "foo"}},
-			MachineTypes: []gardenerv1beta1.MachineType{{Name: "baz"}},
-		}
+		mcp.Spec.CloudProfile = baseCloudProfileSpec()
 		mcp.Spec.MachineImageUpdates = []v1alpha1.MachineImageUpdate{
 			{
 				Source: v1alpha1.MachineImageUpdateSource{
@@ -322,53 +351,33 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 		}
 		Expect(k8sClient.Create(ctx, &mcp)).To(Succeed())
 
-		Eventually(func(g Gomega) v1alpha1.ReconcileStatus {
-			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(&mcp), &mcp)).To(Succeed())
-			return mcp.Status.Status
-		}).Should(Equal(v1alpha1.SucceededReconcileStatus))
-		Expect(mcp.Status.Conditions).To(ContainElement(SatisfyAll(
-			HaveField("Type", controllers.CloudProfileAppliedConditionType),
-			HaveField("Status", metav1.ConditionTrue),
-		)))
-		var cloudProfile gardenerv1beta1.CloudProfile
-		cloudProfile.Name = mcp.Name
-		Eventually(func() error {
-			return k8sClient.Get(ctx, client.ObjectKeyFromObject(&cloudProfile), &cloudProfile)
-		}).Should(Succeed())
+		expectReconcileStatus(ctx, &mcp, v1alpha1.SucceededReconcileStatus)
+		expectAppliedCondition(&mcp, metav1.ConditionTrue)
+
+		cloudProfile := getCloudProfile(ctx, mcp.Name)
 		Expect(cloudProfile.Spec.MachineImages).To(HaveLen(1))
 
 		Expect(k8sClient.Delete(ctx, &mcp)).To(Succeed())
-		Expect(k8sClient.Delete(ctx, &cloudProfile)).To(Succeed())
+		Expect(k8sClient.Delete(ctx, cloudProfile)).To(Succeed())
 		Expect(k8sClient.Delete(ctx, &secret)).To(Succeed())
 	})
 
 	It("deletes old machine image versions not referenced by any Shoot", func(ctx SpecContext) {
 		var mcp v1alpha1.ManagedCloudProfile
 		mcp.Name = "gc-mcp"
-		usable := true
 
 		oldVersion := "0.1.0"
 		newVersion := "1.0.0"
 
-		mcp.Spec.CloudProfile = v1alpha1.CloudProfileSpec{
-			Regions: []gardenerv1beta1.Region{{Name: "foo"}},
-			MachineImages: []gardenerv1beta1.MachineImage{
-				{
-					Name: "gc-image",
-					Versions: []gardenerv1beta1.MachineImageVersion{
-						{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: oldVersion}, Architectures: []string{"amd64"}},
-						{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: newVersion}, Architectures: []string{"amd64"}},
-					},
+		mcp.Spec.CloudProfile = baseCloudProfileSpec(
+			gardenerv1beta1.MachineImage{
+				Name: "gc-image",
+				Versions: []gardenerv1beta1.MachineImageVersion{
+					{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: oldVersion}, Architectures: []string{"amd64"}},
+					{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: newVersion}, Architectures: []string{"amd64"}},
 				},
 			},
-			MachineTypes: []gardenerv1beta1.MachineType{
-				{
-					Name:         "baz",
-					Architecture: &amd64,
-					Usable:       &usable,
-				},
-			},
-		}
+		)
 
 		mcp.Spec.MachineImageUpdates = []v1alpha1.MachineImageUpdate{
 			{
@@ -486,20 +495,16 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 
 		var mcp v1alpha1.ManagedCloudProfile
 		mcp.Name = "test-gc-preserve"
-		mcp.Spec.CloudProfile = v1alpha1.CloudProfileSpec{
-			Regions: []gardenerv1beta1.Region{{Name: "foo"}},
-			MachineImages: []gardenerv1beta1.MachineImage{
-				{
-					Name: "preserve-image",
-					Versions: []gardenerv1beta1.MachineImageVersion{
-						{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: "1.0.0"}, Architectures: []string{amd64}},
-						{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: "2.0.0"}, Architectures: []string{amd64}},
-						{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: "3.0.0"}, Architectures: []string{amd64}},
-					},
+		mcp.Spec.CloudProfile = baseCloudProfileSpec(
+			gardenerv1beta1.MachineImage{
+				Name: "preserve-image",
+				Versions: []gardenerv1beta1.MachineImageVersion{
+					{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: "1.0.0"}, Architectures: []string{amd64}},
+					{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: "2.0.0"}, Architectures: []string{amd64}},
+					{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: "3.0.0"}, Architectures: []string{amd64}},
 				},
 			},
-			MachineTypes: []gardenerv1beta1.MachineType{{Name: "baz"}},
-		}
+		)
 		mcp.Spec.MachineImageUpdates = []v1alpha1.MachineImageUpdate{
 			{
 				ImageName: "preserve-image",
@@ -520,10 +525,7 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 
 		Expect(k8sClient.Create(ctx, &mcp)).To(Succeed())
 
-		Eventually(func(g Gomega) v1alpha1.ReconcileStatus {
-			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(&mcp), &mcp)).To(Succeed())
-			return mcp.Status.Status
-		}).Should(Equal(v1alpha1.FailedReconcileStatus))
+		expectReconcileStatus(ctx, &mcp, v1alpha1.FailedReconcileStatus)
 
 		Eventually(func(g Gomega) []string {
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(&cloudProfile), &cloudProfile)).To(Succeed())
@@ -588,19 +590,15 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 				Name: "test-shoot-preserve",
 			},
 			Spec: v1alpha1.ManagedCloudProfileSpec{
-				CloudProfile: v1alpha1.CloudProfileSpec{
-					Regions:      []gardenerv1beta1.Region{{Name: "foo"}},
-					MachineTypes: []gardenerv1beta1.MachineType{{Name: "baz"}},
-					MachineImages: []gardenerv1beta1.MachineImage{
-						{
-							Name: "shoot-preserve-image",
-							Versions: []gardenerv1beta1.MachineImageVersion{
-								{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: "1.0.0"}, Architectures: []string{amd64}},
-								{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: "1.0.1+abc"}, Architectures: []string{amd64}},
-							},
+				CloudProfile: baseCloudProfileSpec(
+					gardenerv1beta1.MachineImage{
+						Name: "shoot-preserve-image",
+						Versions: []gardenerv1beta1.MachineImageVersion{
+							{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: "1.0.0"}, Architectures: []string{amd64}},
+							{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: "1.0.1+abc"}, Architectures: []string{amd64}},
 						},
 					},
-				},
+				),
 				MachineImageUpdates: []v1alpha1.MachineImageUpdate{
 					{
 						ImageName: "shoot-preserve-image",
@@ -659,10 +657,7 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 	It("handles invalid OCI registry for GC", func(ctx SpecContext) {
 		var mcp v1alpha1.ManagedCloudProfile
 		mcp.Name = "test-gc-invalid-registry"
-		mcp.Spec.CloudProfile = v1alpha1.CloudProfileSpec{
-			Regions:      []gardenerv1beta1.Region{{Name: "foo"}},
-			MachineTypes: []gardenerv1beta1.MachineType{{Name: "baz"}},
-		}
+		mcp.Spec.CloudProfile = baseCloudProfileSpec()
 		mcp.Spec.MachineImageUpdates = []v1alpha1.MachineImageUpdate{
 			{
 				ImageName: "test-image",
@@ -681,17 +676,11 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 		}
 		Expect(k8sClient.Create(ctx, &mcp)).To(Succeed())
 
-		Eventually(func(g Gomega) v1alpha1.ReconcileStatus {
-			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(&mcp), &mcp)).To(Succeed())
-			return mcp.Status.Status
-		}).Should(Equal(v1alpha1.FailedReconcileStatus))
-
-		Expect(mcp.Status.Conditions).To(ContainElement(SatisfyAll(
-			HaveField("Type", controllers.CloudProfileAppliedConditionType),
-			HaveField("Status", metav1.ConditionFalse),
+		expectReconcileStatus(ctx, &mcp, v1alpha1.FailedReconcileStatus)
+		expectAppliedCondition(&mcp, metav1.ConditionFalse,
 			HaveField("Reason", "ApplyFailed"),
 			HaveField("Message", ContainSubstring("Failed to apply CloudProfile: failed to initialize OCI source: invalid reference: invalid repository \"/registry/account/repository\"")),
-		)))
+		)
 
 		Expect(k8sClient.Delete(ctx, &mcp)).To(Succeed())
 	})
@@ -707,10 +696,7 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 
 		var mcp v1alpha1.ManagedCloudProfile
 		mcp.Name = "test-gc-list-error"
-		mcp.Spec.CloudProfile = v1alpha1.CloudProfileSpec{
-			Regions:      []gardenerv1beta1.Region{{Name: "foo"}},
-			MachineTypes: []gardenerv1beta1.MachineType{{Name: "baz"}},
-		}
+		mcp.Spec.CloudProfile = baseCloudProfileSpec()
 		mcp.Spec.MachineImageUpdates = []v1alpha1.MachineImageUpdate{
 			{
 				ImageName: "test-image",
@@ -729,17 +715,11 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 		}
 		Expect(k8sClient.Create(ctx, &mcp)).To(Succeed())
 
-		Eventually(func(g Gomega) v1alpha1.ReconcileStatus {
-			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(&mcp), &mcp)).To(Succeed())
-			return mcp.Status.Status
-		}).Should(Equal(v1alpha1.FailedReconcileStatus))
-
-		Expect(mcp.Status.Conditions).To(ContainElement(SatisfyAll(
-			HaveField("Type", controllers.CloudProfileAppliedConditionType),
-			HaveField("Status", metav1.ConditionFalse),
+		expectReconcileStatus(ctx, &mcp, v1alpha1.FailedReconcileStatus)
+		expectAppliedCondition(&mcp, metav1.ConditionFalse,
 			HaveField("Reason", "ApplyFailed"),
 			HaveField("Message", ContainSubstring("Failed to apply CloudProfile: updating machine images failed: failed to retrieve image versions from OCI registry: simulated list error")),
-		)))
+		)
 
 		Expect(k8sClient.Delete(ctx, &mcp)).To(Succeed())
 	})
@@ -747,18 +727,14 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 	It("skips GC when no source is configured", func(ctx SpecContext) {
 		var mcp v1alpha1.ManagedCloudProfile
 		mcp.Name = "test-gc-no-source"
-		mcp.Spec.CloudProfile = v1alpha1.CloudProfileSpec{
-			Regions: []gardenerv1beta1.Region{{Name: "foo"}},
-			MachineImages: []gardenerv1beta1.MachineImage{
-				{
-					Name: "test-image",
-					Versions: []gardenerv1beta1.MachineImageVersion{
-						{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: "1.0.0"}, Architectures: []string{"amd64"}},
-					},
+		mcp.Spec.CloudProfile = baseCloudProfileSpec(
+			gardenerv1beta1.MachineImage{
+				Name: "test-image",
+				Versions: []gardenerv1beta1.MachineImageVersion{
+					{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: "1.0.0"}, Architectures: []string{"amd64"}},
 				},
 			},
-			MachineTypes: []gardenerv1beta1.MachineType{{Name: "baz"}},
-		}
+		)
 		Expect(k8sClient.Create(ctx, &mcp)).To(Succeed())
 
 		var cp gardenerv1beta1.CloudProfile
@@ -803,16 +779,10 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 
 		var mcp v1alpha1.ManagedCloudProfile
 		mcp.Name = "test-owned"
-		mcp.Spec.CloudProfile = v1alpha1.CloudProfileSpec{
-			Regions:      []gardenerv1beta1.Region{{Name: "foo"}},
-			MachineTypes: []gardenerv1beta1.MachineType{{Name: "baz"}},
-		}
+		mcp.Spec.CloudProfile = baseCloudProfileSpec()
 		Expect(k8sClient.Create(ctx, &mcp)).To(Succeed())
 
-		Eventually(func(g Gomega) v1alpha1.ReconcileStatus {
-			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(&mcp), &mcp)).To(Succeed())
-			return mcp.Status.Status
-		}).Should(Equal(v1alpha1.FailedReconcileStatus))
+		expectReconcileStatus(ctx, &mcp, v1alpha1.FailedReconcileStatus)
 		Expect(mcp.Status.Conditions).To(ContainElement(SatisfyAll(
 			HaveField("Type", controllers.CloudProfileAppliedConditionType),
 			HaveField("Status", metav1.ConditionFalse),
@@ -854,19 +824,15 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 
 		var mcp v1alpha1.ManagedCloudProfile
 		mcp.Name = "test-gc-provider-config"
-		mcp.Spec.CloudProfile = v1alpha1.CloudProfileSpec{
-			Regions: []gardenerv1beta1.Region{{Name: "foo"}},
-			MachineImages: []gardenerv1beta1.MachineImage{
-				{
-					Name: "provider-config-image",
-					Versions: []gardenerv1beta1.MachineImageVersion{
-						{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: "1.0.0"}, Architectures: []string{"amd64"}},
-						{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: "1.0.1+abc"}, Architectures: []string{"amd64"}},
-					},
+		mcp.Spec.CloudProfile = baseCloudProfileSpec(
+			gardenerv1beta1.MachineImage{
+				Name: "provider-config-image",
+				Versions: []gardenerv1beta1.MachineImageVersion{
+					{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: "1.0.0"}, Architectures: []string{"amd64"}},
+					{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: "1.0.1+abc"}, Architectures: []string{"amd64"}},
 				},
 			},
-			MachineTypes: []gardenerv1beta1.MachineType{{Name: "baz"}},
-		}
+		)
 		mcp.Spec.MachineImageUpdates = []v1alpha1.MachineImageUpdate{
 			{
 				ImageName: "provider-config-image",
@@ -885,10 +851,7 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 		}
 		Expect(k8sClient.Create(ctx, &mcp)).To(Succeed())
 
-		Eventually(func(g Gomega) v1alpha1.ReconcileStatus {
-			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(&mcp), &mcp)).To(Succeed())
-			return mcp.Status.Status
-		}).Should(Equal(v1alpha1.FailedReconcileStatus))
+		expectReconcileStatus(ctx, &mcp, v1alpha1.FailedReconcileStatus)
 
 		Eventually(func(g Gomega) []string {
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(&cloudProfile), &cloudProfile)).To(Succeed())
@@ -966,20 +929,19 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 		mcp := &v1alpha1.ManagedCloudProfile{
 			ObjectMeta: metav1.ObjectMeta{Name: "test-gc-protect-flavors"},
 			Spec: v1alpha1.ManagedCloudProfileSpec{
-				CloudProfile: v1alpha1.CloudProfileSpec{
-					Regions:      []gardenerv1beta1.Region{{Name: "foo"}},
-					MachineTypes: []gardenerv1beta1.MachineType{{Name: "baz"}},
-					MachineImages: []gardenerv1beta1.MachineImage{
-						{
+				CloudProfile: func() v1alpha1.CloudProfileSpec {
+					cp := baseCloudProfileSpec(
+						gardenerv1beta1.MachineImage{
 							Name: "cap-image",
 							Versions: []gardenerv1beta1.MachineImageVersion{
 								{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: rawTag}, Architectures: []string{"amd64"}},
 								{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: cleanVersion}, Architectures: []string{"amd64"}},
 							},
 						},
-					},
-					ProviderConfig: &runtime.RawExtension{Raw: raw},
-				},
+					)
+					cp.ProviderConfig = &runtime.RawExtension{Raw: raw}
+					return cp
+				}(),
 				MachineImageUpdates: []v1alpha1.MachineImageUpdate{
 					{
 						ImageName: "cap-image",
@@ -1017,14 +979,7 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 		Expect(k8sClient.Get(ctx, client.ObjectKey{Name: mcp.Name}, cp)).To(Succeed())
 
 		// Raw tag must still be present in spec.machineImages because the Shoot protects it.
-		var versions []string
-		for _, mi := range cp.Spec.MachineImages {
-			if mi.Name == "cap-image" {
-				for _, v := range mi.Versions {
-					versions = append(versions, v.Version)
-				}
-			}
-		}
+		versions := versionsByMachineImage(cp, "cap-image")
 		Expect(versions).To(ContainElement(rawTag))
 
 		// Flavor must still be present in providerConfig.
@@ -1075,11 +1030,9 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 		mcp := &v1alpha1.ManagedCloudProfile{
 			ObjectMeta: metav1.ObjectMeta{Name: "test-gc-partial-flavor"},
 			Spec: v1alpha1.ManagedCloudProfileSpec{
-				CloudProfile: v1alpha1.CloudProfileSpec{
-					Regions:      []gardenerv1beta1.Region{{Name: "foo"}},
-					MachineTypes: []gardenerv1beta1.MachineType{{Name: "baz"}},
-					MachineImages: []gardenerv1beta1.MachineImage{
-						{
+				CloudProfile: func() v1alpha1.CloudProfileSpec {
+					cp := baseCloudProfileSpec(
+						gardenerv1beta1.MachineImage{
 							Name: "multi-flavor-image",
 							Versions: []gardenerv1beta1.MachineImageVersion{
 								{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: oldTag}, Architectures: []string{"amd64"}},
@@ -1087,9 +1040,10 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 								{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: cleanVersion}, Architectures: []string{"amd64", "arm64"}},
 							},
 						},
-					},
-					ProviderConfig: &runtime.RawExtension{Raw: raw},
-				},
+					)
+					cp.ProviderConfig = &runtime.RawExtension{Raw: raw}
+					return cp
+				}(),
 				MachineImageUpdates: []v1alpha1.MachineImageUpdate{
 					{
 						ImageName: "multi-flavor-image",
@@ -1147,15 +1101,7 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 		Expect(flavors).To(ContainElement("repo/multi-flavor-image:" + newTag))
 
 		// Clean version entry must still be present in spec.machineImages (has remaining flavor).
-		var machineVersions []string
-		for _, mi := range cp.Spec.MachineImages {
-			if mi.Name == "multi-flavor-image" {
-				for _, v := range mi.Versions {
-					machineVersions = append(machineVersions, v.Version)
-				}
-			}
-		}
-		Expect(machineVersions).To(ContainElement(cleanVersion))
+		Expect(versionsByMachineImage(cp, "multi-flavor-image")).To(ContainElement(cleanVersion))
 
 		Expect(k8sClient.Delete(ctx, mcp)).To(Succeed())
 	})
@@ -1187,20 +1133,19 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 		mcp := &v1alpha1.ManagedCloudProfile{
 			ObjectMeta: metav1.ObjectMeta{Name: "test-gc-cascade"},
 			Spec: v1alpha1.ManagedCloudProfileSpec{
-				CloudProfile: v1alpha1.CloudProfileSpec{
-					Regions:      []gardenerv1beta1.Region{{Name: "foo"}},
-					MachineTypes: []gardenerv1beta1.MachineType{{Name: "baz"}},
-					MachineImages: []gardenerv1beta1.MachineImage{
-						{
+				CloudProfile: func() v1alpha1.CloudProfileSpec {
+					cp := baseCloudProfileSpec(
+						gardenerv1beta1.MachineImage{
 							Name: "cascade-image",
 							Versions: []gardenerv1beta1.MachineImageVersion{
 								{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: oldTag}, Architectures: []string{"amd64"}},
 								{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: cleanVersion}, Architectures: []string{"amd64"}},
 							},
 						},
-					},
-					ProviderConfig: &runtime.RawExtension{Raw: raw},
-				},
+					)
+					cp.ProviderConfig = &runtime.RawExtension{Raw: raw}
+					return cp
+				}(),
 				MachineImageUpdates: []v1alpha1.MachineImageUpdate{
 					{
 						ImageName: "cascade-image",
@@ -1238,15 +1183,7 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 		Expect(k8sClient.Get(ctx, client.ObjectKey{Name: mcp.Name}, cp)).To(Succeed())
 
 		// Both raw tag and clean version must be removed from spec.machineImages.
-		var machineVersions []string
-		for _, mi := range cp.Spec.MachineImages {
-			if mi.Name == "cascade-image" {
-				for _, v := range mi.Versions {
-					machineVersions = append(machineVersions, v.Version)
-				}
-			}
-		}
-		Expect(machineVersions).To(BeEmpty())
+		Expect(versionsByMachineImage(cp, "cascade-image")).To(BeEmpty())
 
 		// Clean version entry must be gone from providerConfig as well.
 		Expect(cp.Spec.ProviderConfig).ToNot(BeNil())
@@ -1286,19 +1223,18 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 		mcp := &v1alpha1.ManagedCloudProfile{
 			ObjectMeta: metav1.ObjectMeta{Name: "test-gc-stale-clean"},
 			Spec: v1alpha1.ManagedCloudProfileSpec{
-				CloudProfile: v1alpha1.CloudProfileSpec{
-					Regions:      []gardenerv1beta1.Region{{Name: "foo"}},
-					MachineTypes: []gardenerv1beta1.MachineType{{Name: "baz"}},
-					MachineImages: []gardenerv1beta1.MachineImage{
-						{
+				CloudProfile: func() v1alpha1.CloudProfileSpec {
+					cp := baseCloudProfileSpec(
+						gardenerv1beta1.MachineImage{
 							Name: "stale-clean-image",
 							Versions: []gardenerv1beta1.MachineImageVersion{
 								{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: cleanVersion}, Architectures: []string{"amd64"}},
 							},
 						},
-					},
-					ProviderConfig: &runtime.RawExtension{Raw: raw},
-				},
+					)
+					cp.ProviderConfig = &runtime.RawExtension{Raw: raw}
+					return cp
+				}(),
 				MachineImageUpdates: []v1alpha1.MachineImageUpdate{
 					{
 						ImageName: "stale-clean-image",
@@ -1335,17 +1271,52 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 		Expect(k8sClient.Get(ctx, client.ObjectKey{Name: mcp.Name}, cp)).To(Succeed())
 
 		// Stale clean version entry must be gone from spec.machineImages.
-		var machineVersions []string
-		for _, mi := range cp.Spec.MachineImages {
-			if mi.Name == "stale-clean-image" {
-				for _, v := range mi.Versions {
-					machineVersions = append(machineVersions, v.Version)
-				}
-			}
-		}
-		Expect(machineVersions).To(BeEmpty())
+		Expect(versionsByMachineImage(cp, "stale-clean-image")).To(BeEmpty())
 
 		Expect(k8sClient.Delete(ctx, mcp)).To(Succeed())
+	})
+
+	It("does not update Kubernetes versions when KubernetesVersionUpdateConfig is not defined", func(ctx SpecContext) {
+		var mcp v1alpha1.ManagedCloudProfile
+		mcp.Name = "test-no-k8s-update"
+		mcp.Spec.CloudProfile = baseCloudProfileSpec(validMachineImage("bar", "0.3.0"))
+		// No KubernetesVersionUpdateConfig set.
+		Expect(k8sClient.Create(ctx, &mcp)).To(Succeed())
+
+		expectReconcileStatus(ctx, &mcp, v1alpha1.SucceededReconcileStatus)
+
+		cp := getCloudProfile(ctx, mcp.Name)
+
+		// The versions must be exactly what the MCP spec declared: the updater
+		// never ran, so no source-provided versions were added.
+		var versions []string
+		for _, v := range cp.Spec.Kubernetes.Versions {
+			versions = append(versions, v.Version)
+		}
+		Expect(versions).To(ConsistOf("1.30.0"))
+
+		Expect(k8sClient.Delete(ctx, &mcp)).To(Succeed())
+		Expect(k8sClient.Delete(ctx, cp)).To(Succeed())
+	})
+
+	It("does not update machine images when MachineImageUpdates is empty", func(ctx SpecContext) {
+		var mcp v1alpha1.ManagedCloudProfile
+		mcp.Name = "test-no-image-update"
+		mcp.Spec.CloudProfile = baseCloudProfileSpec(validMachineImage("static-image", "1.0.0"))
+		// No MachineImageUpdates set.
+		Expect(k8sClient.Create(ctx, &mcp)).To(Succeed())
+
+		expectReconcileStatus(ctx, &mcp, v1alpha1.SucceededReconcileStatus)
+
+		cp := getCloudProfile(ctx, mcp.Name)
+
+		// Machine images must be exactly what the MCP spec declared: no updater ran.
+		Expect(cp.Spec.MachineImages).To(HaveLen(1))
+		Expect(cp.Spec.MachineImages[0].Name).To(Equal("static-image"))
+		Expect(versionsByMachineImage(cp, "static-image")).To(ConsistOf("1.0.0"))
+
+		Expect(k8sClient.Delete(ctx, &mcp)).To(Succeed())
+		Expect(k8sClient.Delete(ctx, cp)).To(Succeed())
 	})
 
 })

@@ -109,29 +109,39 @@ type OCIParams struct {
 }
 
 func NewOCI(params OCIParams, insecure bool, log logr.Logger) (*OCI, error) {
-	// Create a new OCI repository
-	repo, err := remote.NewRepository(params.Registry + "/" + params.Repository)
+	repo, err := newRepository(params.Registry, params.Repository, params.Username, params.Password, insecure)
 	if err != nil {
 		return nil, err
 	}
-
-	if params.Username != "" && params.Password != "" {
-		repo.Client = &auth.Client{
-			Client: retry.DefaultClient,
-			Cache:  auth.NewCache(),
-			Credential: auth.StaticCredential(params.Registry, auth.Credential{
-				Username: params.Username,
-				Password: params.Password,
-			}),
-		}
-	}
-	repo.PlainHTTP = insecure
 
 	return &OCI{
 		log:  log,
 		repo: repo,
 		sema: semaphore.NewWeighted(params.Parallel),
 	}, nil
+}
+
+// newRepository builds an oras-go remote repository with static-credential auth,
+// shared by the OCI machine image source and the Keppel Kubernetes source.
+func newRepository(registry, repository, username, password string, insecure bool) (*remote.Repository, error) {
+	repo, err := remote.NewRepository(registry + "/" + repository)
+	if err != nil {
+		return nil, err
+	}
+
+	if username != "" && password != "" {
+		repo.Client = &auth.Client{
+			Client: retry.DefaultClient,
+			Cache:  auth.NewCache(),
+			Credential: auth.StaticCredential(registry, auth.Credential{
+				Username: username,
+				Password: password,
+			}),
+		}
+	}
+	repo.PlainHTTP = insecure
+
+	return repo, nil
 }
 
 func (o *OCI) GetVersions(ctx context.Context) ([]SourceImage, error) {
