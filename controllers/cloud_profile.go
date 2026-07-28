@@ -16,14 +16,18 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	"github.com/cobaltcore-dev/cloud-profile-sync/api/v1alpha1"
-	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync"
+	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/kubernetessync"
+	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/kubernetessync/source/github"
+	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/ossync"
+	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/ossync/provider/ironcore"
+	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/ossync/source/oci"
 )
 
 // DefaultOCISourceFactory is the default implementation of OCISourceFactory.
 type DefaultOCISourceFactory struct{}
 
-func (f *DefaultOCISourceFactory) Create(params cloudprofilesync.OCIParams, insecure bool, log logr.Logger) (cloudprofilesync.Source, error) {
-	return cloudprofilesync.NewOCI(params, insecure, log)
+func (f *DefaultOCISourceFactory) Create(params oci.Params, parallel int64, log logr.Logger) (ossync.Source, error) {
+	return oci.NewOCI(params, parallel, log)
 }
 
 func (r *Reconciler) reconcileCloudProfile(ctx context.Context, log logr.Logger, mcp *v1alpha1.ManagedCloudProfile) error {
@@ -81,20 +85,20 @@ func (r *Reconciler) reconcileCloudProfile(ctx context.Context, log logr.Logger,
 }
 
 func (r *Reconciler) updateMachineImages(ctx context.Context, log logr.Logger, update v1alpha1.MachineImageUpdate, cpSpec *gardenerv1beta1.CloudProfileSpec) error {
-	var source cloudprofilesync.Source
+	var source ossync.Source
 	switch {
 	case update.Source.OCI != nil:
 		password, err := r.getCredential(ctx, update.Source.OCI.Password)
 		if err != nil {
 			return err
 		}
-		src, err := r.OCISourceFactory.Create(cloudprofilesync.OCIParams{
+		src, err := r.OCISourceFactory.Create(oci.Params{
 			Registry:   update.Source.OCI.Registry,
 			Repository: update.Source.OCI.Repository,
 			Username:   update.Source.OCI.Username,
 			Password:   string(password),
-			Parallel:   1,
-		}, update.Source.OCI.Insecure, log)
+			Insecure:   update.Source.OCI.Insecure,
+		}, 1, log)
 		if err != nil {
 			return fmt.Errorf("failed to initialize OCI source: %w", err)
 		}
@@ -104,16 +108,16 @@ func (r *Reconciler) updateMachineImages(ctx context.Context, log logr.Logger, u
 		return errors.New("no machine images source configured")
 	}
 
-	var provider cloudprofilesync.Provider
+	var provider ossync.Provider
 	if update.Provider.IroncoreMetal != nil {
-		provider = &cloudprofilesync.IroncoreProvider{
+		provider = &ironcore.IroncoreProvider{
 			Registry:           update.Provider.IroncoreMetal.Registry,
 			Repository:         update.Provider.IroncoreMetal.Repository,
 			ImageName:          update.ImageName,
 			EnableCapabilities: r.EnableCapabilities,
 		}
 	}
-	imageUpdater := cloudprofilesync.ImageUpdater{
+	imageUpdater := ossync.ImageUpdater{
 		Log:                log,
 		Source:             source,
 		Provider:           provider,
@@ -141,36 +145,24 @@ func (r *Reconciler) getCredential(ctx context.Context, ref v1alpha1.SecretRefer
 	return data, nil
 }
 
+type KubernetesImageUpdater interface {
+	Update(ctx context.Context, cpSpec *gardenerv1beta1.CloudProfileSpec) error
+}
+
 func (r *Reconciler) updateKubernetesVersions(ctx context.Context, update v1alpha1.KubernetesVersionUpdateConfig, cpSpec *gardenerv1beta1.CloudProfileSpec) error {
-	var source cloudprofilesync.KubernetesImageProvider
+	var source kubernetessync.KubernetesImageSource
 	switch {
 	case update.Source.Github != nil:
 		pat, err := r.getCredential(ctx, update.Source.Github.PersonalAccessTokenSecret)
 		if err != nil {
 			return err
 		}
-		source = cloudprofilesync.NewGithubKubernetesSource(update.Source.Github.URL, string(pat), update.Source.Github.Provider)
-	case update.Source.Keppel != nil:
-		password, err := r.getCredential(ctx, update.Source.Keppel.Password)
-		if err != nil {
-			return err
-		}
-		src, err := cloudprofilesync.NewKeppelKubernetesSource(cloudprofilesync.KeppelParams{
-			Registry:     update.Source.Keppel.Registry,
-			Repository:   update.Source.Keppel.Repository,
-			Username:     update.Source.Keppel.Username,
-			Password:     string(password),
-			ResourceName: update.Source.Keppel.ResourceName,
-		}, update.Source.Keppel.Insecure)
-		if err != nil {
-			return fmt.Errorf("failed to initialize Keppel source: %w", err)
-		}
-		source = src
+		source = github.NewGithubKubernetesSource(update.Source.Github.URL, string(pat), update.Source.Github.Provider)
 	default:
 		return errors.New("no kubernetes version provider configured")
 	}
 
-	kubernetesUpdater := cloudprofilesync.NewKubernetesImageUpdater(source, update.ExpirationThreshold.Duration)
+	kubernetesUpdater := kubernetessync.NewKubernetesImageUpdater(source, update.ExpirationThreshold.Duration)
 	if err := kubernetesUpdater.Update(ctx, cpSpec); err != nil {
 		return fmt.Errorf("updating kubernetes versions failed: %w", err)
 	}

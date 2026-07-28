@@ -15,7 +15,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/cobaltcore-dev/cloud-profile-sync/api/v1alpha1"
-	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync"
+	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/ossync"
+	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/ossync/source/oci"
 )
 
 const (
@@ -24,7 +25,7 @@ const (
 
 // OCISourceFactory defines an interface for creating OCI sources.
 type OCISourceFactory interface {
-	Create(params cloudprofilesync.OCIParams, insecure bool, log logr.Logger) (cloudprofilesync.Source, error)
+	Create(params oci.Params, parallel int64, log logr.Logger) (ossync.Source, error)
 }
 
 type RegistryClient interface {

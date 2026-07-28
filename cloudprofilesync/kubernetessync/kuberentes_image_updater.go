@@ -1,6 +1,6 @@
 // SPDX-FileCopyrightText: 2025 SAP SE or an SAP affiliate company
 // SPDX-License-Identifier: Apache-2.0
-package cloudprofilesync
+package kubernetessync
 
 import (
 	"context"
@@ -20,24 +20,24 @@ type ExpirableVersion struct {
 	ExpirationDate *time.Time                            `yaml:"expirationDate"`
 }
 
-type KubernetesImageProvider interface {
+type KubernetesImageSource interface {
 	FetchKubernetesVersion(ctx context.Context) ([]ExpirableVersion, error)
 }
 
 type KubernetesImageUpdater struct {
-	Provider            KubernetesImageProvider
+	Source              KubernetesImageSource
 	ExpirationThreshold time.Duration
 }
 
-func NewKubernetesImageUpdater(provider KubernetesImageProvider, expirationThreshold time.Duration) *KubernetesImageUpdater {
+func NewKubernetesImageUpdater(source KubernetesImageSource, expirationThreshold time.Duration) *KubernetesImageUpdater {
 	return &KubernetesImageUpdater{
-		Provider:            provider,
+		Source:              source,
 		ExpirationThreshold: expirationThreshold,
 	}
 }
 
 func (ku *KubernetesImageUpdater) Update(ctx context.Context, cpSpec *gardenerv1beta1.CloudProfileSpec) error {
-	versions, err := ku.Provider.FetchKubernetesVersion(ctx)
+	versions, err := ku.Source.FetchKubernetesVersion(ctx)
 	if err != nil {
 		return err
 	}

@@ -25,26 +25,27 @@ import (
 	"github.com/onsi/gomega/types"
 
 	"github.com/cobaltcore-dev/cloud-profile-sync/api/v1alpha1"
-	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync"
+	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/ossync"
+	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/ossync/source/oci"
 	"github.com/cobaltcore-dev/cloud-profile-sync/controllers"
 )
 
 // fakeSource used to simulate GC list failures in tests
 type fakeSource struct{}
 
-func (f *fakeSource) GetVersions(ctx context.Context) ([]cloudprofilesync.SourceImage, error) {
+func (f *fakeSource) GetVersions(ctx context.Context) ([]ossync.SourceImage, error) {
 	return nil, errors.New("simulated list error")
 }
 
 // mockOCIFactory implements controllers.OCISourceFactory for testing
 type mockOCIFactory struct {
-	createFunc func(params cloudprofilesync.OCIParams, insecure bool) (cloudprofilesync.Source, error)
+	createFunc func(params oci.Params, parallel int64) (ossync.Source, error)
 }
 
 type fakeOCISource struct{}
 
-func (f *fakeOCISource) GetVersions(ctx context.Context) ([]cloudprofilesync.SourceImage, error) {
-	return []cloudprofilesync.SourceImage{
+func (f *fakeOCISource) GetVersions(ctx context.Context) ([]ossync.SourceImage, error) {
+	return []ossync.SourceImage{
 		{Version: "1.0.0", Architectures: []string{"amd64"}},
 		{Version: "1.0.1+abc", Architectures: []string{"amd64"}},
 	}, nil
@@ -52,24 +53,24 @@ func (f *fakeOCISource) GetVersions(ctx context.Context) ([]cloudprofilesync.Sou
 
 type emptyOCISource struct{}
 
-func (f *emptyOCISource) GetVersions(ctx context.Context) ([]cloudprofilesync.SourceImage, error) {
+func (f *emptyOCISource) GetVersions(ctx context.Context) ([]ossync.SourceImage, error) {
 	return nil, nil
 }
 
 type fakeFactory struct{}
 
-func (f *fakeFactory) Create(params cloudprofilesync.OCIParams, insecure bool, _ logr.Logger) (cloudprofilesync.Source, error) {
+func (f *fakeFactory) Create(params oci.Params, _ int64, _ logr.Logger) (ossync.Source, error) {
 	return &fakeOCISource{}, nil
 }
 
 type emptyFactory struct{}
 
-func (f *emptyFactory) Create(params cloudprofilesync.OCIParams, insecure bool, _ logr.Logger) (cloudprofilesync.Source, error) {
+func (f *emptyFactory) Create(params oci.Params, parallel int64, _ logr.Logger) (ossync.Source, error) {
 	return &emptyOCISource{}, nil
 }
 
-func (m *mockOCIFactory) Create(params cloudprofilesync.OCIParams, insecure bool, _ logr.Logger) (cloudprofilesync.Source, error) {
-	return m.createFunc(params, insecure)
+func (m *mockOCIFactory) Create(params oci.Params, parallel int64, _ logr.Logger) (ossync.Source, error) {
+	return m.createFunc(params, parallel)
 }
 
 type fakeRegistryClient struct{}
@@ -689,7 +690,7 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 		old := reconciler.OCISourceFactory
 		defer func() { reconciler.OCISourceFactory = old }()
 		reconciler.OCISourceFactory = &mockOCIFactory{
-			createFunc: func(params cloudprofilesync.OCIParams, insecure bool) (cloudprofilesync.Source, error) {
+			createFunc: func(params oci.Params, p int64) (ossync.Source, error) {
 				return &fakeSource{}, nil
 			},
 		}

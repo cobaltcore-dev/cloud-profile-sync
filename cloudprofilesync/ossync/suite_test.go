@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2025 SAP SE or an SAP affiliate company
 // SPDX-License-Identifier: Apache-2.0
 
-package cloudprofilesync_test
+package ossync_test
 
 import (
 	"context"
@@ -17,7 +17,7 @@ import (
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/runtime"
 
-	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync"
+	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/ossync"
 )
 
 func TestSource(t *testing.T) {
@@ -26,16 +26,16 @@ func TestSource(t *testing.T) {
 }
 
 type MockSource struct {
-	images []cloudprofilesync.SourceImage
+	images []ossync.SourceImage
 }
 
-func (m *MockSource) GetVersions(ctx context.Context) ([]cloudprofilesync.SourceImage, error) {
+func (m *MockSource) GetVersions(ctx context.Context) ([]ossync.SourceImage, error) {
 	return m.images, nil
 }
 
 type MockProvider struct{}
 
-func (m *MockProvider) Configure(cpSpec *gardenerv1beta1.CloudProfileSpec, versions []cloudprofilesync.SourceImage) error {
+func (m *MockProvider) Configure(cpSpec *gardenerv1beta1.CloudProfileSpec, versions []ossync.SourceImage) error {
 	data, err := json.Marshal(versions)
 	if err != nil {
 		return err

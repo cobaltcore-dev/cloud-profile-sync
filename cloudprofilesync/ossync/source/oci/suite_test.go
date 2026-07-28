@@ -1,0 +1,85 @@
+// SPDX-FileCopyrightText: 2025 SAP SE or an SAP affiliate company
+// SPDX-License-Identifier: Apache-2.0
+
+package oci_test
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"testing"
+
+	"github.com/distribution/distribution/v3/configuration"
+	"github.com/distribution/distribution/v3/registry"
+	_ "github.com/distribution/distribution/v3/registry/storage/driver/inmemory"
+	gardenerv1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+	"k8s.io/apimachinery/pkg/runtime"
+
+	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/ossync"
+)
+
+func TestSource(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "Cloudprofilesync Suite")
+}
+
+type MockSource struct {
+	images []ossync.SourceImage
+}
+
+func (m *MockSource) GetVersions(ctx context.Context) ([]ossync.SourceImage, error) {
+	return m.images, nil
+}
+
+type MockProvider struct{}
+
+func (m *MockProvider) Configure(cpSpec *gardenerv1beta1.CloudProfileSpec, versions []ossync.SourceImage) error {
+	data, err := json.Marshal(versions)
+	if err != nil {
+		return err
+	}
+	cpSpec.ProviderConfig = &runtime.RawExtension{Raw: data}
+	return nil
+}
+
+const registryAddr = "127.0.0.1:48080"
+
+var (
+	mockSource MockSource
+	reg        *registry.Registry
+	stop       context.CancelFunc
+)
+
+var _ = BeforeSuite(func() {
+	mockSource = MockSource{}
+	ctx, cancel := context.WithCancel(context.Background())
+	stop = cancel
+	var err error
+
+	reg, err = registry.NewRegistry(ctx, &configuration.Configuration{
+		Storage:    configuration.Storage{"inmemory": map[string]any{}},
+		HTTP:       configuration.HTTP{Addr: registryAddr},
+		Validation: configuration.Validation{Disabled: true},
+		Log:        configuration.Log{Level: "error", AccessLog: configuration.AccessLog{Disabled: true}},
+	})
+	Expect(err).To(Succeed())
+	go func() {
+		defer GinkgoRecover()
+		Expect(reg.ListenAndServe()).To(MatchError(http.ErrServerClosed))
+	}()
+	Eventually(func(g Gomega) error {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+registryAddr, http.NoBody)
+		g.Expect(err).To(Succeed())
+		res, err := http.DefaultClient.Do(req)
+		g.Expect(err).To(Succeed())
+		defer res.Body.Close()
+		return nil
+	}).Should(Succeed())
+})
+
+var _ = AfterSuite(func(ctx SpecContext) {
+	stop()
+	Expect(reg.Shutdown(ctx)).To(Succeed())
+})

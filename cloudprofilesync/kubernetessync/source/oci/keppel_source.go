@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2025 SAP SE or an SAP affiliate company
 // SPDX-License-Identifier: Apache-2.0
 
-package cloudprofilesync
+package oci
 
 import (
 	"archive/tar"
@@ -22,6 +22,9 @@ import (
 	"oras.land/oras-go/v2"
 	"oras.land/oras-go/v2/content"
 	"oras.land/oras-go/v2/registry/remote"
+
+	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/kubernetessync"
+	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/ossync/source/oci"
 )
 
 // componentDescriptorFile is the file in the artifact's first layer that holds
@@ -67,7 +70,13 @@ type KeppelParams struct {
 // NewKeppelKubernetesSource builds a KeppelKubernetesSource, reusing the same
 // oras-go repository and auth setup as the OCI machine image source.
 func NewKeppelKubernetesSource(params KeppelParams, insecure bool) (*KeppelKubernetesSource, error) {
-	repo, err := newRepository(params.Registry, params.Repository, params.Username, params.Password, insecure)
+	repo, err := oci.NewRepository(oci.Params{
+		Registry:   params.Registry,
+		Repository: params.Repository,
+		Username:   params.Username,
+		Password:   params.Password,
+		Insecure:   insecure,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -87,7 +96,7 @@ func NewKeppelKubernetesSource(params KeppelParams, insecure bool) (*KeppelKuber
 // latest tag, extracts the component-descriptor and returns the versions of the
 // configured resource. The component-descriptor carries no classification or
 // expiration, so all versions are classified as supported.
-func (k *KeppelKubernetesSource) FetchKubernetesVersion(ctx context.Context) ([]ExpirableVersion, error) {
+func (k *KeppelKubernetesSource) FetchKubernetesVersion(ctx context.Context) ([]kubernetessync.ExpirableVersion, error) {
 	tag, err := k.latestTag(ctx)
 	if err != nil {
 		return nil, err
@@ -109,13 +118,13 @@ func (k *KeppelKubernetesSource) FetchKubernetesVersion(ctx context.Context) ([]
 // selectResourceVersions returns the versions of the resources named
 // resourceName in the component descriptor. The component-descriptor carries no
 // classification or expiration, so all versions are classified as supported.
-func selectResourceVersions(cd *componentDescriptor, resourceName string) []ExpirableVersion {
-	versions := make([]ExpirableVersion, 0, len(cd.Component.Resources))
+func selectResourceVersions(cd *componentDescriptor, resourceName string) []kubernetessync.ExpirableVersion {
+	versions := make([]kubernetessync.ExpirableVersion, 0, len(cd.Component.Resources))
 	for _, res := range cd.Component.Resources {
 		if res.Name != resourceName {
 			continue
 		}
-		versions = append(versions, ExpirableVersion{
+		versions = append(versions, kubernetessync.ExpirableVersion{
 			Version:        res.Version,
 			Classification: gardenerv1beta1.ClassificationSupported,
 		})

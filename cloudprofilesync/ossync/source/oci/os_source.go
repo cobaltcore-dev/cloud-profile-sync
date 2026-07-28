@@ -1,13 +1,14 @@
 // SPDX-FileCopyrightText: 2025 SAP SE or an SAP affiliate company
 // SPDX-License-Identifier: Apache-2.0
 
-package cloudprofilesync
+package oci
 
 import (
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	gardencorev1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
@@ -16,34 +17,36 @@ import (
 	"oras.land/oras-go/v2/registry/remote"
 	"oras.land/oras-go/v2/registry/remote/auth"
 	"oras.land/oras-go/v2/registry/remote/retry"
+
+	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/ossync"
 )
 
 const (
-	// ChostFeature represent having containerd
-	ChostFeature = "chost"
-	// PXEFeature represent pxe boot build
-	PXEFeature     = "_pxe"
-	SCIFeature     = "sci"
-	SCIBaseFeature = "scibase"
-	// CAPIFeature includes server, khost, and PXE; excludes SELinux and firewall
-	CAPIFeature = "capi"
+	// chostFeature represent having containerd
+	chostFeature = "chost"
+	// pxeFeature represent pxe boot build
+	pxeFeature     = "_pxe"
+	sciFeature     = "sci"
+	sciBaseFeature = "scibase"
+	// capiFeature includes server, khost, and PXE; excludes SELinux and firewall
+	capiFeature = "capi"
 	// USIFeature shows UEFI build
-	USIFeature    = "_usi"
-	USIDevFeature = "_usidev"
+	usiFeature    = "_usi"
+	usiDevFeature = "_usidev"
 
-	ArchitectureCapability = "architecture"
-	FeatureCapability      = "feature"
+	architectureCapability = "architecture"
+	featureCapability      = "feature"
 )
 
 // validFeatureValues is the allowlist of feature values extracted from the feature_set annotation.
 var validFeatureValues = map[string]struct{}{
-	ChostFeature:   {},
-	PXEFeature:     {},
-	SCIFeature:     {},
-	SCIBaseFeature: {},
-	CAPIFeature:    {},
-	USIFeature:     {},
-	USIDevFeature:  {},
+	chostFeature:   {},
+	pxeFeature:     {},
+	sciFeature:     {},
+	sciBaseFeature: {},
+	capiFeature:    {},
+	usiFeature:     {},
+	usiDevFeature:  {},
 }
 
 func filterFeatureSet(featureSet string) []string {
@@ -69,31 +72,6 @@ type Result[T any] struct {
 	err   error
 }
 
-type SourceImage struct {
-	// Version is the full tag from the registry (used as version key for legacy images).
-	Version string
-	// CleanVersion is the version from the "version" OCI annotation (e.g. "2262.0.0").
-	// When set, flavors are grouped under it in the CloudProfile instead of the full tag.
-	CleanVersion string
-	// TODO: deprecate once all images carry capability annotations; use Capabilities["architecture"] instead.
-	Architectures []string
-	// Capabilities holds parsed OCI manifest annotations. Nil means the image
-	// predates capability annotations and should use the legacy format.
-	Capabilities gardencorev1beta1.Capabilities
-}
-
-// effectiveVersion returns CleanVersion when available, falling back to Version.
-func (s SourceImage) effectiveVersion() string {
-	if s.CleanVersion != "" {
-		return s.CleanVersion
-	}
-	return s.Version
-}
-
-type Source interface {
-	GetVersions(ctx context.Context) ([]SourceImage, error)
-}
-
 type OCI struct {
 	log  logr.Logger
 	repo *remote.Repository
@@ -108,8 +86,39 @@ type OCIParams struct {
 	Parallel   int64  `json:"parallel"`
 }
 
-func NewOCI(params OCIParams, insecure bool, log logr.Logger) (*OCI, error) {
-	repo, err := newRepository(params.Registry, params.Repository, params.Username, params.Password, insecure)
+type Params struct {
+	Registry   string
+	Repository string
+	Username   string
+	Password   string
+	Insecure   bool
+}
+
+// NewRepository builds an oras-go remote repository with static-credential auth,
+// shared by the OCI machine image source and the Keppel Kubernetes source.
+func NewRepository(params Params) (*remote.Repository, error) {
+	repo, err := remote.NewRepository(params.Registry + "/" + params.Repository)
+	if err != nil {
+		return nil, err
+	}
+
+	if params.Username != "" && params.Password != "" {
+		repo.Client = &auth.Client{
+			Client: retry.DefaultClient,
+			Cache:  auth.NewCache(),
+			Credential: auth.StaticCredential(params.Registry, auth.Credential{
+				Username: params.Username,
+				Password: params.Password,
+			}),
+		}
+	}
+	repo.PlainHTTP = params.Insecure
+
+	return repo, nil
+}
+
+func NewOCI(params Params, parallel int64, log logr.Logger) (*OCI, error) {
+	repo, err := NewRepository(params)
 	if err != nil {
 		return nil, err
 	}
@@ -117,34 +126,11 @@ func NewOCI(params OCIParams, insecure bool, log logr.Logger) (*OCI, error) {
 	return &OCI{
 		log:  log,
 		repo: repo,
-		sema: semaphore.NewWeighted(params.Parallel),
+		sema: semaphore.NewWeighted(parallel),
 	}, nil
 }
 
-// newRepository builds an oras-go remote repository with static-credential auth,
-// shared by the OCI machine image source and the Keppel Kubernetes source.
-func newRepository(registry, repository, username, password string, insecure bool) (*remote.Repository, error) {
-	repo, err := remote.NewRepository(registry + "/" + repository)
-	if err != nil {
-		return nil, err
-	}
-
-	if username != "" && password != "" {
-		repo.Client = &auth.Client{
-			Client: retry.DefaultClient,
-			Cache:  auth.NewCache(),
-			Credential: auth.StaticCredential(registry, auth.Credential{
-				Username: username,
-				Password: password,
-			}),
-		}
-	}
-	repo.PlainHTTP = insecure
-
-	return repo, nil
-}
-
-func (o *OCI) GetVersions(ctx context.Context) ([]SourceImage, error) {
+func (o *OCI) GetVersions(ctx context.Context) ([]ossync.SourceImage, error) {
 	tags := []string{}
 	err := o.repo.Tags(ctx, "", func(t []string) error {
 		tags = append(tags, t...)
@@ -154,17 +140,17 @@ func (o *OCI) GetVersions(ctx context.Context) ([]SourceImage, error) {
 		return nil, err
 	}
 
-	out := make(chan Result[SourceImage])
+	out := make(chan Result[ossync.SourceImage])
 	for _, tag := range tags {
 		go func() {
 			if err := o.sema.Acquire(ctx, 1); err != nil {
-				out <- Result[SourceImage]{err: err}
+				out <- Result[ossync.SourceImage]{err: err}
 				return
 			}
 			defer o.sema.Release(1)
 			_, reader, err := o.repo.FetchReference(ctx, tag)
 			if err != nil {
-				out <- Result[SourceImage]{err: fmt.Errorf("tag %s: failed to fetch manifest: %w", tag, err)}
+				out <- Result[ossync.SourceImage]{err: fmt.Errorf("tag %s: failed to fetch manifest: %w", tag, err)}
 				return
 			}
 			defer reader.Close()
@@ -173,40 +159,43 @@ func (o *OCI) GetVersions(ctx context.Context) ([]SourceImage, error) {
 			}{}
 			err = json.NewDecoder(reader).Decode(&manifest)
 			if err != nil {
-				out <- Result[SourceImage]{err: fmt.Errorf("tag %s: failed to decode manifest: %w", tag, err)}
+				out <- Result[ossync.SourceImage]{err: fmt.Errorf("tag %s: failed to decode manifest: %w", tag, err)}
 				return
 			}
 			arch, ok := manifest.Annotations["architecture"]
 			if !ok {
-				out <- Result[SourceImage]{err: fmt.Errorf("tag %s: architecture annotation not found", tag)}
+				out <- Result[ossync.SourceImage]{err: fmt.Errorf("tag %s: architecture annotation not found", tag)}
 				return
 			}
 			var capabilities gardencorev1beta1.Capabilities
 			var cleanVersion string
+			var supportInPlaceUpdate bool
 			if featureSet, ok := manifest.Annotations["feature_set"]; ok {
 				if version, ok := manifest.Annotations["version"]; ok {
 					features := filterFeatureSet(featureSet)
 					if len(features) > 0 {
 						capabilities = gardencorev1beta1.Capabilities{
-							ArchitectureCapability: {arch},
-							FeatureCapability:      features,
+							architectureCapability: {arch},
+							featureCapability:      features,
 						}
 						cleanVersion = version
+						supportInPlaceUpdate = slices.Contains(features, usiFeature)
 					}
 				}
 			}
-			out <- Result[SourceImage]{
-				value: SourceImage{
-					Version:       strings.ReplaceAll(tag, "_", "+"), // Follow the helm convention
-					CleanVersion:  cleanVersion,
-					Architectures: []string{arch},
-					Capabilities:  capabilities,
+			out <- Result[ossync.SourceImage]{
+				value: ossync.SourceImage{
+					Version:              strings.ReplaceAll(tag, "_", "+"), // Follow the helm convention
+					CleanVersion:         cleanVersion,
+					Architectures:        []string{arch},
+					Capabilities:         capabilities,
+					SupportInPlaceUpdate: supportInPlaceUpdate,
 				},
 			}
 		}()
 	}
 
-	images := []SourceImage{}
+	images := []ossync.SourceImage{}
 	var skipped []error
 	var errs []error
 	for range tags {

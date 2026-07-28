@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2025 SAP SE or an SAP affiliate company
 // SPDX-License-Identifier: Apache-2.0
 
-package cloudprofilesync
+package github
 
 import (
 	"context"
@@ -12,14 +12,16 @@ import (
 
 	"go.yaml.in/yaml/v3"
 	"golang.org/x/oauth2"
+
+	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/kubernetessync"
 )
 
 // kubernetesVersions is the shape of the GitHub versions file: a list of
 // providers, each with its own list of expirable Kubernetes versions.
 type kubernetesVersions struct {
 	Providers []struct {
-		Name     string             `yaml:"name"`
-		Versions []ExpirableVersion `yaml:"versions"`
+		Name     string                            `yaml:"name"`
+		Versions []kubernetessync.ExpirableVersion `yaml:"versions"`
 	} `yaml:"providers"`
 }
 
@@ -46,7 +48,7 @@ func NewGithubKubernetesSource(url, pat, provider string) *GithubKubernetesSourc
 
 // FetchKubernetesVersion implements KubernetesImageProvider. It downloads the
 // versions file and returns the versions for the configured provider.
-func (gh *GithubKubernetesSource) FetchKubernetesVersion(ctx context.Context) ([]ExpirableVersion, error) {
+func (gh *GithubKubernetesSource) FetchKubernetesVersion(ctx context.Context) ([]kubernetessync.ExpirableVersion, error) {
 	if gh.provider == "" {
 		return nil, errors.New("provider must be set")
 	}
@@ -61,7 +63,7 @@ func (gh *GithubKubernetesSource) FetchKubernetesVersion(ctx context.Context) ([
 
 // parseProviderVersions parses a providers[].versions[] YAML document and
 // returns the versions of the named provider.
-func parseProviderVersions(raw []byte, provider string) ([]ExpirableVersion, error) {
+func parseProviderVersions(raw []byte, provider string) ([]kubernetessync.ExpirableVersion, error) {
 	var kv kubernetesVersions
 	if err := yaml.Unmarshal(raw, &kv); err != nil {
 		return nil, fmt.Errorf("parsing versions file: %w", err)
