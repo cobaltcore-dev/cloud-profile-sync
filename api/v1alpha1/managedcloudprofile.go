@@ -119,60 +119,61 @@ type KubernetesVersionUpdateConfig struct {
 	// +optional
 	ExpirationThreshold metav1.Duration `json:"expirationThreshold,omitempty"`
 
-	// Source contains configuration for a source for Kubernetes versions.
-	Source KubernetesVersionSource `json:"kubernetesVersionSource"`
+	// LandscapeSetup contains the required OCI and GitHub sources for Kubernetes versions.
+	// +optional
+	LandscapeSetup *LandscapeSetup `json:"landscapeSetup"`
 }
 
-type KubernetesVersionSource struct {
-	// Github contains configuration for a GitHub source.
-	// +optional
-	Github *KubernetesVersionSourceGithub `json:"github,omitempty"`
-	// Keppel contains configuration for a Keppel component-descriptor source.
-	// +optional
-	Keppel *KubernetesVersionSourceKeppel `json:"keppel,omitempty"`
+// LandscapeSetup configures the combined OCI and GitHub sources for Kubernetes versions.
+type LandscapeSetup struct {
+	// OCI contains configuration for the OCI component-descriptor source.
+	OCI OCI `json:"oci"`
+	// Github contains configuration for fetching Kubernetes version classifications from a GitHub repository.
+	Github KubernetesVersionSourceGithub `json:"github"`
 }
 
 // KubernetesVersionSourceGithub configures fetching Kubernetes versions from a
 // YAML file in a GitHub repository. The file has a providers[].versions[] shape.
 type KubernetesVersionSourceGithub struct {
-	// URL is the GitHub contents API endpoint for the versions file.
-	URL string `json:"url"`
-	// PersonalAccessTokenSecret is a reference to a secret containing a GitHub personal access token.
-	PersonalAccessTokenSecret SecretReference `json:"personalAccessTokenSecret"`
+	// RepositoryApiURL is the base URL of the GitHub REST API, e.g.
+	// "https://api.github.com" or "https://github.mycompany.com/api/v3".
+	RepositoryApiURL string `json:"repositoryApiUrl"`
+	// Repository is the owner/repo path, e.g. "my-org/landscape-setup".
+	Repository string `json:"repository"`
+	// FilePath is the path to the versions file within the repository,
+	// e.g. "kubernetes/versions.yaml".
+	FilePath string `json:"filePath"`
 	// Provider is the provider whose Kubernetes versions are read from the file.
 	Provider string `json:"provider"`
+	// PersonalAccessTokenSecret is a reference to a secret containing a GitHub
+	// personal access token. Mutually exclusive with GithubApp.
+	// +optional
+	PersonalAccessTokenSecret *SecretReference `json:"personalAccessTokenSecret,omitempty"`
+	// GithubApp configures authentication via a GitHub App installation.
+	// Mutually exclusive with PersonalAccessTokenSecret.
+	// +optional
+	GithubApp *GithubAppAuth `json:"githubApp,omitempty"`
 }
 
-// KubernetesVersionSourceKeppel configures fetching Kubernetes versions from an
-// OCM component artifact in a Keppel registry. The latest tag is read and the
-// versions of ResourceName are extracted from component-descriptor.yaml.
-type KubernetesVersionSourceKeppel struct {
-	// Registry contains the hostname and port of the Keppel registry.
-	Registry string `json:"registry"`
-	// Repository contains the component-descriptor repository to read.
-	Repository string `json:"repository"`
-	// Username for authentication.
-	// +optional
-	Username string `json:"username,omitempty"`
-	// Password for authentication.
-	// +optional
-	Password SecretReference `json:"password,omitempty"`
-	// ResourceName is the component resource whose versions are used as
-	// Kubernetes versions. Defaults to "kube-apiserver" when empty.
-	// +optional
-	ResourceName string `json:"resourceName,omitempty"`
-	// Insecure disables TLS.
-	// +optional
-	Insecure bool `json:"insecure,omitempty"`
+// GithubAppAuth holds the credentials needed to authenticate as a GitHub App
+// installation.
+type GithubAppAuth struct {
+	// AppID is the numeric GitHub App ID.
+	AppID int64 `json:"appID"`
+	// InstallationID is the numeric installation ID for the target repository.
+	InstallationID int64 `json:"installationID"`
+	// PrivateKeySecret is a reference to a secret containing the RSA private key
+	// (PEM-encoded) used to sign JWTs.
+	PrivateKeySecret SecretReference `json:"privateKeySecret"`
 }
 
 type MachineImageUpdateSource struct {
 	// OCI contains configuration for an OCI source.
 	// +optional
-	OCI *MachineImageUpdateSourceOCI `json:"oci,omitempty"`
+	OCI *OCI `json:"oci,omitempty"`
 }
 
-type MachineImageUpdateSourceOCI struct {
+type OCI struct {
 	// Registry contains the hostname and port of the OCI registry
 	Registry string `json:"registry"`
 	// Repository contains the monitored repository

@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 
 	gardenerv1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
 	"github.com/go-logr/logr"
@@ -17,7 +18,7 @@ import (
 
 	"github.com/cobaltcore-dev/cloud-profile-sync/api/v1alpha1"
 	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/kubernetessync"
-	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/kubernetessync/source/github"
+	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/kubernetessync/source/landscape"
 	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/ossync"
 	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/ossync/provider/ironcore"
 	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/ossync/source/oci"
@@ -150,22 +151,74 @@ type KubernetesImageUpdater interface {
 }
 
 func (r *Reconciler) updateKubernetesVersions(ctx context.Context, update v1alpha1.KubernetesVersionUpdateConfig, cpSpec *gardenerv1beta1.CloudProfileSpec) error {
-	var source kubernetessync.KubernetesImageSource
+	var source kubernetessync.KubernetesVersionSource
+	var err error
 	switch {
-	case update.Source.Github != nil:
-		pat, err := r.getCredential(ctx, update.Source.Github.PersonalAccessTokenSecret)
+	case update.LandscapeSetup != nil:
+		source, err = r.landscapeSetupSource(ctx, *update.LandscapeSetup)
 		if err != nil {
-			return err
+			return fmt.Errorf("getting landscape setup source: %w", err)
 		}
-		source = github.NewGithubKubernetesSource(update.Source.Github.URL, string(pat), update.Source.Github.Provider)
 	default:
-		return errors.New("no kubernetes version provider configured")
+		return errors.New("no kubernetes version source configured")
 	}
 
 	kubernetesUpdater := kubernetessync.NewKubernetesImageUpdater(source, update.ExpirationThreshold.Duration)
+
 	if err := kubernetesUpdater.Update(ctx, cpSpec); err != nil {
 		return fmt.Errorf("updating kubernetes versions failed: %w", err)
 	}
 
 	return nil
+}
+
+func (r *Reconciler) landscapeSetupSource(ctx context.Context, ls v1alpha1.LandscapeSetup) (kubernetessync.KubernetesVersionSource, error) {
+	ociPassword, err := r.getCredential(ctx, ls.OCI.Password)
+	if err != nil {
+		return nil, fmt.Errorf("getting oci password: %w", err)
+	}
+	ociParams := oci.Params{
+		Registry:   ls.OCI.Registry,
+		Repository: ls.OCI.Repository,
+		Username:   ls.OCI.Username,
+		Password:   string(ociPassword),
+		Insecure:   ls.OCI.Insecure,
+	}
+
+	gh := ls.Github
+	var ghTransport http.RoundTripper
+	switch {
+	case gh.PersonalAccessTokenSecret != nil:
+		pat, err := r.getCredential(ctx, *gh.PersonalAccessTokenSecret)
+		if err != nil {
+			return nil, fmt.Errorf("getting github PAT: %w", err)
+		}
+		ghTransport = landscape.GithubPATTransport(gh.RepositoryApiURL, string(pat))
+	case gh.GithubApp != nil:
+		privateKey, err := r.getCredential(ctx, gh.GithubApp.PrivateKeySecret)
+		if err != nil {
+			return nil, fmt.Errorf("getting github app private key: %w", err)
+		}
+		ghTransport, err = landscape.GithubAppTransport(gh.RepositoryApiURL, gh.GithubApp.AppID, gh.GithubApp.InstallationID, privateKey)
+		if err != nil {
+			return nil, fmt.Errorf("initializing github app transport: %w", err)
+		}
+	default:
+		return nil, errors.New("github source requires personalAccessTokenSecret or githubApp")
+	}
+
+	ghParams := landscape.GithubParams{
+		RepositoryApiURL: gh.RepositoryApiURL,
+		Repository:       gh.Repository,
+		FilePath:         gh.FilePath,
+		Provider:         gh.Provider,
+		Transport:        ghTransport,
+	}
+
+	landscapeSource, err := landscape.NewLandscapeKubernetesSource(ociParams, ghParams)
+	if err != nil {
+		return nil, fmt.Errorf("initializing landscape source: %w", err)
+	}
+
+	return landscapeSource, nil
 }

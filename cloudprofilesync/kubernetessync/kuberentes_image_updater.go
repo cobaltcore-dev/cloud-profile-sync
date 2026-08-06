@@ -4,32 +4,35 @@ package kubernetessync
 
 import (
 	"context"
-	"sort"
+	"fmt"
 	"time"
 
-	"github.com/blang/semver/v4"
 	gardenerv1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // ExpirableVersion is a Kubernetes version with an optional classification and
-// expiration date, as returned by a KubernetesImageProvider.
+// expiration date, as read from a GitHub versions file.
 type ExpirableVersion struct {
 	Version        string                                `yaml:"version"`
 	Classification gardenerv1beta1.VersionClassification `yaml:"classification"`
 	ExpirationDate *time.Time                            `yaml:"expirationDate"`
 }
 
-type KubernetesImageSource interface {
-	FetchKubernetesVersion(ctx context.Context) ([]ExpirableVersion, error)
+// KubernetesVersionSource is the single interface for sources that return
+// Kubernetes versions ready to assign to a CloudProfile.
+type KubernetesVersionSource interface {
+	FetchVersions(ctx context.Context) ([]gardenerv1beta1.ExpirableVersion, error)
 }
 
+// KubernetesImageUpdater writes Kubernetes versions to a CloudProfileSpec,
+// dropping any version whose expiration date has already passed the configured
+// threshold.
 type KubernetesImageUpdater struct {
-	Source              KubernetesImageSource
+	Source              KubernetesVersionSource
 	ExpirationThreshold time.Duration
 }
 
-func NewKubernetesImageUpdater(source KubernetesImageSource, expirationThreshold time.Duration) *KubernetesImageUpdater {
+func NewKubernetesImageUpdater(source KubernetesVersionSource, expirationThreshold time.Duration) *KubernetesImageUpdater {
 	return &KubernetesImageUpdater{
 		Source:              source,
 		ExpirationThreshold: expirationThreshold,
@@ -37,38 +40,20 @@ func NewKubernetesImageUpdater(source KubernetesImageSource, expirationThreshold
 }
 
 func (ku *KubernetesImageUpdater) Update(ctx context.Context, cpSpec *gardenerv1beta1.CloudProfileSpec) error {
-	versions, err := ku.Source.FetchKubernetesVersion(ctx)
+	versions, err := ku.Source.FetchVersions(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("fetching kubernetes versions: %w", err)
 	}
 
-	sort.Slice(versions, func(i, j int) bool {
-		return versions[i].Version < versions[j].Version
-	})
-
-	semver.MustParse(versions[0].Version)
-
-	cpVersions := make([]gardenerv1beta1.ExpirableVersion, 0, len(versions))
 	deleteThreshold := time.Now().Add(-ku.ExpirationThreshold)
+	cpVersions := make([]gardenerv1beta1.ExpirableVersion, 0, len(versions))
 	for _, v := range versions {
-		if v.ExpirationDate != nil && v.ExpirationDate.Before(deleteThreshold) {
+		if v.ExpirationDate != nil && v.ExpirationDate.Time.Before(deleteThreshold) { //nolint:staticcheck
 			continue
 		}
-		cpVersions = append(cpVersions, gardenerv1beta1.ExpirableVersion{
-			Version:        v.Version,
-			ExpirationDate: convertExpirationDate(v.ExpirationDate),
-			Classification: &v.Classification,
-		})
+		cpVersions = append(cpVersions, v)
 	}
 
 	cpSpec.Kubernetes.Versions = cpVersions
 	return nil
-}
-
-func convertExpirationDate(t *time.Time) *metav1.Time {
-	if t == nil {
-		return nil
-	}
-
-	return &metav1.Time{Time: *t}
 }

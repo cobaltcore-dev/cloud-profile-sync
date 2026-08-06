@@ -294,7 +294,7 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 		mcp.Spec.MachineImageUpdates = []v1alpha1.MachineImageUpdate{
 			{
 				Source: v1alpha1.MachineImageUpdateSource{
-					OCI: &v1alpha1.MachineImageUpdateSourceOCI{
+					OCI: &v1alpha1.OCI{
 						Registry:   registryAddr,
 						Repository: orasRepoName("repo"),
 						Insecure:   true,
@@ -335,7 +335,7 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 		mcp.Spec.MachineImageUpdates = []v1alpha1.MachineImageUpdate{
 			{
 				Source: v1alpha1.MachineImageUpdateSource{
-					OCI: &v1alpha1.MachineImageUpdateSourceOCI{
+					OCI: &v1alpha1.OCI{
 						Registry:   registryAddr,
 						Repository: orasRepoName("repo"),
 						Insecure:   true,
@@ -384,7 +384,7 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 			{
 				ImageName: "gc-image",
 				Source: v1alpha1.MachineImageUpdateSource{
-					OCI: &v1alpha1.MachineImageUpdateSourceOCI{
+					OCI: &v1alpha1.OCI{
 						Registry:   "keppel-fake",
 						Repository: "account/repo",
 						Insecure:   true,
@@ -510,7 +510,7 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 			{
 				ImageName: "preserve-image",
 				Source: v1alpha1.MachineImageUpdateSource{
-					OCI: &v1alpha1.MachineImageUpdateSourceOCI{
+					OCI: &v1alpha1.OCI{
 						Registry:   registryAddr,
 						Repository: orasRepoName("repo"),
 						Insecure:   true,
@@ -604,7 +604,7 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 					{
 						ImageName: "shoot-preserve-image",
 						Source: v1alpha1.MachineImageUpdateSource{
-							OCI: &v1alpha1.MachineImageUpdateSourceOCI{
+							OCI: &v1alpha1.OCI{
 								Registry:   "keppel-fake",
 								Repository: "account/repo",
 								Insecure:   true,
@@ -663,7 +663,7 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 			{
 				ImageName: "test-image",
 				Source: v1alpha1.MachineImageUpdateSource{
-					OCI: &v1alpha1.MachineImageUpdateSourceOCI{
+					OCI: &v1alpha1.OCI{
 						Registry:   "invalid://registry",
 						Repository: orasRepoName("repository"),
 						Insecure:   true,
@@ -702,7 +702,7 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 			{
 				ImageName: "test-image",
 				Source: v1alpha1.MachineImageUpdateSource{
-					OCI: &v1alpha1.MachineImageUpdateSourceOCI{
+					OCI: &v1alpha1.OCI{
 						Registry:   registryAddr,
 						Repository: "repo",
 						Insecure:   true,
@@ -838,7 +838,7 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 			{
 				ImageName: "provider-config-image",
 				Source: v1alpha1.MachineImageUpdateSource{
-					OCI: &v1alpha1.MachineImageUpdateSourceOCI{
+					OCI: &v1alpha1.OCI{
 						Registry:   registryAddr,
 						Repository: "repo/provider-config-image",
 						Insecure:   true,
@@ -947,7 +947,7 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 					{
 						ImageName: "cap-image",
 						Source: v1alpha1.MachineImageUpdateSource{
-							OCI: &v1alpha1.MachineImageUpdateSourceOCI{
+							OCI: &v1alpha1.OCI{
 								Registry:   "keppel-fake",
 								Repository: "account/cap-repo",
 								Insecure:   true,
@@ -1049,7 +1049,7 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 					{
 						ImageName: "multi-flavor-image",
 						Source: v1alpha1.MachineImageUpdateSource{
-							OCI: &v1alpha1.MachineImageUpdateSourceOCI{
+							OCI: &v1alpha1.OCI{
 								Registry:   "keppel-fake",
 								Repository: "account/multi-flavor-repo",
 								Insecure:   true,
@@ -1151,7 +1151,7 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 					{
 						ImageName: "cascade-image",
 						Source: v1alpha1.MachineImageUpdateSource{
-							OCI: &v1alpha1.MachineImageUpdateSourceOCI{
+							OCI: &v1alpha1.OCI{
 								Registry:   "keppel-fake",
 								Repository: "account/cascade-repo",
 								Insecure:   true,
@@ -1240,7 +1240,7 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 					{
 						ImageName: "stale-clean-image",
 						Source: v1alpha1.MachineImageUpdateSource{
-							OCI: &v1alpha1.MachineImageUpdateSourceOCI{
+							OCI: &v1alpha1.OCI{
 								Registry:   "keppel-fake",
 								Repository: "account/stale-clean-repo",
 								Insecure:   true,
