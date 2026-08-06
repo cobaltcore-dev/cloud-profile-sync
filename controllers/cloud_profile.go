@@ -42,11 +42,13 @@ func (r *Reconciler) reconcileCloudProfile(ctx context.Context, log logr.Logger,
 		cloudProfile.Spec = CloudProfileSpecToGardener(&mcp.Spec.CloudProfile)
 		errs := make([]error, 0)
 		for _, updates := range mcp.Spec.MachineImageUpdates {
+			log.Info("updating machine images", "cloudProfile", cloudProfile.Name)
 			if updateErr := r.updateMachineImages(ctx, log, updates, &cloudProfile.Spec); updateErr != nil {
 				errs = append(errs, updateErr)
 			}
 		}
 		if mcp.Spec.KubernetesVersionUpdateConfig != nil {
+			log.Info("updating kubernetes versions", "cloudProfile", cloudProfile.Name)
 			if updateErr := r.updateKubernetesVersions(ctx, *mcp.Spec.KubernetesVersionUpdateConfig, &cloudProfile.Spec); updateErr != nil {
 				errs = append(errs, updateErr)
 			}

@@ -122,7 +122,7 @@ func TestParseProviderVersions(t *testing.T) {
 		if len(versions) != 3 {
 			t.Fatalf("expected 3 versions, got %d", len(versions))
 		}
-		if versions[1].ExpirationDate == nil {
+		if versions[1].ExpirationDate == nil { //nolint:staticcheck
 			t.Error("expected expiration date to be parsed for deprecated version")
 		}
 	})

@@ -33,7 +33,6 @@ import (
 	"oras.land/oras-go/v2/content"
 	"oras.land/oras-go/v2/registry/remote"
 
-	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/kubernetessync"
 	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/ossync/source/oci"
 )
 
@@ -55,11 +54,20 @@ type componentDescriptor struct {
 	} `yaml:"component"`
 }
 
+// yamlExpirableVersion is a YAML-unmarshalling intermediate for entries in the
+// GitHub versions file. metav1.Time has no UnmarshalYAML, so we use *time.Time
+// here and convert to gardenerv1beta1.ExpirableVersion after parsing.
+type yamlExpirableVersion struct {
+	Version        string                                `yaml:"version"`
+	Classification gardenerv1beta1.VersionClassification `yaml:"classification"`
+	ExpirationDate *time.Time                            `yaml:"expirationDate"`
+}
+
 // kubernetesVersions is the shape of the GitHub versions file.
 type kubernetesVersions struct {
 	Providers []struct {
-		Name     string                            `yaml:"name"`
-		Versions []kubernetessync.ExpirableVersion `yaml:"versions"`
+		Name     string                 `yaml:"name"`
+		Versions []yamlExpirableVersion `yaml:"versions"`
 	} `yaml:"providers"`
 }
 
@@ -152,11 +160,7 @@ func (s *LandscapeKubernetesSource) FetchVersions(ctx context.Context) ([]garden
 		if !supported[v.Version] {
 			continue
 		}
-		result = append(result, gardenerv1beta1.ExpirableVersion{
-			Version:        v.Version,
-			Classification: &v.Classification,
-			ExpirationDate: convertExpirationDate(v.ExpirationDate),
-		})
+		result = append(result, v)
 	}
 	return result, nil
 }
@@ -177,9 +181,9 @@ func (s *LandscapeKubernetesSource) LatestTag(ctx context.Context) (string, erro
 	}
 
 	latest := slices.MaxFunc(tags, func(a, b string) int {
-		va, ea := semver.ParseTolerant(a)
-		vb, eb := semver.ParseTolerant(b)
-		if ea != nil || eb != nil {
+		va, aErr := semver.ParseTolerant(a)
+		vb, bErr := semver.ParseTolerant(b)
+		if aErr != nil || bErr != nil {
 			return cmp.Compare(a, b)
 		}
 		return va.Compare(vb)
@@ -264,7 +268,7 @@ func matchesFile(name, target string) bool {
 
 // fetchClassification downloads the versions YAML from GitHub at the given ref
 // and returns the versions for the configured provider.
-func (s *LandscapeKubernetesSource) fetchClassification(ctx context.Context, ref string) ([]kubernetessync.ExpirableVersion, error) {
+func (s *LandscapeKubernetesSource) fetchClassification(ctx context.Context, ref string) ([]gardenerv1beta1.ExpirableVersion, error) {
 	if s.provider == "" {
 		return nil, errors.New("provider must be set")
 	}
@@ -303,7 +307,7 @@ func (s *LandscapeKubernetesSource) fetchGithubFile(ctx context.Context, ref str
 	return io.ReadAll(resp.Body)
 }
 
-func parseProviderVersions(raw []byte, provider string) ([]kubernetessync.ExpirableVersion, error) {
+func parseProviderVersions(raw []byte, provider string) ([]gardenerv1beta1.ExpirableVersion, error) {
 	var kv kubernetesVersions
 	if err := yaml.Unmarshal(raw, &kv); err != nil {
 		return nil, fmt.Errorf("parsing versions file: %w", err)
@@ -313,7 +317,16 @@ func parseProviderVersions(raw []byte, provider string) ([]kubernetessync.Expira
 			if len(p.Versions) == 0 {
 				return nil, fmt.Errorf("provider %q has no versions", provider)
 			}
-			return p.Versions, nil
+			result := make([]gardenerv1beta1.ExpirableVersion, 0, len(p.Versions))
+			for _, v := range p.Versions {
+				result = append(result, gardenerv1beta1.ExpirableVersion{
+					Version:        v.Version,
+					Classification: &v.Classification,
+					ExpirationDate: convertExpirationDate(v.ExpirationDate),
+				})
+			}
+
+			return result, nil
 		}
 	}
 	return nil, fmt.Errorf("provider %q not found in the fetched data", provider)

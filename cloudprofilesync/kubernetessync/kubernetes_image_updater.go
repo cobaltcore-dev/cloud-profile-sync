@@ -10,14 +10,6 @@ import (
 	gardenerv1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
 )
 
-// ExpirableVersion is a Kubernetes version with an optional classification and
-// expiration date, as read from a GitHub versions file.
-type ExpirableVersion struct {
-	Version        string                                `yaml:"version"`
-	Classification gardenerv1beta1.VersionClassification `yaml:"classification"`
-	ExpirationDate *time.Time                            `yaml:"expirationDate"`
-}
-
 // KubernetesVersionSource is the single interface for sources that return
 // Kubernetes versions ready to assign to a CloudProfile.
 type KubernetesVersionSource interface {
