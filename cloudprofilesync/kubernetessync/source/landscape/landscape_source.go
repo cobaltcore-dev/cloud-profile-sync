@@ -6,7 +6,6 @@ package landscape
 import (
 	"archive/tar"
 	"bytes"
-	"cmp"
 	"context"
 	"crypto"
 	"crypto/rand"
@@ -20,8 +19,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/blang/semver/v4"
@@ -123,10 +124,14 @@ func NewLandscapeKubernetesSource(ociParams oci.Params, gh GithubParams) (*Lands
 	if err != nil {
 		return nil, fmt.Errorf("initializing OCI repository: %w", err)
 	}
+	fileURL, err := contentsURL(gh.RepositoryApiURL, gh.Repository, gh.FilePath)
+	if err != nil {
+		return nil, fmt.Errorf("building github contents URL: %w", err)
+	}
 	return &LandscapeKubernetesSource{
 		ociRepo:      repo,
 		githubClient: &http.Client{Transport: gh.Transport},
-		fileURL:      contentsURL(gh.RepositoryApiURL, gh.Repository, gh.FilePath),
+		fileURL:      fileURL,
 		provider:     gh.Provider,
 	}, nil
 }
@@ -166,6 +171,7 @@ func (s *LandscapeKubernetesSource) FetchVersions(ctx context.Context) ([]garden
 }
 
 // LatestTag returns the highest semver tag in the OCI repository.
+// Tags that cannot be parsed as semver are ignored.
 func (s *LandscapeKubernetesSource) LatestTag(ctx context.Context) (string, error) {
 	var tags []string
 	appendTagsFunc := func(newTags []string) error {
@@ -180,15 +186,24 @@ func (s *LandscapeKubernetesSource) LatestTag(ctx context.Context) (string, erro
 		return "", fmt.Errorf("no tags found in %s", s.ociRepo.Reference)
 	}
 
-	latest := slices.MaxFunc(tags, func(a, b string) int {
-		va, aErr := semver.ParseTolerant(a)
-		vb, bErr := semver.ParseTolerant(b)
-		if aErr != nil || bErr != nil {
-			return cmp.Compare(a, b)
+	type semverTag struct {
+		raw string
+		ver semver.Version
+	}
+	var parseable []semverTag
+	for _, t := range tags {
+		if v, err := semver.ParseTolerant(t); err == nil {
+			parseable = append(parseable, semverTag{raw: t, ver: v})
 		}
-		return va.Compare(vb)
+	}
+	if len(parseable) == 0 {
+		return "", fmt.Errorf("no semver tags found in %s", s.ociRepo.Reference)
+	}
+
+	latest := slices.MaxFunc(parseable, func(a, b semverTag) int {
+		return a.ver.Compare(b.ver)
 	})
-	return latest, nil
+	return latest.raw, nil
 }
 
 // fetchSupportedVersions returns the kube-apiserver version strings from the
@@ -332,8 +347,8 @@ func parseProviderVersions(raw []byte, provider string) ([]gardenerv1beta1.Expir
 	return nil, fmt.Errorf("provider %q not found in the fetched data", provider)
 }
 
-func contentsURL(apiURL, repo, filePath string) string {
-	return fmt.Sprintf("%s/repos/%s/contents/%s", apiURL, repo, filePath)
+func contentsURL(apiURL, repo, filePath string) (string, error) {
+	return url.JoinPath(apiURL, "repos", repo, "contents", filePath)
 }
 
 func convertExpirationDate(t *time.Time) *metav1.Time {
@@ -367,6 +382,7 @@ type githubAppTransport struct {
 	key            *rsa.PrivateKey
 	base           http.RoundTripper
 
+	mu        sync.Mutex
 	cached    string
 	expiresAt time.Time
 }
@@ -382,6 +398,8 @@ func (t *githubAppTransport) RoundTrip(req *http.Request) (*http.Response, error
 }
 
 func (t *githubAppTransport) installationToken(ctx context.Context) (string, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	if t.cached != "" && time.Now().Add(tokenExpiryMargin).Before(t.expiresAt) {
 		return t.cached, nil
 	}

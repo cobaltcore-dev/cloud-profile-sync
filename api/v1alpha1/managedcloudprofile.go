@@ -121,7 +121,7 @@ type KubernetesVersionUpdateConfig struct {
 
 	// LandscapeSetup contains the required OCI and GitHub sources for Kubernetes versions.
 	// +optional
-	LandscapeSetup *LandscapeSetup `json:"landscapeSetup"`
+	LandscapeSetup *LandscapeSetup `json:"landscapeSetup,omitempty"`
 }
 
 // LandscapeSetup configures the combined OCI and GitHub sources for Kubernetes versions.

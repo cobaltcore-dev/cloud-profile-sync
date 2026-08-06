@@ -46,6 +46,9 @@ func (ku *KubernetesImageUpdater) Update(ctx context.Context, cpSpec *gardenerv1
 		cpVersions = append(cpVersions, v)
 	}
 
+	if len(cpVersions) == 0 {
+		return fmt.Errorf("source returned no kubernetes versions after expiration filtering, refusing to wipe CloudProfile")
+	}
 	cpSpec.Kubernetes.Versions = cpVersions
 	return nil
 }
