@@ -114,8 +114,9 @@ type GarbageCollectionConfig struct {
 }
 
 type KubernetesVersionUpdateConfig struct {
-	// ExpirationThreshold defines the threshold for expiring Kubernetes versions.
-	// Versions that are expiring within this threshold will be removed from the CloudProfile.
+	// ExpirationThreshold defines the grace period after a version's expiration date.
+	// Versions whose expiration date has passed by more than this duration will be
+	// removed from the CloudProfile.
 	// +optional
 	ExpirationThreshold metav1.Duration `json:"expirationThreshold,omitempty"`
 

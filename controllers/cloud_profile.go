@@ -195,7 +195,7 @@ func (r *Reconciler) landscapeSetupSource(ctx context.Context, ls v1alpha1.Lands
 		if err != nil {
 			return nil, fmt.Errorf("getting github PAT: %w", err)
 		}
-		ghTransport = landscape.GithubPATTransport(gh.RepositoryApiURL, string(pat))
+		ghTransport = landscape.GithubPATTransport(string(pat))
 	case gh.GithubApp != nil:
 		privateKey, err := r.getCredential(ctx, gh.GithubApp.PrivateKeySecret)
 		if err != nil {

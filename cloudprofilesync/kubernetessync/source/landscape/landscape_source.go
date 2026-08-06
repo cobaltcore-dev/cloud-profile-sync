@@ -98,7 +98,7 @@ type LandscapeKubernetesSource struct {
 	provider     string
 }
 
-func GithubPATTransport(apiBase, token string) http.RoundTripper {
+func GithubPATTransport(token string) http.RoundTripper {
 	return &patTransport{token: token, base: http.DefaultTransport}
 }
 
