@@ -65,6 +65,15 @@ func (r *Reconciler) reconcileGarbageCollection(ctx context.Context, mcp *v1alph
 
 	cutoff := time.Now().Add(-mcp.Spec.GarbageCollection.MaxAge.Duration)
 
+	shootList := &gardenerv1beta1.ShootList{}
+	if err := r.List(ctx, shootList, client.InNamespace(metav1.NamespaceAll)); err != nil {
+		return r.failWithStatusUpdate(ctx, mcp, fmt.Errorf("failed to list Shoots: %w", err))
+	}
+	var cp gardenerv1beta1.CloudProfile
+	if err := r.Get(ctx, types.NamespacedName{Name: mcp.Name}, &cp); err != nil {
+		return r.failWithStatusUpdate(ctx, mcp, fmt.Errorf("failed to get CloudProfile: %w", err))
+	}
+
 	for _, updates := range mcp.Spec.MachineImageUpdates {
 		if updates.Source.OCI == nil {
 			continue
@@ -85,7 +94,7 @@ func (r *Reconciler) reconcileGarbageCollection(ctx context.Context, mcp *v1alph
 				fmt.Errorf("failed to fetch tags: %w", err))
 		}
 
-		referencedVersions, err := r.getReferencedVersions(ctx, mcp.Name, updates.ImageName)
+		referencedVersions, err := r.getReferencedVersions(shootList, &cp, updates.ImageName)
 		if err != nil {
 			return r.failWithStatusUpdate(ctx, mcp, fmt.Errorf("failed to determine referenced versions for garbage collection: %w", err))
 		}
@@ -195,15 +204,11 @@ func (r *Reconciler) deleteVersions(ctx context.Context, cloudProfileName, image
 	return nil
 }
 
-func (r *Reconciler) getReferencedVersions(ctx context.Context, cloudProfileName, imageName string) (map[string]struct{}, error) {
+func (r *Reconciler) getReferencedVersions(shootList *gardenerv1beta1.ShootList, cp *gardenerv1beta1.CloudProfile, imageName string) (map[string]struct{}, error) {
 	referenced := make(map[string]struct{})
 
-	shootList := &gardenerv1beta1.ShootList{}
-	if err := r.List(ctx, shootList, client.InNamespace(metav1.NamespaceAll)); err != nil {
-		return nil, fmt.Errorf("failed to list Shoots: %w", err)
-	}
 	for _, shoot := range shootList.Items {
-		if shoot.Spec.CloudProfile == nil || shoot.Spec.CloudProfile.Name != cloudProfileName {
+		if shoot.Spec.CloudProfile == nil || shoot.Spec.CloudProfile.Name != cp.Name {
 			continue
 		}
 
@@ -221,10 +226,6 @@ func (r *Reconciler) getReferencedVersions(ctx context.Context, cloudProfileName
 	// that back it via capabilityFlavors — otherwise GC would delete the images
 	// that the clean version depends on.
 	if len(referenced) > 0 {
-		var cp gardenerv1beta1.CloudProfile
-		if err := r.Get(ctx, types.NamespacedName{Name: cloudProfileName}, &cp); err != nil {
-			return nil, fmt.Errorf("failed to get CloudProfile: %w", err)
-		}
 		if cp.Spec.ProviderConfig != nil {
 			var cfg providercfg.CloudProfileConfig
 			if err := json.Unmarshal(cp.Spec.ProviderConfig.Raw, &cfg); err != nil {

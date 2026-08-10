@@ -1,6 +1,6 @@
 // SPDX-FileCopyrightText: 2025 SAP SE or an SAP affiliate company
 // SPDX-License-Identifier: Apache-2.0
-package kubernetessync
+package k8ssync
 
 import (
 	"context"
@@ -22,7 +22,7 @@ func (f *fakeSource) FetchVersions(_ context.Context) ([]gardenerv1beta1.Expirab
 	return f.versions, f.err
 }
 
-func expiry(t time.Time) *metav1.Time { return &metav1.Time{Time: t} } //nolint:staticcheck
+func expiry(t time.Time) *metav1.Time { return &metav1.Time{Time: t} }
 
 func TestKubernetesImageUpdater_Update(t *testing.T) {
 	now := time.Now()
@@ -32,7 +32,7 @@ func TestKubernetesImageUpdater_Update(t *testing.T) {
 			{Version: "1.31.0"},
 			{Version: "1.32.0"},
 		}}
-		ku := NewKubernetesImageUpdater(src, 0)
+		ku := NewKubernetesVersionUpdater(src, 0)
 		var spec gardenerv1beta1.CloudProfileSpec
 		if err := ku.Update(context.Background(), &spec); err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -46,7 +46,7 @@ func TestKubernetesImageUpdater_Update(t *testing.T) {
 		src := &fakeSource{versions: []gardenerv1beta1.ExpirableVersion{
 			{Version: "1.31.0"}, // no ExpirationDate
 		}}
-		ku := NewKubernetesImageUpdater(src, 30*24*time.Hour)
+		ku := NewKubernetesVersionUpdater(src, 30*24*time.Hour)
 		var spec gardenerv1beta1.CloudProfileSpec
 		if err := ku.Update(context.Background(), &spec); err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -58,9 +58,9 @@ func TestKubernetesImageUpdater_Update(t *testing.T) {
 
 	t.Run("drops version expired beyond threshold", func(t *testing.T) {
 		src := &fakeSource{versions: []gardenerv1beta1.ExpirableVersion{
-			{Version: "1.29.0", ExpirationDate: expiry(now.Add(-60 * 24 * time.Hour))}, //nolint:staticcheck
+			{Version: "1.29.0", ExpirationDate: expiry(now.Add(-60 * 24 * time.Hour))},
 		}}
-		ku := NewKubernetesImageUpdater(src, 30*24*time.Hour)
+		ku := NewKubernetesVersionUpdater(src, 30*24*time.Hour)
 		var spec gardenerv1beta1.CloudProfileSpec
 		spec.Kubernetes.Versions = []gardenerv1beta1.ExpirableVersion{{Version: "existing"}}
 		err := ku.Update(context.Background(), &spec)
@@ -75,9 +75,9 @@ func TestKubernetesImageUpdater_Update(t *testing.T) {
 
 	t.Run("keeps version expired within threshold", func(t *testing.T) {
 		src := &fakeSource{versions: []gardenerv1beta1.ExpirableVersion{
-			{Version: "1.30.0", ExpirationDate: expiry(now.Add(-10 * 24 * time.Hour))}, //nolint:staticcheck
+			{Version: "1.30.0", ExpirationDate: expiry(now.Add(-10 * 24 * time.Hour))},
 		}}
-		ku := NewKubernetesImageUpdater(src, 30*24*time.Hour)
+		ku := NewKubernetesVersionUpdater(src, 30*24*time.Hour)
 		var spec gardenerv1beta1.CloudProfileSpec
 		if err := ku.Update(context.Background(), &spec); err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -90,10 +90,10 @@ func TestKubernetesImageUpdater_Update(t *testing.T) {
 	t.Run("mixed: keeps recent, drops stale", func(t *testing.T) {
 		src := &fakeSource{versions: []gardenerv1beta1.ExpirableVersion{
 			{Version: "1.31.0"},
-			{Version: "1.30.0", ExpirationDate: expiry(now.Add(-10 * 24 * time.Hour))},  //nolint:staticcheck
-			{Version: "1.29.0", ExpirationDate: expiry(now.Add(-60 * 24 * time.Hour))},  //nolint:staticcheck
+			{Version: "1.30.0", ExpirationDate: expiry(now.Add(-10 * 24 * time.Hour))},
+			{Version: "1.29.0", ExpirationDate: expiry(now.Add(-60 * 24 * time.Hour))},
 		}}
-		ku := NewKubernetesImageUpdater(src, 30*24*time.Hour)
+		ku := NewKubernetesVersionUpdater(src, 30*24*time.Hour)
 		var spec gardenerv1beta1.CloudProfileSpec
 		if err := ku.Update(context.Background(), &spec); err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -115,7 +115,7 @@ func TestKubernetesImageUpdater_Update(t *testing.T) {
 
 	t.Run("returns error when source fails", func(t *testing.T) {
 		src := &fakeSource{err: errors.New("upstream failure")}
-		ku := NewKubernetesImageUpdater(src, 0)
+		ku := NewKubernetesVersionUpdater(src, 0)
 		var spec gardenerv1beta1.CloudProfileSpec
 		if err := ku.Update(context.Background(), &spec); err == nil {
 			t.Fatal("expected error from source, got nil")
@@ -124,10 +124,10 @@ func TestKubernetesImageUpdater_Update(t *testing.T) {
 
 	t.Run("refuses to wipe CloudProfile when all versions filtered", func(t *testing.T) {
 		src := &fakeSource{versions: []gardenerv1beta1.ExpirableVersion{
-			{Version: "1.29.0", ExpirationDate: expiry(now.Add(-60 * 24 * time.Hour))}, //nolint:staticcheck
-			{Version: "1.28.0", ExpirationDate: expiry(now.Add(-90 * 24 * time.Hour))}, //nolint:staticcheck
+			{Version: "1.29.0", ExpirationDate: expiry(now.Add(-60 * 24 * time.Hour))},
+			{Version: "1.28.0", ExpirationDate: expiry(now.Add(-90 * 24 * time.Hour))},
 		}}
-		ku := NewKubernetesImageUpdater(src, 30*24*time.Hour)
+		ku := NewKubernetesVersionUpdater(src, 30*24*time.Hour)
 		var spec gardenerv1beta1.CloudProfileSpec
 		spec.Kubernetes.Versions = []gardenerv1beta1.ExpirableVersion{{Version: "existing"}}
 		err := ku.Update(context.Background(), &spec)

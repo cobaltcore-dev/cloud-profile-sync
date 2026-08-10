@@ -15,8 +15,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/cobaltcore-dev/cloud-profile-sync/api/v1alpha1"
+	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/ocirepo"
 	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/ossync"
-	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/ossync/source/oci"
 )
 
 const (
@@ -25,7 +25,7 @@ const (
 
 // OCISourceFactory defines an interface for creating OCI sources.
 type OCISourceFactory interface {
-	Create(params oci.Params, parallel int64, log logr.Logger) (ossync.Source, error)
+	Create(params ocirepo.Params, parallel int64, log logr.Logger) (ossync.Source, error)
 }
 
 type RegistryClient interface {
@@ -74,11 +74,15 @@ func applyCondition(conditions []metav1.Condition, cond metav1.Condition) []meta
 		idx = len(conditions)
 		conditions = append(conditions, metav1.Condition{})
 	}
+	lastTransition := conditions[idx].LastTransitionTime
+	if conditions[idx].Status != cond.Status {
+		lastTransition = metav1.Now()
+	}
 	conditions[idx] = metav1.Condition{
 		Type:               cond.Type,
 		Status:             cond.Status,
 		ObservedGeneration: cond.ObservedGeneration,
-		LastTransitionTime: metav1.Now(),
+		LastTransitionTime: lastTransition,
 		Reason:             cond.Reason,
 		Message:            cond.Message,
 	}

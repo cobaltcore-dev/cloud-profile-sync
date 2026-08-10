@@ -17,8 +17,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	"github.com/cobaltcore-dev/cloud-profile-sync/api/v1alpha1"
-	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/kubernetessync"
-	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/kubernetessync/source/landscape"
+	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/k8ssync"
+	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/k8ssync/source/landscape"
+	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/ocirepo"
 	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/ossync"
 	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/ossync/provider/ironcore"
 	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/ossync/source/oci"
@@ -27,7 +28,7 @@ import (
 // DefaultOCISourceFactory is the default implementation of OCISourceFactory.
 type DefaultOCISourceFactory struct{}
 
-func (f *DefaultOCISourceFactory) Create(params oci.Params, parallel int64, log logr.Logger) (ossync.Source, error) {
+func (f *DefaultOCISourceFactory) Create(params ocirepo.Params, parallel int64, log logr.Logger) (ossync.Source, error) {
 	return oci.NewOCI(params, parallel, log)
 }
 
@@ -35,7 +36,7 @@ func (r *Reconciler) reconcileCloudProfile(ctx context.Context, log logr.Logger,
 	var cloudProfile gardenerv1beta1.CloudProfile
 	cloudProfile.Name = mcp.Name
 
-	op, err := controllerutil.CreateOrPatch(ctx, r.Client, &cloudProfile, func() error {
+	_, err := controllerutil.CreateOrPatch(ctx, r.Client, &cloudProfile, func() error {
 		if err := controllerutil.SetControllerReference(mcp, &cloudProfile, r.Scheme()); err != nil {
 			return err
 		}
@@ -72,17 +73,15 @@ func (r *Reconciler) reconcileCloudProfile(ctx context.Context, log logr.Logger,
 		}
 		return fmt.Errorf("failed to create or patch CloudProfile: %w", err)
 	}
-	if op != controllerutil.OperationResultNone {
-		statusErr := r.patchStatusAndCondition(ctx, mcp, v1alpha1.SucceededReconcileStatus, metav1.Condition{
-			Type:               CloudProfileAppliedConditionType,
-			Status:             metav1.ConditionTrue,
-			ObservedGeneration: mcp.Generation,
-			Reason:             "Applied",
-			Message:            "Generated CloudProfile applied successfully",
-		})
-		if statusErr != nil {
-			return fmt.Errorf("failed to patch ManagedCloudProfile status: %w", statusErr)
-		}
+	statusErr := r.patchStatusAndCondition(ctx, mcp, v1alpha1.SucceededReconcileStatus, metav1.Condition{
+		Type:               CloudProfileAppliedConditionType,
+		Status:             metav1.ConditionTrue,
+		ObservedGeneration: mcp.Generation,
+		Reason:             "Applied",
+		Message:            "Generated CloudProfile applied successfully",
+	})
+	if statusErr != nil {
+		return fmt.Errorf("failed to patch ManagedCloudProfile status: %w", statusErr)
 	}
 	return nil
 }
@@ -95,7 +94,7 @@ func (r *Reconciler) updateMachineImages(ctx context.Context, log logr.Logger, u
 		if err != nil {
 			return err
 		}
-		src, err := r.OCISourceFactory.Create(oci.Params{
+		src, err := r.OCISourceFactory.Create(ocirepo.Params{
 			Registry:   update.Source.OCI.Registry,
 			Repository: update.Source.OCI.Repository,
 			Username:   update.Source.OCI.Username,
@@ -112,13 +111,16 @@ func (r *Reconciler) updateMachineImages(ctx context.Context, log logr.Logger, u
 	}
 
 	var provider ossync.Provider
-	if update.Provider.IroncoreMetal != nil {
+	switch {
+	case update.Provider.IroncoreMetal != nil:
 		provider = &ironcore.IroncoreProvider{
 			Registry:           update.Provider.IroncoreMetal.Registry,
 			Repository:         update.Provider.IroncoreMetal.Repository,
 			ImageName:          update.ImageName,
 			EnableCapabilities: r.EnableCapabilities,
 		}
+	default:
+		return errors.New("no known provider configured")
 	}
 	imageUpdater := ossync.ImageUpdater{
 		Log:                log,
@@ -152,12 +154,12 @@ type KubernetesImageUpdater interface {
 	Update(ctx context.Context, cpSpec *gardenerv1beta1.CloudProfileSpec) error
 }
 
-func (r *Reconciler) updateKubernetesVersions(ctx context.Context, update v1alpha1.KubernetesVersionUpdateConfig, cpSpec *gardenerv1beta1.CloudProfileSpec) error {
-	var source kubernetessync.KubernetesVersionSource
+func (r *Reconciler) updateKubernetesVersions(ctx context.Context, cfg v1alpha1.KubernetesVersionUpdateConfig, cpSpec *gardenerv1beta1.CloudProfileSpec) error {
+	var source k8ssync.KubernetesVersionSource
 	var err error
 	switch {
-	case update.LandscapeSetup != nil:
-		source, err = r.landscapeSetupSource(ctx, *update.LandscapeSetup)
+	case cfg.LandscapeSetup != nil:
+		source, err = r.landscapeSetupSource(ctx, *cfg.LandscapeSetup)
 		if err != nil {
 			return fmt.Errorf("getting landscape setup source: %w", err)
 		}
@@ -165,7 +167,7 @@ func (r *Reconciler) updateKubernetesVersions(ctx context.Context, update v1alph
 		return errors.New("no kubernetes version source configured")
 	}
 
-	kubernetesUpdater := kubernetessync.NewKubernetesImageUpdater(source, update.ExpirationThreshold.Duration)
+	kubernetesUpdater := k8ssync.NewKubernetesVersionUpdater(source, cfg.ExpirationThreshold.Duration)
 
 	if err := kubernetesUpdater.Update(ctx, cpSpec); err != nil {
 		return fmt.Errorf("updating kubernetes versions failed: %w", err)
@@ -174,12 +176,12 @@ func (r *Reconciler) updateKubernetesVersions(ctx context.Context, update v1alph
 	return nil
 }
 
-func (r *Reconciler) landscapeSetupSource(ctx context.Context, ls v1alpha1.LandscapeSetup) (kubernetessync.KubernetesVersionSource, error) {
+func (r *Reconciler) landscapeSetupSource(ctx context.Context, ls v1alpha1.LandscapeSetup) (k8ssync.KubernetesVersionSource, error) {
 	ociPassword, err := r.getCredential(ctx, ls.OCI.Password)
 	if err != nil {
 		return nil, fmt.Errorf("getting oci password: %w", err)
 	}
-	ociParams := oci.Params{
+	ociParams := ocirepo.Params{
 		Registry:   ls.OCI.Registry,
 		Repository: ls.OCI.Repository,
 		Username:   ls.OCI.Username,

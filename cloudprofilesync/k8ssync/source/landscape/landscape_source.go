@@ -34,7 +34,7 @@ import (
 	"oras.land/oras-go/v2/content"
 	"oras.land/oras-go/v2/registry/remote"
 
-	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/ossync/source/oci"
+	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/ocirepo"
 )
 
 // componentDescriptorFile is the file in the OCI artifact layer that holds
@@ -44,6 +44,8 @@ const componentDescriptorFile = "component-descriptor.yaml"
 // kubeAPIServerResourceName is the component resource whose versions are used
 // as Kubernetes versions.
 const kubeAPIServerResourceName = "kube-apiserver"
+
+const githubClientTimeout = 30 * time.Second
 
 // componentDescriptor is the minimal shape of component-descriptor.yaml.
 type componentDescriptor struct {
@@ -59,9 +61,9 @@ type componentDescriptor struct {
 // GitHub versions file. metav1.Time has no UnmarshalYAML, so we use *time.Time
 // here and convert to gardenerv1beta1.ExpirableVersion after parsing.
 type yamlExpirableVersion struct {
-	Version        string                                `yaml:"version"`
-	Classification gardenerv1beta1.VersionClassification `yaml:"classification"`
-	ExpirationDate *time.Time                            `yaml:"expirationDate"`
+	Version        string                                 `yaml:"version"`
+	Classification *gardenerv1beta1.VersionClassification `yaml:"classification"`
+	ExpirationDate *time.Time                             `yaml:"expirationDate"`
 }
 
 // kubernetesVersions is the shape of the GitHub versions file.
@@ -116,11 +118,11 @@ func GithubAppTransport(apiBase string, appID, installationID int64, privateKeyP
 	}, nil
 }
 
-func NewLandscapeKubernetesSource(ociParams oci.Params, gh GithubParams) (*LandscapeKubernetesSource, error) {
+func NewLandscapeKubernetesSource(ociParams ocirepo.Params, gh GithubParams) (*LandscapeKubernetesSource, error) {
 	if gh.RepositoryApiURL == "" {
 		return nil, errors.New("repositoryApiUrl must be set")
 	}
-	repo, err := oci.NewRepository(ociParams)
+	repo, err := ocirepo.New(ociParams)
 	if err != nil {
 		return nil, fmt.Errorf("initializing OCI repository: %w", err)
 	}
@@ -130,7 +132,7 @@ func NewLandscapeKubernetesSource(ociParams oci.Params, gh GithubParams) (*Lands
 	}
 	return &LandscapeKubernetesSource{
 		ociRepo:      repo,
-		githubClient: &http.Client{Transport: gh.Transport},
+		githubClient: &http.Client{Transport: gh.Transport, Timeout: githubClientTimeout},
 		fileURL:      fileURL,
 		provider:     gh.Provider,
 	}, nil
@@ -295,11 +297,11 @@ func (s *LandscapeKubernetesSource) fetchClassification(ctx context.Context, ref
 }
 
 func (s *LandscapeKubernetesSource) fetchGithubFile(ctx context.Context, ref string) ([]byte, error) {
-	url := s.fileURL
+	fileURL := s.fileURL
 	if ref != "" {
-		url += "?ref=" + ref
+		fileURL += "?ref=" + ref
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fileURL, http.NoBody)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
@@ -336,7 +338,7 @@ func parseProviderVersions(raw []byte, provider string) ([]gardenerv1beta1.Expir
 			for _, v := range p.Versions {
 				result = append(result, gardenerv1beta1.ExpirableVersion{
 					Version:        v.Version,
-					Classification: &v.Classification,
+					Classification: v.Classification,
 					ExpirationDate: convertExpirationDate(v.ExpirationDate),
 				})
 			}
@@ -440,8 +442,8 @@ func (t *githubAppTransport) mintJWT() (string, error) {
 }
 
 func exchangeInstallationToken(ctx context.Context, base http.RoundTripper, apiBase, jwt string, installationID int64) (string, time.Time, error) {
-	url := fmt.Sprintf("%s/app/installations/%d/access_tokens", apiBase, installationID)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, http.NoBody)
+	tokenURL := fmt.Sprintf("%s/app/installations/%d/access_tokens", apiBase, installationID)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, tokenURL, http.NoBody)
 	if err != nil {
 		return "", time.Time{}, fmt.Errorf("creating token request: %w", err)
 	}

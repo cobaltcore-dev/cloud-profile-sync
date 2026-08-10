@@ -1,9 +1,10 @@
 // SPDX-FileCopyrightText: 2025 SAP SE or an SAP affiliate company
 // SPDX-License-Identifier: Apache-2.0
-package kubernetessync
+package k8ssync
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -16,39 +17,39 @@ type KubernetesVersionSource interface {
 	FetchVersions(ctx context.Context) ([]gardenerv1beta1.ExpirableVersion, error)
 }
 
-// KubernetesImageUpdater writes Kubernetes versions to a CloudProfileSpec,
+// KubernetesVersionUpdater writes Kubernetes versions to a CloudProfileSpec,
 // dropping any version whose expiration date has already passed the configured
 // threshold.
-type KubernetesImageUpdater struct {
+type KubernetesVersionUpdater struct {
 	Source              KubernetesVersionSource
 	ExpirationThreshold time.Duration
 }
 
-func NewKubernetesImageUpdater(source KubernetesVersionSource, expirationThreshold time.Duration) *KubernetesImageUpdater {
-	return &KubernetesImageUpdater{
+func NewKubernetesVersionUpdater(source KubernetesVersionSource, expirationThreshold time.Duration) *KubernetesVersionUpdater {
+	return &KubernetesVersionUpdater{
 		Source:              source,
 		ExpirationThreshold: expirationThreshold,
 	}
 }
 
-func (ku *KubernetesImageUpdater) Update(ctx context.Context, cpSpec *gardenerv1beta1.CloudProfileSpec) error {
+func (ku *KubernetesVersionUpdater) Update(ctx context.Context, cpSpec *gardenerv1beta1.CloudProfileSpec) error {
 	versions, err := ku.Source.FetchVersions(ctx)
 	if err != nil {
 		return fmt.Errorf("fetching kubernetes versions: %w", err)
 	}
 
-	deleteThreshold := time.Now().Add(-ku.ExpirationThreshold)
-	cpVersions := make([]gardenerv1beta1.ExpirableVersion, 0, len(versions))
+	cutoff := time.Now().Add(-ku.ExpirationThreshold)
+	filteredVersions := make([]gardenerv1beta1.ExpirableVersion, 0, len(versions))
 	for _, v := range versions {
-		if v.ExpirationDate != nil && v.ExpirationDate.Time.Before(deleteThreshold) { //nolint:staticcheck
+		if v.ExpirationDate != nil && v.ExpirationDate.Time.Before(cutoff) { //nolint:staticcheck
 			continue
 		}
-		cpVersions = append(cpVersions, v)
+		filteredVersions = append(filteredVersions, v)
 	}
 
-	if len(cpVersions) == 0 {
-		return fmt.Errorf("source returned no kubernetes versions after expiration filtering, refusing to wipe CloudProfile")
+	if len(filteredVersions) == 0 {
+		return errors.New("source returned no kubernetes versions after expiration filtering, refusing to wipe CloudProfile")
 	}
-	cpSpec.Kubernetes.Versions = cpVersions
+	cpSpec.Kubernetes.Versions = filteredVersions
 	return nil
 }

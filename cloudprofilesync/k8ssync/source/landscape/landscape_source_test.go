@@ -311,7 +311,7 @@ func startRegistry(t *testing.T, addr string) func() {
 		cancel()
 		t.Fatalf("creating registry: %v", err)
 	}
-	go func() { _ = reg.ListenAndServe() }()
+	go func() { _ = reg.ListenAndServe() }() //nolint:errcheck
 
 	deadline := time.Now().Add(500 * time.Millisecond)
 	for time.Now().Before(deadline) {
@@ -333,7 +333,7 @@ func startRegistry(t *testing.T, addr string) func() {
 	}
 	return func() {
 		cancel()
-		_ = reg.Shutdown(context.Background())
+		_ = reg.Shutdown(context.Background()) //nolint:errcheck
 	}
 }
 

@@ -25,8 +25,8 @@ import (
 	"github.com/onsi/gomega/types"
 
 	"github.com/cobaltcore-dev/cloud-profile-sync/api/v1alpha1"
+	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/ocirepo"
 	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/ossync"
-	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/ossync/source/oci"
 	"github.com/cobaltcore-dev/cloud-profile-sync/controllers"
 )
 
@@ -39,7 +39,7 @@ func (f *fakeSource) GetVersions(ctx context.Context) ([]ossync.SourceImage, err
 
 // mockOCIFactory implements controllers.OCISourceFactory for testing
 type mockOCIFactory struct {
-	createFunc func(params oci.Params, parallel int64) (ossync.Source, error)
+	createFunc func(params ocirepo.Params, parallel int64) (ossync.Source, error)
 }
 
 type fakeOCISource struct{}
@@ -59,17 +59,17 @@ func (f *emptyOCISource) GetVersions(ctx context.Context) ([]ossync.SourceImage,
 
 type fakeFactory struct{}
 
-func (f *fakeFactory) Create(params oci.Params, _ int64, _ logr.Logger) (ossync.Source, error) {
+func (f *fakeFactory) Create(params ocirepo.Params, _ int64, _ logr.Logger) (ossync.Source, error) {
 	return &fakeOCISource{}, nil
 }
 
 type emptyFactory struct{}
 
-func (f *emptyFactory) Create(params oci.Params, parallel int64, _ logr.Logger) (ossync.Source, error) {
+func (f *emptyFactory) Create(params ocirepo.Params, parallel int64, _ logr.Logger) (ossync.Source, error) {
 	return &emptyOCISource{}, nil
 }
 
-func (m *mockOCIFactory) Create(params oci.Params, parallel int64, _ logr.Logger) (ossync.Source, error) {
+func (m *mockOCIFactory) Create(params ocirepo.Params, parallel int64, _ logr.Logger) (ossync.Source, error) {
 	return m.createFunc(params, parallel)
 }
 
@@ -300,6 +300,12 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 						Insecure:   true,
 					},
 				},
+				Provider: v1alpha1.MachineImageUpdateProvider{
+					IroncoreMetal: &v1alpha1.MachineImagesUpdateProviderIroncoreMetal{
+						Registry:   registryAddr,
+						Repository: orasRepoName("repo"),
+					},
+				},
 				ImageName: "the-image",
 			},
 		}
@@ -347,6 +353,12 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 						},
 					},
 				},
+				Provider: v1alpha1.MachineImageUpdateProvider{
+					IroncoreMetal: &v1alpha1.MachineImagesUpdateProviderIroncoreMetal{
+						Registry:   registryAddr,
+						Repository: orasRepoName("repo"),
+					},
+				},
 				ImageName: "the-image",
 			},
 		}
@@ -388,6 +400,12 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 						Registry:   "keppel-fake",
 						Repository: "account/repo",
 						Insecure:   true,
+					},
+				},
+				Provider: v1alpha1.MachineImageUpdateProvider{
+					IroncoreMetal: &v1alpha1.MachineImagesUpdateProviderIroncoreMetal{
+						Registry:   "keppel-fake",
+						Repository: "account/repo",
 					},
 				},
 			},
@@ -516,6 +534,12 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 						Insecure:   true,
 					},
 				},
+				Provider: v1alpha1.MachineImageUpdateProvider{
+					IroncoreMetal: &v1alpha1.MachineImagesUpdateProviderIroncoreMetal{
+						Registry:   registryAddr,
+						Repository: orasRepoName("repo"),
+					},
+				},
 			},
 		}
 
@@ -610,6 +634,12 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 								Insecure:   true,
 							},
 						},
+						Provider: v1alpha1.MachineImageUpdateProvider{
+							IroncoreMetal: &v1alpha1.MachineImagesUpdateProviderIroncoreMetal{
+								Registry:   "keppel-fake",
+								Repository: "account/repo",
+							},
+						},
 					},
 				},
 				GarbageCollection: &v1alpha1.GarbageCollectionConfig{
@@ -690,7 +720,7 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 		old := reconciler.OCISourceFactory
 		defer func() { reconciler.OCISourceFactory = old }()
 		reconciler.OCISourceFactory = &mockOCIFactory{
-			createFunc: func(params oci.Params, p int64) (ossync.Source, error) {
+			createFunc: func(params ocirepo.Params, p int64) (ossync.Source, error) {
 				return &fakeSource{}, nil
 			},
 		}
@@ -706,6 +736,12 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 						Registry:   registryAddr,
 						Repository: "repo",
 						Insecure:   true,
+					},
+				},
+				Provider: v1alpha1.MachineImageUpdateProvider{
+					IroncoreMetal: &v1alpha1.MachineImagesUpdateProviderIroncoreMetal{
+						Registry:   registryAddr,
+						Repository: "repo",
 					},
 				},
 			},
@@ -953,6 +989,12 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 								Insecure:   true,
 							},
 						},
+						Provider: v1alpha1.MachineImageUpdateProvider{
+							IroncoreMetal: &v1alpha1.MachineImagesUpdateProviderIroncoreMetal{
+								Registry:   "keppel-fake",
+								Repository: "account/cap-repo",
+							},
+						},
 					},
 				},
 				GarbageCollection: &v1alpha1.GarbageCollectionConfig{
@@ -1053,6 +1095,12 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 								Registry:   "keppel-fake",
 								Repository: "account/multi-flavor-repo",
 								Insecure:   true,
+							},
+						},
+						Provider: v1alpha1.MachineImageUpdateProvider{
+							IroncoreMetal: &v1alpha1.MachineImagesUpdateProviderIroncoreMetal{
+								Registry:   "keppel-fake",
+								Repository: "account/multi-flavor-repo",
 							},
 						},
 					},
@@ -1157,6 +1205,12 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 								Insecure:   true,
 							},
 						},
+						Provider: v1alpha1.MachineImageUpdateProvider{
+							IroncoreMetal: &v1alpha1.MachineImagesUpdateProviderIroncoreMetal{
+								Registry:   "keppel-fake",
+								Repository: "account/cascade-repo",
+							},
+						},
 					},
 				},
 				GarbageCollection: &v1alpha1.GarbageCollectionConfig{
@@ -1244,6 +1298,12 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 								Registry:   "keppel-fake",
 								Repository: "account/stale-clean-repo",
 								Insecure:   true,
+							},
+						},
+						Provider: v1alpha1.MachineImageUpdateProvider{
+							IroncoreMetal: &v1alpha1.MachineImagesUpdateProviderIroncoreMetal{
+								Registry:   "keppel-fake",
+								Repository: "account/stale-clean-repo",
 							},
 						},
 					},

@@ -17,6 +17,7 @@ import (
 	"oras.land/oras-go/v2/content"
 	"oras.land/oras-go/v2/registry/remote"
 
+	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/ocirepo"
 	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/ossync"
 	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/ossync/source/oci"
 )
@@ -57,7 +58,7 @@ var _ = Describe("OCISource", func() {
 		err = repo.PushReference(ctx, indexDesc, bytes.NewReader(indexBlob), "1.0.1_abc")
 		Expect(err).To(Succeed())
 
-		oci, err := oci.NewOCI(oci.Params{
+		oci, err := oci.NewOCI(ocirepo.Params{
 			Registry:   registryAddr,
 			Repository: "repo",
 			Insecure:   true,
@@ -101,7 +102,7 @@ var _ = Describe("OCISource", func() {
 		err = repo.PushReference(ctx, indexDesc, bytes.NewReader(indexBlob), "2.0.0")
 		Expect(err).To(Succeed())
 
-		oci, err := oci.NewOCI(oci.Params{
+		oci, err := oci.NewOCI(ocirepo.Params{
 			Registry:   registryAddr,
 			Repository: "repo-caps",
 			Insecure:   true,
@@ -146,7 +147,7 @@ var _ = Describe("OCISource", func() {
 		err = repo.PushReference(ctx, indexDesc, bytes.NewReader(indexBlob), "1.0.0-legacy")
 		Expect(err).To(Succeed())
 
-		oci, err := oci.NewOCI(oci.Params{
+		oci, err := oci.NewOCI(ocirepo.Params{
 			Registry:   registryAddr,
 			Repository: "repo-legacy",
 			Insecure:   true,
@@ -195,7 +196,7 @@ var _ = Describe("OCISource", func() {
 		err = repo.PushReference(ctx, noArchDesc, bytes.NewReader(noArchBlob), "1.0.1")
 		Expect(err).To(Succeed())
 
-		oci, err := oci.NewOCI(oci.Params{
+		oci, err := oci.NewOCI(ocirepo.Params{
 			Registry:   registryAddr,
 			Repository: "repo-missing-arch",
 			Insecure:   true,
@@ -232,7 +233,7 @@ var _ = Describe("OCISource", func() {
 		err = repo.PushReference(ctx, indexDesc, bytes.NewReader(indexBlob), "3.0.0-no-valid-features")
 		Expect(err).To(Succeed())
 
-		oci, err := oci.NewOCI(oci.Params{
+		oci, err := oci.NewOCI(ocirepo.Params{
 			Registry:   registryAddr,
 			Repository: "repo-no-valid-features",
 			Insecure:   true,

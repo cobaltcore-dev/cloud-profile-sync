@@ -15,9 +15,8 @@ import (
 	"github.com/go-logr/logr"
 	"golang.org/x/sync/semaphore"
 	"oras.land/oras-go/v2/registry/remote"
-	"oras.land/oras-go/v2/registry/remote/auth"
-	"oras.land/oras-go/v2/registry/remote/retry"
 
+	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/ocirepo"
 	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/ossync"
 )
 
@@ -78,47 +77,8 @@ type OCI struct {
 	sema *semaphore.Weighted
 }
 
-type OCIParams struct {
-	Registry   string `json:"registry"`
-	Repository string `json:"repository"`
-	Username   string `json:"username"`
-	Password   string `json:"password"` //nolint:gosec,nolintlint
-	Parallel   int64  `json:"parallel"`
-}
-
-type Params struct {
-	Registry   string
-	Repository string
-	Username   string
-	Password   string
-	Insecure   bool
-}
-
-// NewRepository builds an oras-go remote repository with static-credential auth,
-// shared by the OCI machine image source and the Keppel Kubernetes source.
-func NewRepository(params Params) (*remote.Repository, error) {
-	repo, err := remote.NewRepository(params.Registry + "/" + params.Repository)
-	if err != nil {
-		return nil, err
-	}
-
-	if params.Username != "" && params.Password != "" {
-		repo.Client = &auth.Client{
-			Client: retry.DefaultClient,
-			Cache:  auth.NewCache(),
-			Credential: auth.StaticCredential(params.Registry, auth.Credential{
-				Username: params.Username,
-				Password: params.Password,
-			}),
-		}
-	}
-	repo.PlainHTTP = params.Insecure
-
-	return repo, nil
-}
-
-func NewOCI(params Params, parallel int64, log logr.Logger) (*OCI, error) {
-	repo, err := NewRepository(params)
+func NewOCI(params ocirepo.Params, parallel int64, log logr.Logger) (*OCI, error) {
+	repo, err := ocirepo.New(params)
 	if err != nil {
 		return nil, err
 	}

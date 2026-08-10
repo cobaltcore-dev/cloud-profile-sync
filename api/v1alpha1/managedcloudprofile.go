@@ -117,7 +117,6 @@ type KubernetesVersionUpdateConfig struct {
 	// ExpirationThreshold defines the grace period after a version's expiration date.
 	// Versions whose expiration date has passed by more than this duration will be
 	// removed from the CloudProfile.
-	// +optional
 	ExpirationThreshold metav1.Duration `json:"expirationThreshold,omitempty"`
 
 	// LandscapeSetup contains the required OCI and GitHub sources for Kubernetes versions.
