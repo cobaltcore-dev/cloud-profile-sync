@@ -98,7 +98,6 @@ func newTestGlance(t *testing.T, params GlanceParams, imgsByRegion map[string][]
 	if params.AuthURLFormat == "" {
 		params.AuthURLFormat = "https://identity-3.%s.cloud.sap/v3"
 	}
-
 	g, err := NewGlance(params, logr.Discard())
 	if err != nil {
 		t.Fatalf("NewGlance: %v", err)
