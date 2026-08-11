@@ -774,11 +774,83 @@ spec:
                           - registry
                           - repository
                           type: object
+                        openStack:
+                          description: OpenStack contains configuration to update
+                            provider.machineImages for OpenStack CloudProfiles.
+                          type: object
                       type: object
                     source:
                       description: Source contains configuration for a source for
                         machine images.
                       properties:
+                        glance:
+                          description: Glance contains configuration for an OpenStack
+                            Glance source.
+                          properties:
+                            authURLFormat:
+                              description: AuthURLFormat is the Keystone endpoint
+                                format string with a single "%s" for the region.
+                              type: string
+                            keepLatest:
+                              description: KeepLatest limits results to the newest
+                                N versions.
+                              type: integer
+                            namePrefix:
+                              description: NamePrefix selects images by name prefix.
+                                Empty means the default.
+                              type: string
+                            parallel:
+                              description: Parallel bounds how many regions are queried
+                                concurrently.
+                              format: int64
+                              type: integer
+                            passwordSecret:
+                              description: PasswordSecret is a reference to a secret
+                                containing the OpenStack password.
+                              properties:
+                                key:
+                                  description: Key within the Secret to use for required
+                                    data.
+                                  type: string
+                                name:
+                                  description: Name of a Secret.
+                                  type: string
+                                namespace:
+                                  description: Namespace of a Secret.
+                                  type: string
+                              required:
+                              - key
+                              - name
+                              - namespace
+                              type: object
+                            projectDomainName:
+                              description: ProjectDomainName scopes the token domain.
+                              type: string
+                            projectName:
+                              description: ProjectName scopes the token.
+                              type: string
+                            regions:
+                              description: Regions is the list of OpenStack regions
+                                to query.
+                              items:
+                                type: string
+                              type: array
+                            userDomainName:
+                              description: UserDomainName is the domain of the authenticating
+                                user.
+                              type: string
+                            username:
+                              description: Username for authentication.
+                              type: string
+                          required:
+                          - authURLFormat
+                          - passwordSecret
+                          - projectDomainName
+                          - projectName
+                          - regions
+                          - userDomainName
+                          - username
+                          type: object
                         oci:
                           description: OCI contains configuration for an OCI source.
                           properties:
