@@ -171,6 +171,36 @@ type MachineImageUpdateSource struct {
 	// OCI contains configuration for an OCI source.
 	// +optional
 	OCI *OCI `json:"oci,omitempty"`
+	// Glance contains configuration for an OpenStack Glance source.
+	// +optional
+	Glance *GlanceSource `json:"glance,omitempty"`
+}
+
+// GlanceSource configures discovery of gardenlinux images from OpenStack Glance.
+type GlanceSource struct {
+	// AuthURLFormat is the Keystone endpoint format string with a single "%s" for the region.
+	AuthURLFormat string `json:"authURLFormat"`
+	// Regions is the list of OpenStack regions to query.
+	Regions []string `json:"regions"`
+	// NamePrefix selects images by name prefix. Empty means the default.
+	// +optional
+	NamePrefix string `json:"namePrefix,omitempty"`
+	// KeepLatest limits results to the newest N versions.
+	// +optional
+	KeepLatest int `json:"keepLatest,omitempty"`
+	// Parallel bounds how many regions are queried concurrently.
+	// +optional
+	Parallel int64 `json:"parallel,omitempty"`
+	// ProjectName scopes the token.
+	ProjectName string `json:"projectName"`
+	// ProjectDomainName scopes the token domain.
+	ProjectDomainName string `json:"projectDomainName"`
+	// Username for authentication.
+	Username string `json:"username"`
+	// UserDomainName is the domain of the authenticating user.
+	UserDomainName string `json:"userDomainName"`
+	// PasswordSecret is a reference to a secret containing the OpenStack password.
+	PasswordSecret SecretReference `json:"passwordSecret"`
 }
 
 type OCI struct {
@@ -193,7 +223,12 @@ type MachineImageUpdateProvider struct {
 	// Ironcore contains configuration to update provider.machineImages for ironcore-metal CloudProfiles
 	// +optional
 	IroncoreMetal *MachineImagesUpdateProviderIroncoreMetal `json:"ironcoreMetal,omitempty"`
+	// OpenStack contains configuration to update provider.machineImages for OpenStack CloudProfiles.
+	// +optional
+	OpenStack *MachineImagesUpdateProviderOpenStack `json:"openStack,omitempty"`
 }
+
+type MachineImagesUpdateProviderOpenStack struct{}
 
 type MachineImagesUpdateProviderIroncoreMetal struct {
 	// Registry contains the hostname and port of the OCI registry
