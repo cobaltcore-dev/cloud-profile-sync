@@ -22,6 +22,8 @@ import (
 	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/ocirepo"
 	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/ossync"
 	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/ossync/provider/ironcore"
+	osprovider "github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/ossync/provider/openstack"
+	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/ossync/source/glance"
 	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/ossync/source/oci"
 )
 
@@ -106,6 +108,28 @@ func (r *Reconciler) updateMachineImages(ctx context.Context, log logr.Logger, u
 		}
 		source = src
 
+	case update.Source.Glance != nil:
+		password, err := r.getCredential(ctx, update.Source.Glance.PasswordSecret)
+		if err != nil {
+			return err
+		}
+		src, err := glance.NewGlance(glance.GlanceParams{
+			AuthURLFormat:     update.Source.Glance.AuthURLFormat,
+			Regions:           update.Source.Glance.Regions,
+			NamePrefix:        update.Source.Glance.NamePrefix,
+			KeepLatest:        update.Source.Glance.KeepLatest,
+			Parallel:          update.Source.Glance.Parallel,
+			ProjectName:       update.Source.Glance.ProjectName,
+			ProjectDomainName: update.Source.Glance.ProjectDomainName,
+			Username:          update.Source.Glance.Username,
+			UserDomainName:    update.Source.Glance.UserDomainName,
+			Password:          string(password),
+		}, log)
+		if err != nil {
+			return fmt.Errorf("failed to initialize Glance source: %w", err)
+		}
+		source = src
+
 	default:
 		return errors.New("no machine images source configured")
 	}
@@ -118,6 +142,10 @@ func (r *Reconciler) updateMachineImages(ctx context.Context, log logr.Logger, u
 			Repository:         update.Provider.IroncoreMetal.Repository,
 			ImageName:          update.ImageName,
 			EnableCapabilities: r.EnableCapabilities,
+		}
+	case update.Provider.OpenStack != nil:
+		provider = &osprovider.OpenStackProvider{
+			ImageName: update.ImageName,
 		}
 	default:
 		return errors.New("no known provider configured")

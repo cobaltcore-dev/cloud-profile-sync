@@ -5,11 +5,13 @@ package ossync_test
 
 import (
 	"encoding/json"
+	"time"
 
 	gardencorev1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/ossync"
 )
@@ -362,6 +364,70 @@ var _ = Describe("ImageUpdater", func() {
 			Expect(cpSpec.MachineImages[0].Versions[1].Version).To(Equal("1.1.0"))
 			Expect(cpSpec.MachineImages[0].Versions[1].InPlaceUpdates).NotTo(BeNil())
 			Expect(cpSpec.MachineImages[0].Versions[1].InPlaceUpdates.Supported).To(BeTrue())
+		})
+	})
+
+	Describe("expiration", func() {
+		deprecated := gardencorev1beta1.ClassificationDeprecated
+
+		newUpdater := func() ossync.ImageUpdater {
+			return ossync.ImageUpdater{Log: GinkgoLogr, Source: &mockSource, ImageName: "test"}
+		}
+
+		It("keeps the existing expiration date for a deprecated version (never overwrites)", func(ctx SpecContext) {
+			existing := metav1.NewTime(time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC))
+			cpSpec := gardencorev1beta1.CloudProfileSpec{
+				MachineImages: []gardencorev1beta1.MachineImage{
+					{Name: "test", Versions: []gardencorev1beta1.MachineImageVersion{
+						{ExpirableVersion: gardencorev1beta1.ExpirableVersion{
+							Version:        "1.0.0",
+							Classification: &deprecated,
+							ExpirationDate: &existing,
+						}, Architectures: []string{"amd64"}},
+					}},
+				},
+			}
+			mockSource.images = []ossync.SourceImage{
+				{Version: "1.0.0", Architectures: []string{"amd64"}, Classification: &deprecated},
+			}
+			updater := newUpdater()
+			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
+			Expect(cpSpec.MachineImages[0].Versions).To(HaveLen(1))
+			Expect(cpSpec.MachineImages[0].Versions[0].ExpirationDate).To(Equal(&existing))
+		})
+
+		It("uses the source's expiration date for a new deprecated version", func(ctx SpecContext) {
+			fromSource := metav1.NewTime(time.Date(2030, 6, 1, 0, 0, 0, 0, time.UTC))
+			mockSource.images = []ossync.SourceImage{
+				{Version: "1.0.0", Architectures: []string{"amd64"}, Classification: &deprecated, ExpirationDate: &fromSource},
+			}
+			updater := newUpdater()
+			var cpSpec gardencorev1beta1.CloudProfileSpec
+			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
+			Expect(cpSpec.MachineImages[0].Versions).To(HaveLen(1))
+			Expect(cpSpec.MachineImages[0].Versions[0].ExpirationDate).To(Equal(&fromSource))
+		})
+
+		It("stamps an expiration date for a new deprecated version without one", func(ctx SpecContext) {
+			mockSource.images = []ossync.SourceImage{
+				{Version: "1.0.0", Architectures: []string{"amd64"}, Classification: &deprecated},
+			}
+			updater := newUpdater()
+			var cpSpec gardencorev1beta1.CloudProfileSpec
+			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
+			Expect(cpSpec.MachineImages[0].Versions).To(HaveLen(1))
+			Expect(cpSpec.MachineImages[0].Versions[0].ExpirationDate).NotTo(BeNil())
+		})
+
+		It("does not set an expiration date for a non-deprecated version", func(ctx SpecContext) {
+			mockSource.images = []ossync.SourceImage{
+				{Version: "1.0.0", Architectures: []string{"amd64"}},
+			}
+			updater := newUpdater()
+			var cpSpec gardencorev1beta1.CloudProfileSpec
+			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
+			Expect(cpSpec.MachineImages[0].Versions).To(HaveLen(1))
+			Expect(cpSpec.MachineImages[0].Versions[0].ExpirationDate).To(BeNil())
 		})
 	})
 })
