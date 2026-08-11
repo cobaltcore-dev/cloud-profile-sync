@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2025 SAP SE or an SAP affiliate company
 // SPDX-License-Identifier: Apache-2.0
 
-package cloudprofilesync
+package ironcore
 
 import (
 	"encoding/json"
@@ -10,11 +10,9 @@ import (
 	gardencorev1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
 	"github.com/ironcore-dev/gardener-extension-provider-ironcore-metal/pkg/apis/metal/v1alpha1"
 	"k8s.io/apimachinery/pkg/runtime"
-)
 
-type Provider interface {
-	Configure(cloudProfile *gardencorev1beta1.CloudProfileSpec, versions []SourceImage) error
-}
+	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/ossync"
+)
 
 type IroncoreProvider struct {
 	Registry           string
@@ -23,7 +21,7 @@ type IroncoreProvider struct {
 	EnableCapabilities bool
 }
 
-func (p *IroncoreProvider) Configure(cpSpec *gardencorev1beta1.CloudProfileSpec, versions []SourceImage) error {
+func (p *IroncoreProvider) Configure(cpSpec *gardencorev1beta1.CloudProfileSpec, versions []ossync.SourceImage) error {
 	var cfg v1alpha1.CloudProfileConfig
 	if cpSpec.ProviderConfig != nil {
 		if err := json.Unmarshal(cpSpec.ProviderConfig.Raw, &cfg); err != nil {

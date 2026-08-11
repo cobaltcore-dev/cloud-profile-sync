@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2025 SAP SE or an SAP affiliate company
 // SPDX-License-Identifier: Apache-2.0
 
-package cloudprofilesync_test
+package ironcore_test
 
 import (
 	"encoding/json"
@@ -11,19 +11,20 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync"
+	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/ossync"
+	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/ossync/provider/ironcore"
 )
 
 var _ = Describe("IroncoreProvider", func() {
 
-	legacyProvider := &cloudprofilesync.IroncoreProvider{
+	legacyProvider := &ironcore.IroncoreProvider{
 		Registry:           "registry.io",
 		Repository:         "repo",
 		ImageName:          "test",
 		EnableCapabilities: false,
 	}
 
-	capProvider := &cloudprofilesync.IroncoreProvider{
+	capProvider := &ironcore.IroncoreProvider{
 		Registry:           "registry.io",
 		Repository:         "repo",
 		ImageName:          "test",
@@ -33,7 +34,7 @@ var _ = Describe("IroncoreProvider", func() {
 	Describe("flag OFF (legacy format only)", func() {
 		It("should add an image to the provider config", func() {
 			var cpSpec gardencorev1beta1.CloudProfileSpec
-			versions := []cloudprofilesync.SourceImage{{Version: "v1.0.0", Architectures: []string{"amd64"}}}
+			versions := []ossync.SourceImage{{Version: "v1.0.0", Architectures: []string{"amd64"}}}
 			Expect(legacyProvider.Configure(&cpSpec, versions)).To(Succeed())
 
 			var providerConfig v1alpha1.CloudProfileConfig
@@ -47,7 +48,7 @@ var _ = Describe("IroncoreProvider", func() {
 
 		It("should multiply out architectures", func() {
 			var cpSpec gardencorev1beta1.CloudProfileSpec
-			versions := []cloudprofilesync.SourceImage{
+			versions := []ossync.SourceImage{
 				{Version: "v1.0.0", Architectures: []string{"amd64", "arm64"}},
 			}
 			Expect(legacyProvider.Configure(&cpSpec, versions)).To(Succeed())
@@ -65,7 +66,7 @@ var _ = Describe("IroncoreProvider", func() {
 
 		It("should not add duplicate images", func() {
 			var cpSpec gardencorev1beta1.CloudProfileSpec
-			versions := []cloudprofilesync.SourceImage{
+			versions := []ossync.SourceImage{
 				{Version: "v1.0.0", Architectures: []string{"amd64"}},
 				{Version: "v1.0.0", Architectures: []string{"arm64"}},
 			}
@@ -79,7 +80,7 @@ var _ = Describe("IroncoreProvider", func() {
 
 		It("should ignore Capabilities and CleanVersion", func() {
 			var cpSpec gardencorev1beta1.CloudProfileSpec
-			versions := []cloudprofilesync.SourceImage{
+			versions := []ossync.SourceImage{
 				{
 					Version:       "2254.0.0-baremetal-sci-usi-amd64",
 					CleanVersion:  "2254.0.0",
@@ -109,7 +110,7 @@ var _ = Describe("IroncoreProvider", func() {
 
 		It("should write both legacy flat entry and CapabilityFlavors entry", func() {
 			var cpSpec gardencorev1beta1.CloudProfileSpec
-			versions := []cloudprofilesync.SourceImage{
+			versions := []ossync.SourceImage{
 				{
 					Version:       "2254.0.0-baremetal-sci-usi-amd64",
 					CleanVersion:  "2254.0.0",
@@ -141,7 +142,7 @@ var _ = Describe("IroncoreProvider", func() {
 
 		It("should group multiple flavors under one clean version entry", func() {
 			var cpSpec gardencorev1beta1.CloudProfileSpec
-			versions := []cloudprofilesync.SourceImage{
+			versions := []ossync.SourceImage{
 				{
 					Version:       "2254.0.0-baremetal-sci-usi-amd64",
 					CleanVersion:  "2254.0.0",
@@ -180,7 +181,7 @@ var _ = Describe("IroncoreProvider", func() {
 
 		It("should not add duplicate capability flavors on re-reconcile", func() {
 			var cpSpec gardencorev1beta1.CloudProfileSpec
-			versions := []cloudprofilesync.SourceImage{
+			versions := []ossync.SourceImage{
 				{
 					Version:       "2254.0.0-baremetal-sci-usi-amd64",
 					CleanVersion:  "2254.0.0",
@@ -206,7 +207,7 @@ var _ = Describe("IroncoreProvider", func() {
 
 		It("should write only legacy entry for images without capabilities", func() {
 			var cpSpec gardencorev1beta1.CloudProfileSpec
-			versions := []cloudprofilesync.SourceImage{
+			versions := []ossync.SourceImage{
 				{Version: "1877.0.0", Architectures: []string{"amd64"}},
 			}
 			Expect(capProvider.Configure(&cpSpec, versions)).To(Succeed())

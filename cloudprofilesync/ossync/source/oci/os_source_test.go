@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2025 SAP SE or an SAP affiliate company
 // SPDX-License-Identifier: Apache-2.0
 
-package cloudprofilesync_test
+package oci_test
 
 import (
 	"bytes"
@@ -17,7 +17,9 @@ import (
 	"oras.land/oras-go/v2/content"
 	"oras.land/oras-go/v2/registry/remote"
 
-	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync"
+	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/ocirepo"
+	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/ossync"
+	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/ossync/source/oci"
 )
 
 var _ = Describe("OCISource", func() {
@@ -56,19 +58,19 @@ var _ = Describe("OCISource", func() {
 		err = repo.PushReference(ctx, indexDesc, bytes.NewReader(indexBlob), "1.0.1_abc")
 		Expect(err).To(Succeed())
 
-		oci, err := cloudprofilesync.NewOCI(cloudprofilesync.OCIParams{
+		oci, err := oci.NewOCI(ocirepo.Params{
 			Registry:   registryAddr,
 			Repository: "repo",
-			Parallel:   4,
-		}, true, logr.Discard())
+			Insecure:   true,
+		}, 4, logr.Discard())
 		Expect(err).To(Succeed())
 		versions, err := oci.GetVersions(ctx)
 		Expect(err).To(Succeed())
 		Expect(versions).To(HaveLen(2))
 		Expect(versions).To(ContainElement(
-			cloudprofilesync.SourceImage{Version: "1.0.0", Architectures: []string{"amd64"}}))
+			ossync.SourceImage{Version: "1.0.0", Architectures: []string{"amd64"}}))
 		Expect(versions).To(ContainElement(
-			cloudprofilesync.SourceImage{Version: "1.0.1+abc", Architectures: []string{"amd64"}}))
+			ossync.SourceImage{Version: "1.0.1+abc", Architectures: []string{"amd64"}}))
 	})
 
 	It("populates capabilities when feature_set annotation is present", func(ctx SpecContext) {
@@ -100,11 +102,11 @@ var _ = Describe("OCISource", func() {
 		err = repo.PushReference(ctx, indexDesc, bytes.NewReader(indexBlob), "2.0.0")
 		Expect(err).To(Succeed())
 
-		oci, err := cloudprofilesync.NewOCI(cloudprofilesync.OCIParams{
+		oci, err := oci.NewOCI(ocirepo.Params{
 			Registry:   registryAddr,
 			Repository: "repo-caps",
-			Parallel:   4,
-		}, true, logr.Discard())
+			Insecure:   true,
+		}, 4, logr.Discard())
 		Expect(err).To(Succeed())
 		versions, err := oci.GetVersions(ctx)
 		Expect(err).To(Succeed())
@@ -145,11 +147,11 @@ var _ = Describe("OCISource", func() {
 		err = repo.PushReference(ctx, indexDesc, bytes.NewReader(indexBlob), "1.0.0-legacy")
 		Expect(err).To(Succeed())
 
-		oci, err := cloudprofilesync.NewOCI(cloudprofilesync.OCIParams{
+		oci, err := oci.NewOCI(ocirepo.Params{
 			Registry:   registryAddr,
 			Repository: "repo-legacy",
-			Parallel:   4,
-		}, true, logr.Discard())
+			Insecure:   true,
+		}, 4, logr.Discard())
 		Expect(err).To(Succeed())
 		versions, err := oci.GetVersions(ctx)
 		Expect(err).To(Succeed())
@@ -194,11 +196,11 @@ var _ = Describe("OCISource", func() {
 		err = repo.PushReference(ctx, noArchDesc, bytes.NewReader(noArchBlob), "1.0.1")
 		Expect(err).To(Succeed())
 
-		oci, err := cloudprofilesync.NewOCI(cloudprofilesync.OCIParams{
+		oci, err := oci.NewOCI(ocirepo.Params{
 			Registry:   registryAddr,
 			Repository: "repo-missing-arch",
-			Parallel:   4,
-		}, true, logr.Discard())
+			Insecure:   true,
+		}, 4, logr.Discard())
 		Expect(err).To(Succeed())
 		versions, err := oci.GetVersions(ctx)
 		Expect(err).To(Succeed())
@@ -231,11 +233,11 @@ var _ = Describe("OCISource", func() {
 		err = repo.PushReference(ctx, indexDesc, bytes.NewReader(indexBlob), "3.0.0-no-valid-features")
 		Expect(err).To(Succeed())
 
-		oci, err := cloudprofilesync.NewOCI(cloudprofilesync.OCIParams{
+		oci, err := oci.NewOCI(ocirepo.Params{
 			Registry:   registryAddr,
 			Repository: "repo-no-valid-features",
-			Parallel:   4,
-		}, true, logr.Discard())
+			Insecure:   true,
+		}, 4, logr.Discard())
 		Expect(err).To(Succeed())
 		versions, err := oci.GetVersions(ctx)
 		Expect(err).To(Succeed())

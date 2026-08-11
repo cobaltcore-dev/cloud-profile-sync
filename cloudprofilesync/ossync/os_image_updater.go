@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2025 SAP SE or an SAP affiliate company
 // SPDX-License-Identifier: Apache-2.0
 
-package cloudprofilesync
+package ossync
 
 import (
 	"cmp"
@@ -13,6 +13,37 @@ import (
 	gardenerv1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
 	"github.com/go-logr/logr"
 )
+
+type SourceImage struct {
+	// Version is the full tag from the registry (used as version key for legacy images).
+	Version string
+	// CleanVersion is the version from the "version" OCI annotation (e.g. "2262.0.0").
+	// When set, flavors are grouped under it in the CloudProfile instead of the full tag.
+	CleanVersion string
+	// TODO: deprecate once all images carry capability annotations; use Capabilities["architecture"] instead.
+	Architectures []string
+	// Capabilities holds parsed OCI manifest annotations. Nil means the image
+	// predates capability annotations and should use the legacy format.
+	Capabilities gardenerv1beta1.Capabilities
+	// SupportInPlaceUpdate hold value if image supports in place updates
+	SupportInPlaceUpdate bool
+}
+
+// effectiveVersion returns CleanVersion when available, falling back to Version.
+func (s SourceImage) effectiveVersion() string {
+	if s.CleanVersion != "" {
+		return s.CleanVersion
+	}
+	return s.Version
+}
+
+type Source interface {
+	GetVersions(ctx context.Context) ([]SourceImage, error)
+}
+
+type Provider interface {
+	Configure(cloudProfile *gardenerv1beta1.CloudProfileSpec, versions []SourceImage) error
+}
 
 func filterImages(log logr.Logger, versions []SourceImage) []SourceImage {
 	filtered := make([]SourceImage, 0, len(versions))
@@ -86,7 +117,6 @@ func (iu *ImageUpdater) Update(ctx context.Context, cpSpec *gardenerv1beta1.Clou
 	}
 
 	for _, sourceImage := range sourceImages {
-		supportInPlaceUpdate := slices.Contains(sourceImage.Capabilities[FeatureCapability], USIFeature)
 		// Always write the full tag version (legacy path, safe for running Shoots).
 		if idx, exists := existingVersions[sourceImage.Version]; exists {
 			image.Versions[idx].Architectures = sourceImage.Architectures
@@ -104,9 +134,9 @@ func (iu *ImageUpdater) Update(ctx context.Context, cpSpec *gardenerv1beta1.Clou
 					},
 					Architectures: sourceImage.Architectures,
 				})
-				if supportInPlaceUpdate {
+				if sourceImage.SupportInPlaceUpdate {
 					image.Versions[len(image.Versions)-1].InPlaceUpdates = &gardenerv1beta1.InPlaceUpdates{
-						Supported: supportInPlaceUpdate,
+						Supported: sourceImage.SupportInPlaceUpdate,
 					}
 				}
 				existingVersions[sourceImage.Version] = len(image.Versions) - 1
@@ -122,9 +152,9 @@ func (iu *ImageUpdater) Update(ctx context.Context, cpSpec *gardenerv1beta1.Clou
 						existing.Architectures = append(existing.Architectures, arch)
 					}
 				}
-				if supportInPlaceUpdate {
+				if sourceImage.SupportInPlaceUpdate {
 					existing.InPlaceUpdates = &gardenerv1beta1.InPlaceUpdates{
-						Supported: supportInPlaceUpdate,
+						Supported: sourceImage.SupportInPlaceUpdate,
 					}
 				}
 			} else {
@@ -134,9 +164,9 @@ func (iu *ImageUpdater) Update(ctx context.Context, cpSpec *gardenerv1beta1.Clou
 					},
 					Architectures: slices.Clone(sourceImage.Architectures),
 				})
-				if supportInPlaceUpdate {
+				if sourceImage.SupportInPlaceUpdate {
 					image.Versions[len(image.Versions)-1].InPlaceUpdates = &gardenerv1beta1.InPlaceUpdates{
-						Supported: supportInPlaceUpdate,
+						Supported: sourceImage.SupportInPlaceUpdate,
 					}
 				}
 				existingVersions[sourceImage.CleanVersion] = len(image.Versions) - 1

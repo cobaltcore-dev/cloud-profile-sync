@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2025 SAP SE or an SAP affiliate company
 // SPDX-License-Identifier: Apache-2.0
 
-package cloudprofilesync_test
+package ossync_test
 
 import (
 	"encoding/json"
@@ -11,14 +11,14 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync"
+	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/ossync"
 )
 
 var _ = Describe("filterImages", func() {
 	// helper: run Update and return the versions written to spec.machineImages
-	versions := func(ctx SpecContext, images []cloudprofilesync.SourceImage) []gardencorev1beta1.MachineImageVersion {
+	versions := func(ctx SpecContext, images []ossync.SourceImage) []gardencorev1beta1.MachineImageVersion {
 		mockSource.images = images
-		updater := cloudprofilesync.ImageUpdater{
+		updater := ossync.ImageUpdater{
 			Log:                GinkgoLogr,
 			Source:             &mockSource,
 			ImageName:          "test",
@@ -33,21 +33,21 @@ var _ = Describe("filterImages", func() {
 	}
 
 	It("invalid tag + no clean version: drops the image entirely", func(ctx SpecContext) {
-		result := versions(ctx, []cloudprofilesync.SourceImage{
+		result := versions(ctx, []ossync.SourceImage{
 			{Version: "not-a-version", Architectures: []string{"amd64"}},
 		})
 		Expect(result).To(BeEmpty())
 	})
 
 	It("invalid tag + invalid clean version: drops the image entirely", func(ctx SpecContext) {
-		result := versions(ctx, []cloudprofilesync.SourceImage{
+		result := versions(ctx, []ossync.SourceImage{
 			{Version: "not-a-version", CleanVersion: "also-not-a-version", Architectures: []string{"amd64"}},
 		})
 		Expect(result).To(BeEmpty())
 	})
 
 	It("invalid tag + valid clean version: NEW format only (no legacy entry)", func(ctx SpecContext) {
-		result := versions(ctx, []cloudprofilesync.SourceImage{
+		result := versions(ctx, []ossync.SourceImage{
 			{
 				Version:       "1877.9.2.0-metal-sci-pxe-amd64",
 				CleanVersion:  "1877.9.2",
@@ -60,7 +60,7 @@ var _ = Describe("filterImages", func() {
 	})
 
 	It("valid tag + valid clean version: BOTH formats", func(ctx SpecContext) {
-		result := versions(ctx, []cloudprofilesync.SourceImage{
+		result := versions(ctx, []ossync.SourceImage{
 			{
 				Version:       "2254.0.0-baremetal-sci-usi-amd64",
 				CleanVersion:  "2254.0.0",
@@ -74,7 +74,7 @@ var _ = Describe("filterImages", func() {
 	})
 
 	It("valid tag + no clean version: OLD format only", func(ctx SpecContext) {
-		result := versions(ctx, []cloudprofilesync.SourceImage{
+		result := versions(ctx, []ossync.SourceImage{
 			{Version: "1921.0.0", Architectures: []string{"amd64"}},
 		})
 		Expect(result).To(HaveLen(1))
@@ -82,7 +82,7 @@ var _ = Describe("filterImages", func() {
 	})
 
 	It("valid tag + invalid clean version: BOTH formats with clean version normalized", func(ctx SpecContext) {
-		result := versions(ctx, []cloudprofilesync.SourceImage{
+		result := versions(ctx, []ossync.SourceImage{
 			{
 				Version:       "1921.0.0-metal-sci-usi-amd64",
 				CleanVersion:  "1921.0",
@@ -96,7 +96,7 @@ var _ = Describe("filterImages", func() {
 	})
 
 	It("valid tag + unparsable clean version: does not write clean version entry", func(ctx SpecContext) {
-		result := versions(ctx, []cloudprofilesync.SourceImage{
+		result := versions(ctx, []ossync.SourceImage{
 			{
 				Version:       "1921.0.0-metal-sci-usi-amd64",
 				CleanVersion:  "not-a-version",
@@ -108,7 +108,7 @@ var _ = Describe("filterImages", func() {
 	})
 
 	It("no architectures: drops the image entirely", func(ctx SpecContext) {
-		result := versions(ctx, []cloudprofilesync.SourceImage{
+		result := versions(ctx, []ossync.SourceImage{
 			{Version: "1.0.0"},
 		})
 		Expect(result).To(BeEmpty())
@@ -118,8 +118,8 @@ var _ = Describe("filterImages", func() {
 var _ = Describe("ImageUpdater", func() {
 	Describe("flag OFF (default behavior)", func() {
 		It("adds an image from the source to the CloudProfile spec", func(ctx SpecContext) {
-			mockSource.images = []cloudprofilesync.SourceImage{{Version: "1.0.0", Architectures: []string{"amd64"}}}
-			updater := cloudprofilesync.ImageUpdater{
+			mockSource.images = []ossync.SourceImage{{Version: "1.0.0", Architectures: []string{"amd64"}}}
+			updater := ossync.ImageUpdater{
 				Log:       logr.Discard(),
 				Source:    &mockSource,
 				ImageName: "test",
@@ -131,11 +131,11 @@ var _ = Describe("ImageUpdater", func() {
 		})
 
 		It("adds multiple images from the source to the CloudProfile spec", func(ctx SpecContext) {
-			mockSource.images = []cloudprofilesync.SourceImage{
+			mockSource.images = []ossync.SourceImage{
 				{Version: "1.0.0", Architectures: []string{"amd64"}},
 				{Version: "2.0.0", Architectures: []string{"arm64", "amd64"}},
 			}
-			updater := cloudprofilesync.ImageUpdater{
+			updater := ossync.ImageUpdater{
 				Log:       GinkgoLogr,
 				Source:    &mockSource,
 				ImageName: "test",
@@ -156,8 +156,8 @@ var _ = Describe("ImageUpdater", func() {
 					}},
 				},
 			}
-			mockSource.images = []cloudprofilesync.SourceImage{{Version: "2.0.0", Architectures: []string{"arm64"}}}
-			updater := cloudprofilesync.ImageUpdater{Log: GinkgoLogr, Source: &mockSource, ImageName: "test"}
+			mockSource.images = []ossync.SourceImage{{Version: "2.0.0", Architectures: []string{"arm64"}}}
+			updater := ossync.ImageUpdater{Log: GinkgoLogr, Source: &mockSource, ImageName: "test"}
 			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
 			Expect(cpSpec.MachineImages[0].Versions).To(HaveLen(2))
 			Expect(cpSpec.MachineImages[0].Versions[0].Version).To(Equal("1.0.0"))
@@ -175,8 +175,8 @@ var _ = Describe("ImageUpdater", func() {
 					}},
 				},
 			}
-			mockSource.images = []cloudprofilesync.SourceImage{{Version: "1.1.0", Architectures: []string{"arm64"}}}
-			updater := cloudprofilesync.ImageUpdater{Log: GinkgoLogr, Source: &mockSource, ImageName: "test"}
+			mockSource.images = []ossync.SourceImage{{Version: "1.1.0", Architectures: []string{"arm64"}}}
+			updater := ossync.ImageUpdater{Log: GinkgoLogr, Source: &mockSource, ImageName: "test"}
 			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
 			Expect(cpSpec.MachineImages).To(ConsistOf([]gardencorev1beta1.MachineImage{
 				{Name: "test", Versions: []gardencorev1beta1.MachineImageVersion{
@@ -190,7 +190,7 @@ var _ = Describe("ImageUpdater", func() {
 		})
 
 		It("ignores CleanVersion when flag is OFF", func(ctx SpecContext) {
-			mockSource.images = []cloudprofilesync.SourceImage{
+			mockSource.images = []ossync.SourceImage{
 				{
 					Version:       "2254.0.0-baremetal-sci-usi-amd64",
 					CleanVersion:  "2254.0.0",
@@ -198,7 +198,7 @@ var _ = Describe("ImageUpdater", func() {
 					Capabilities:  gardencorev1beta1.Capabilities{"architecture": {"amd64"}, "feature": {"sci", "_usi"}},
 				},
 			}
-			updater := cloudprofilesync.ImageUpdater{
+			updater := ossync.ImageUpdater{
 				Log:                GinkgoLogr,
 				Source:             &mockSource,
 				ImageName:          "test",
@@ -211,8 +211,8 @@ var _ = Describe("ImageUpdater", func() {
 		})
 
 		It("invokes the given provider", func(ctx SpecContext) {
-			mockSource.images = []cloudprofilesync.SourceImage{{Version: "1.0.0", Architectures: []string{"amd64"}}}
-			updater := cloudprofilesync.ImageUpdater{
+			mockSource.images = []ossync.SourceImage{{Version: "1.0.0", Architectures: []string{"amd64"}}}
+			updater := ossync.ImageUpdater{
 				Log:       GinkgoLogr,
 				Source:    &mockSource,
 				ImageName: "test",
@@ -220,18 +220,18 @@ var _ = Describe("ImageUpdater", func() {
 			}
 			var cpSpec gardencorev1beta1.CloudProfileSpec
 			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
-			var fromProvider []cloudprofilesync.SourceImage
+			var fromProvider []ossync.SourceImage
 			Expect(json.Unmarshal(cpSpec.ProviderConfig.Raw, &fromProvider)).To(Succeed())
 			Expect(fromProvider).To(Equal(mockSource.images))
 		})
 
 		It("in-place update support", func(ctx SpecContext) {
-			mockSource.images = []cloudprofilesync.SourceImage{{
-				Version:       "1.0.0",
-				Architectures: []string{"amd64"},
-				Capabilities:  map[string]gardencorev1beta1.CapabilityValues{"feature": {cloudprofilesync.USIFeature}}},
-			}
-			updater := cloudprofilesync.ImageUpdater{
+			mockSource.images = []ossync.SourceImage{{
+				Version:              "1.0.0",
+				Architectures:        []string{"amd64"},
+				SupportInPlaceUpdate: true,
+			}}
+			updater := ossync.ImageUpdater{
 				Log:       logr.Discard(),
 				Source:    &mockSource,
 				ImageName: "test",
@@ -247,15 +247,16 @@ var _ = Describe("ImageUpdater", func() {
 
 	Describe("flag ON (dual-write clean version)", func() {
 		It("writes both full tag and clean version entries when CleanVersion differs", func(ctx SpecContext) {
-			mockSource.images = []cloudprofilesync.SourceImage{
+			mockSource.images = []ossync.SourceImage{
 				{
-					Version:       "2254.0.0-baremetal-sci-usi-amd64",
-					CleanVersion:  "2254.0.0",
-					Architectures: []string{"amd64"},
-					Capabilities:  gardencorev1beta1.Capabilities{"architecture": {"amd64"}, "feature": {"sci", "_usi"}},
+					Version:              "2254.0.0-baremetal-sci-usi-amd64",
+					CleanVersion:         "2254.0.0",
+					Architectures:        []string{"amd64"},
+					Capabilities:         gardencorev1beta1.Capabilities{"architecture": {"amd64"}, "feature": {"sci", "_usi"}},
+					SupportInPlaceUpdate: true,
 				},
 			}
-			updater := cloudprofilesync.ImageUpdater{
+			updater := ossync.ImageUpdater{
 				Log:                GinkgoLogr,
 				Source:             &mockSource,
 				ImageName:          "test",
@@ -272,7 +273,7 @@ var _ = Describe("ImageUpdater", func() {
 		})
 
 		It("does not add a duplicate clean version entry on re-reconcile", func(ctx SpecContext) {
-			mockSource.images = []cloudprofilesync.SourceImage{
+			mockSource.images = []ossync.SourceImage{
 				{
 					Version:       "2254.0.0-baremetal-sci-usi-amd64",
 					CleanVersion:  "2254.0.0",
@@ -280,7 +281,7 @@ var _ = Describe("ImageUpdater", func() {
 					Capabilities:  gardencorev1beta1.Capabilities{"architecture": {"amd64"}, "feature": {"sci", "_usi"}},
 				},
 			}
-			updater := cloudprofilesync.ImageUpdater{
+			updater := ossync.ImageUpdater{
 				Log:                GinkgoLogr,
 				Source:             &mockSource,
 				ImageName:          "test",
@@ -293,7 +294,7 @@ var _ = Describe("ImageUpdater", func() {
 		})
 
 		It("skips legacy spec entry for non-semver raw tag but still passes image to provider", func(ctx SpecContext) {
-			mockSource.images = []cloudprofilesync.SourceImage{
+			mockSource.images = []ossync.SourceImage{
 				{
 					Version:       "1877.9.2.0-metal-sci-pxe-amd64-1877-9-2-6bb2b442",
 					CleanVersion:  "1877.9.2",
@@ -301,7 +302,7 @@ var _ = Describe("ImageUpdater", func() {
 					Capabilities:  gardencorev1beta1.Capabilities{"architecture": {"amd64"}, "feature": {"sci", "_pxe"}},
 				},
 			}
-			updater := cloudprofilesync.ImageUpdater{
+			updater := ossync.ImageUpdater{
 				Log:                GinkgoLogr,
 				Source:             &mockSource,
 				ImageName:          "test",
@@ -317,17 +318,17 @@ var _ = Describe("ImageUpdater", func() {
 			Expect(cpSpec.MachineImages[0].Versions[0].Version).To(Equal("1877.9.2"))
 
 			// The raw tag must still reach the provider (capabilityFlavors).
-			var fromProvider []cloudprofilesync.SourceImage
+			var fromProvider []ossync.SourceImage
 			Expect(json.Unmarshal(cpSpec.ProviderConfig.Raw, &fromProvider)).To(Succeed())
 			Expect(fromProvider).To(HaveLen(1))
 			Expect(fromProvider[0].Version).To(Equal("1877.9.2.0-metal-sci-pxe-amd64-1877-9-2-6bb2b442"))
 		})
 
 		It("writes only full tag when CleanVersion is absent", func(ctx SpecContext) {
-			mockSource.images = []cloudprofilesync.SourceImage{
+			mockSource.images = []ossync.SourceImage{
 				{Version: "1877.0.0", Architectures: []string{"amd64"}},
 			}
-			updater := cloudprofilesync.ImageUpdater{
+			updater := ossync.ImageUpdater{
 				Log:                GinkgoLogr,
 				Source:             &mockSource,
 				ImageName:          "test",
@@ -340,13 +341,13 @@ var _ = Describe("ImageUpdater", func() {
 		})
 
 		It("in-place update support", func(ctx SpecContext) {
-			mockSource.images = []cloudprofilesync.SourceImage{{
-				Version:       "1.0.0",
-				CleanVersion:  "1.1",
-				Architectures: []string{"amd64"},
-				Capabilities:  map[string]gardencorev1beta1.CapabilityValues{"feature": {cloudprofilesync.USIFeature}}},
-			}
-			updater := cloudprofilesync.ImageUpdater{
+			mockSource.images = []ossync.SourceImage{{
+				Version:              "1.0.0",
+				CleanVersion:         "1.1",
+				Architectures:        []string{"amd64"},
+				SupportInPlaceUpdate: true,
+			}}
+			updater := ossync.ImageUpdater{
 				Log:                logr.Discard(),
 				Source:             &mockSource,
 				ImageName:          "test",
