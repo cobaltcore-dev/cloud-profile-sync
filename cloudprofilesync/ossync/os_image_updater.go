@@ -122,6 +122,13 @@ func (iu *ImageUpdater) resolveExpiration(src SourceImage, existing *metav1.Time
 	return &now
 }
 
+func inPlaceUpdates(supported bool) *gardenerv1beta1.InPlaceUpdates {
+	if !supported {
+		return nil
+	}
+	return &gardenerv1beta1.InPlaceUpdates{Supported: true}
+}
+
 func (iu *ImageUpdater) Update(ctx context.Context, cpSpec *gardenerv1beta1.CloudProfileSpec) error {
 	sourceImages, err := iu.Source.GetVersions(ctx)
 	if err != nil {
@@ -157,6 +164,7 @@ func (iu *ImageUpdater) Update(ctx context.Context, cpSpec *gardenerv1beta1.Clou
 			image.Versions[idx].Classification = sourceImage.Classification
 			// Stamp expiration once on the transition to deprecated; preserve it thereafter.
 			image.Versions[idx].ExpirationDate = iu.resolveExpiration(sourceImage, image.Versions[idx].ExpirationDate)
+			image.Versions[idx].InPlaceUpdates = inPlaceUpdates(sourceImage.SupportInPlaceUpdate)
 		} else {
 			// Moving this check to filterImages() would break the core architectural goal of GEP-33
 			// as it intentionally decouples the OCI registry tag from the semantic OS version
@@ -191,11 +199,7 @@ func (iu *ImageUpdater) Update(ctx context.Context, cpSpec *gardenerv1beta1.Clou
 						existing.Architectures = append(existing.Architectures, arch)
 					}
 				}
-				if sourceImage.SupportInPlaceUpdate {
-					existing.InPlaceUpdates = &gardenerv1beta1.InPlaceUpdates{
-						Supported: sourceImage.SupportInPlaceUpdate,
-					}
-				}
+				existing.InPlaceUpdates = inPlaceUpdates(sourceImage.SupportInPlaceUpdate)
 			} else {
 				image.Versions = append(image.Versions, gardenerv1beta1.MachineImageVersion{
 					ExpirableVersion: gardenerv1beta1.ExpirableVersion{
