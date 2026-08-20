@@ -90,8 +90,9 @@ func TestConfigureMergesIntoExistingImage(t *testing.T) {
 	}
 }
 
-// Configure does not duplicate an existing region or overwrite its ID.
-func TestConfigureIsIdempotentOnRegions(t *testing.T) {
+// Configure does not duplicate an existing region but updates its ID so a
+// rebuilt image (same version, new UUID) replaces the stale mapping.
+func TestConfigureUpdatesExistingRegionID(t *testing.T) {
 	p := &OpenStackProvider{ImageName: imageName}
 	spec := specWithConfig(t, &openstackv1alpha1.CloudProfileConfig{
 		MachineImages: []openstackv1alpha1.MachineImages{
@@ -100,19 +101,19 @@ func TestConfigureIsIdempotentOnRegions(t *testing.T) {
 				Versions: []openstackv1alpha1.MachineImageVersion{
 					{
 						Version: testVersion,
-						Regions: []openstackv1alpha1.RegionIDMapping{{Name: regionDE, ID: "existing-uuid"}},
+						Regions: []openstackv1alpha1.RegionIDMapping{{Name: regionDE, ID: "stale-uuid"}},
 					},
 				},
 			},
 		},
 	})
 
-	// Re-apply the same region (with a different ID) plus a new one.
+	// Re-apply the same region (with a new ID) plus a new one.
 	err := p.Configure(spec, []ossync.SourceImage{
 		{
 			Version: testVersion,
 			Regions: []ossync.RegionImage{
-				{Region: regionDE, ID: "would-be-new-uuid"},
+				{Region: regionDE, ID: "rebuilt-uuid"},
 				{Region: regionNL, ID: "uuid-nl-1"},
 			},
 		},
@@ -130,8 +131,8 @@ func TestConfigureIsIdempotentOnRegions(t *testing.T) {
 		t.Fatalf("got %d regions, want 2 (%s must not be duplicated): %+v", len(v.Regions), regionDE, v.Regions)
 	}
 	for _, r := range v.Regions {
-		if r.Name == regionDE && r.ID != "existing-uuid" {
-			t.Errorf("%s ID = %q, want existing-uuid (existing region must not be overwritten)", regionDE, r.ID)
+		if r.Name == regionDE && r.ID != "rebuilt-uuid" {
+			t.Errorf("%s ID = %q, want rebuilt-uuid (stale mapping must be updated)", regionDE, r.ID)
 		}
 	}
 }

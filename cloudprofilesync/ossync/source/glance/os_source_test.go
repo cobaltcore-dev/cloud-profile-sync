@@ -6,6 +6,7 @@ package glance
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/go-logr/logr"
 	"github.com/gophercloud/gophercloud/v2"
@@ -89,6 +90,54 @@ func TestGetVersionsUsiDoesNotCollide(t *testing.T) {
 	}
 	if v.Regions[0].ID != "standard-uuid" {
 		t.Errorf("region ID = %q, want standard-uuid (usi UUID must not win)", v.Regions[0].ID)
+	}
+}
+
+// When a region has two images for the same version (a rebuilt image with a new
+// UUID), the newest active image is chosen deterministically.
+func TestGetVersionsPicksCanonicalImage(t *testing.T) {
+	older := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	newer := time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)
+	imgs := []images.Image{
+		{ID: "old-active", Name: stdImage, Status: images.ImageStatusActive, CreatedAt: older},
+		{ID: "new-active", Name: stdImage, Status: images.ImageStatusActive, CreatedAt: newer},
+		{ID: "new-queued", Name: stdImage, Status: images.ImageStatusQueued, CreatedAt: newer},
+	}
+	g := newTestGlance(t, GlanceParams{Regions: []string{testRegion}}, map[string][]images.Image{testRegion: imgs})
+
+	versions, err := g.GetVersions(context.Background())
+	if err != nil {
+		t.Fatalf("GetVersions: %v", err)
+	}
+	if len(versions) != 1 {
+		t.Fatalf("got %d versions, want 1: %+v", len(versions), versions)
+	}
+	v := versions[0]
+	if len(v.Regions) != 1 {
+		t.Fatalf("got %d region entries, want 1 (rebuilt image must not duplicate the region): %+v", len(v.Regions), v.Regions)
+	}
+	if v.Regions[0].ID != "new-active" {
+		t.Errorf("region ID = %q, want new-active (newest active image must win)", v.Regions[0].ID)
+	}
+}
+
+// preferImage selection is stable regardless of listing order.
+func TestPreferImageDeterministic(t *testing.T) {
+	base := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	active := images.Image{ID: "a", Status: images.ImageStatusActive, CreatedAt: base}
+	queued := images.Image{ID: "z", Status: images.ImageStatusQueued, CreatedAt: base.Add(time.Hour)}
+	if !preferImage(active, queued) {
+		t.Error("active image should be preferred over a newer queued image")
+	}
+	if preferImage(queued, active) {
+		t.Error("newer queued image should not be preferred over an active image")
+	}
+
+	// Same status and CreatedAt: larger UUID wins, both directions.
+	lo := images.Image{ID: "aaa", Status: images.ImageStatusActive, CreatedAt: base}
+	hi := images.Image{ID: "bbb", Status: images.ImageStatusActive, CreatedAt: base}
+	if !preferImage(hi, lo) || preferImage(lo, hi) {
+		t.Error("UUID tie-break is not deterministic")
 	}
 }
 
