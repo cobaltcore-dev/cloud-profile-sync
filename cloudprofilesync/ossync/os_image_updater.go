@@ -199,11 +199,15 @@ func (iu *ImageUpdater) Update(ctx context.Context, cpSpec *gardenerv1beta1.Clou
 						existing.Architectures = append(existing.Architectures, arch)
 					}
 				}
+				existing.Classification = sourceImage.Classification
+				existing.ExpirationDate = iu.resolveExpiration(sourceImage, existing.ExpirationDate)
 				existing.InPlaceUpdates = inPlaceUpdates(sourceImage.SupportInPlaceUpdate)
 			} else {
 				image.Versions = append(image.Versions, gardenerv1beta1.MachineImageVersion{
 					ExpirableVersion: gardenerv1beta1.ExpirableVersion{
-						Version: sourceImage.CleanVersion,
+						Version:        sourceImage.CleanVersion,
+						Classification: sourceImage.Classification,
+						ExpirationDate: iu.resolveExpiration(sourceImage, nil),
 					},
 					Architectures: slices.Clone(sourceImage.Architectures),
 				})
