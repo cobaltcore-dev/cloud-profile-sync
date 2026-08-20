@@ -52,15 +52,18 @@ func (p *OpenStackProvider) Configure(cpSpec *gardencorev1beta1.CloudProfileSpec
 		entry := &image.Versions[idx]
 
 		for _, r := range src.Regions {
-			alreadyPresent := slices.ContainsFunc(entry.Regions, func(m openstackv1alpha1.RegionIDMapping) bool {
+			existing := slices.IndexFunc(entry.Regions, func(m openstackv1alpha1.RegionIDMapping) bool {
 				return m.Name == r.Region
 			})
-			if !alreadyPresent {
+			if existing == -1 {
 				entry.Regions = append(entry.Regions, openstackv1alpha1.RegionIDMapping{
 					Name: r.Region,
 					ID:   r.ID,
 				})
+				continue
 			}
+			// Update in place: a rebuilt image keeps the version but gets a new UUID.
+			entry.Regions[existing].ID = r.ID
 		}
 	}
 

@@ -232,12 +232,20 @@ func (g *Glance) discoverRegion(ctx context.Context, region string) ([]ossync.So
 		return nil, fmt.Errorf("region %s: list images: %w", region, err)
 	}
 
-	var found []ossync.SourceImage
+	// Pick one canonical image per version (a rebuilt image reuses the version with a new UUID).
+	canonical := map[string]images.Image{}
 	for _, img := range imgs {
 		version, ok := g.parseVersion(img.Name)
 		if !ok {
 			continue
 		}
+		if cur, exists := canonical[version]; !exists || preferImage(img, cur) {
+			canonical[version] = img
+		}
+	}
+
+	found := make([]ossync.SourceImage, 0, len(canonical))
+	for version, img := range canonical {
 		found = append(found, ossync.SourceImage{
 			Version:       version,
 			Architectures: []string{"amd64"},
@@ -245,6 +253,19 @@ func (g *Glance) discoverRegion(ctx context.Context, region string) ([]ossync.So
 		})
 	}
 	return found, nil
+}
+
+// preferImage reports whether candidate should replace current: active wins over non-active, then newer CreatedAt, then larger UUID (deterministic tiebreak).
+func preferImage(candidate, current images.Image) bool {
+	candActive := candidate.Status == images.ImageStatusActive
+	curActive := current.Status == images.ImageStatusActive
+	if candActive != curActive {
+		return candActive
+	}
+	if !candidate.CreatedAt.Equal(current.CreatedAt) {
+		return candidate.CreatedAt.After(current.CreatedAt)
+	}
+	return candidate.ID > current.ID
 }
 
 // compareSemverDesc orders two versions newest-first. Unparsable versions sort last.
