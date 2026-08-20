@@ -17,7 +17,6 @@ import (
 	"github.com/gophercloud/gophercloud/v2/openstack"
 	"github.com/gophercloud/gophercloud/v2/openstack/image/v2/images"
 	"golang.org/x/sync/semaphore"
-	_ "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 const (
@@ -152,7 +151,7 @@ func (g *Glance) authOptions() gophercloud.AuthOptions {
 }
 
 func (g *Glance) GetVersions(ctx context.Context) ([]ossync.SourceImage, error) {
-	out := make(chan Result[[]ossync.SourceImage])
+	out := make(chan Result[[]ossync.SourceImage], len(g.params.Regions))
 	for _, region := range g.params.Regions {
 		go func() {
 			if err := g.sema.Acquire(ctx, 1); err != nil {
