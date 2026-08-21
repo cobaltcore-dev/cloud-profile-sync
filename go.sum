@@ -54,8 +54,8 @@ github.com/fsnotify/fsnotify v1.10.1 h1:b0/UzAf9yR5rhf3RPm9gf3ehBPpf0oZKIjtpKrx5
 github.com/fsnotify/fsnotify v1.10.1/go.mod h1:TLheqan6HD6GBK6PrDWyDPBaEV8LspOxvPSjC+bVfgo=
 github.com/fxamacker/cbor/v2 v2.9.2 h1:X4Ksno9+x3cz0TZv69ec1hxP/+tymuR8PXQJyDwfh78=
 github.com/fxamacker/cbor/v2 v2.9.2/go.mod h1:vM4b+DJCtHn+zz7h3FFp/hDAI9WNWCsZj23V5ytsSxQ=
-github.com/gardener/gardener-extension-provider-openstack v1.57.0 h1:QQXVSOC+9c94r21BbcLW1gQfxJ95zmo0e18Aoy32BhQ=
-github.com/gardener/gardener-extension-provider-openstack v1.57.0/go.mod h1:N397cSwvKwFl/as2g39eeXyFj3gON83KQb7TliQX9nI=
+github.com/gardener/gardener-extension-provider-openstack v1.54.0 h1:Bg/5rk1zMdMxtsLPKhOKfo3e6O2n+JwETzAixPDSJ3o=
+github.com/gardener/gardener-extension-provider-openstack v1.54.0/go.mod h1:mQue5NBj8udoTdD4ArXMuJ1wNMemTl2Am9astQ0SZvc=
 github.com/gardener/gardener/pkg/apis v1.145.0 h1:E9mnDYOKOoOEJnpGCPpFuS0OX32uoOnv27a03b/nlP0=
 github.com/gardener/gardener/pkg/apis v1.145.0/go.mod h1:LsjZw5/3awWSMDnKg4bgftM1kW9Dkeor/ged5DNHVPI=
 github.com/gkampitakis/ciinfo v0.3.2 h1:JcuOPk8ZU7nZQjdUhctuhQofk7BGHuIy0c9Ez8BNhXs=

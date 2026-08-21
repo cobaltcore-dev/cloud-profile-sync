@@ -161,9 +161,9 @@ func (iu *ImageUpdater) Update(ctx context.Context, cpSpec *gardenerv1beta1.Clou
 		// Always write the full tag version (legacy path, safe for running Shoots).
 		if idx, exists := existingVersions[sourceImage.Version]; exists {
 			image.Versions[idx].Architectures = sourceImage.Architectures
-			image.Versions[idx].Classification = sourceImage.Classification
+			image.Versions[idx].Classification = sourceImage.Classification //nolint:staticcheck // legacy fields; Lifecycle needs the VersionClassificationLifecycle feature gate
 			// Stamp expiration once on the transition to deprecated; preserve it thereafter.
-			image.Versions[idx].ExpirationDate = iu.resolveExpiration(sourceImage, image.Versions[idx].ExpirationDate)
+			image.Versions[idx].ExpirationDate = iu.resolveExpiration(sourceImage, image.Versions[idx].ExpirationDate) //nolint:staticcheck // legacy fields; Lifecycle needs the VersionClassificationLifecycle feature gate
 			image.Versions[idx].InPlaceUpdates = inPlaceUpdates(sourceImage.SupportInPlaceUpdate)
 		} else {
 			// Moving this check to filterImages() would break the core architectural goal of GEP-33
@@ -199,8 +199,8 @@ func (iu *ImageUpdater) Update(ctx context.Context, cpSpec *gardenerv1beta1.Clou
 						existing.Architectures = append(existing.Architectures, arch)
 					}
 				}
-				existing.Classification = sourceImage.Classification
-				existing.ExpirationDate = iu.resolveExpiration(sourceImage, existing.ExpirationDate)
+				existing.Classification = sourceImage.Classification                                 //nolint:staticcheck // legacy fields; Lifecycle needs the VersionClassificationLifecycle feature gate
+				existing.ExpirationDate = iu.resolveExpiration(sourceImage, existing.ExpirationDate) //nolint:staticcheck // legacy fields; Lifecycle needs the VersionClassificationLifecycle feature gate
 				existing.InPlaceUpdates = inPlaceUpdates(sourceImage.SupportInPlaceUpdate)
 			} else {
 				image.Versions = append(image.Versions, gardenerv1beta1.MachineImageVersion{

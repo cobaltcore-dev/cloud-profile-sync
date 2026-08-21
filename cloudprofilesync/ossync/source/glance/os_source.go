@@ -10,13 +10,14 @@ import (
 	"time"
 
 	"github.com/blang/semver/v4"
-	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/ossync"
 	gardenerv1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
 	"github.com/go-logr/logr"
 	"github.com/gophercloud/gophercloud/v2"
 	"github.com/gophercloud/gophercloud/v2/openstack"
 	"github.com/gophercloud/gophercloud/v2/openstack/image/v2/images"
 	"golang.org/x/sync/semaphore"
+
+	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/ossync"
 )
 
 const (
