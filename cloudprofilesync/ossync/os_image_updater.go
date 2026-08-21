@@ -8,10 +8,12 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"time"
 
 	"github.com/blang/semver/v4"
 	gardenerv1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
 	"github.com/go-logr/logr"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 type SourceImage struct {
@@ -27,6 +29,22 @@ type SourceImage struct {
 	Capabilities gardenerv1beta1.Capabilities
 	// SupportInPlaceUpdate hold value if image supports in place updates
 	SupportInPlaceUpdate bool
+	// Regions maps a region to the provider-specific image identifier (e.g. an
+	// OpenStack Glance image UUID) for this version. It is nil for sources whose
+	// images are not region-specific (e.g. OCI).
+	Regions []RegionImage
+	// Classification is the lifecycle state of the image version. Nil means unset (supported).
+	Classification *gardenerv1beta1.VersionClassification
+	// ExpirationDate is the date after which the version should no longer be used.
+	ExpirationDate *metav1.Time
+}
+
+// RegionImage is the image identifier for a single version in a single region.
+type RegionImage struct {
+	// Region is the name of the region (e.g. "eu-de-1").
+	Region string
+	// ID is the image identifier in that region (e.g. a Glance image UUID).
+	ID string
 }
 
 // effectiveVersion returns CleanVersion when available, falling back to Version.
@@ -88,6 +106,29 @@ type ImageUpdater struct {
 	EnableCapabilities bool
 }
 
+// resolveExpiration decides the expiration date to write for a source image.
+func (iu *ImageUpdater) resolveExpiration(src SourceImage, existing *metav1.Time) *metav1.Time {
+	isDeprecated := src.Classification != nil && *src.Classification == gardenerv1beta1.ClassificationDeprecated
+	if !isDeprecated {
+		return src.ExpirationDate
+	}
+	if existing != nil {
+		return existing
+	}
+	if src.ExpirationDate != nil {
+		return src.ExpirationDate
+	}
+	now := metav1.NewTime(time.Now())
+	return &now
+}
+
+func inPlaceUpdates(supported bool) *gardenerv1beta1.InPlaceUpdates {
+	if !supported {
+		return nil
+	}
+	return &gardenerv1beta1.InPlaceUpdates{Supported: true}
+}
+
 func (iu *ImageUpdater) Update(ctx context.Context, cpSpec *gardenerv1beta1.CloudProfileSpec) error {
 	sourceImages, err := iu.Source.GetVersions(ctx)
 	if err != nil {
@@ -120,6 +161,10 @@ func (iu *ImageUpdater) Update(ctx context.Context, cpSpec *gardenerv1beta1.Clou
 		// Always write the full tag version (legacy path, safe for running Shoots).
 		if idx, exists := existingVersions[sourceImage.Version]; exists {
 			image.Versions[idx].Architectures = sourceImage.Architectures
+			image.Versions[idx].Classification = sourceImage.Classification //nolint:staticcheck // legacy fields; Lifecycle needs the VersionClassificationLifecycle feature gate
+			// Stamp expiration once on the transition to deprecated; preserve it thereafter.
+			image.Versions[idx].ExpirationDate = iu.resolveExpiration(sourceImage, image.Versions[idx].ExpirationDate) //nolint:staticcheck // legacy fields; Lifecycle needs the VersionClassificationLifecycle feature gate
+			image.Versions[idx].InPlaceUpdates = inPlaceUpdates(sourceImage.SupportInPlaceUpdate)
 		} else {
 			// Moving this check to filterImages() would break the core architectural goal of GEP-33
 			// as it intentionally decouples the OCI registry tag from the semantic OS version
@@ -130,7 +175,9 @@ func (iu *ImageUpdater) Update(ctx context.Context, cpSpec *gardenerv1beta1.Clou
 			} else {
 				image.Versions = append(image.Versions, gardenerv1beta1.MachineImageVersion{
 					ExpirableVersion: gardenerv1beta1.ExpirableVersion{
-						Version: sourceImage.Version,
+						Version:        sourceImage.Version,
+						Classification: sourceImage.Classification,
+						ExpirationDate: iu.resolveExpiration(sourceImage, nil),
 					},
 					Architectures: sourceImage.Architectures,
 				})
@@ -152,15 +199,15 @@ func (iu *ImageUpdater) Update(ctx context.Context, cpSpec *gardenerv1beta1.Clou
 						existing.Architectures = append(existing.Architectures, arch)
 					}
 				}
-				if sourceImage.SupportInPlaceUpdate {
-					existing.InPlaceUpdates = &gardenerv1beta1.InPlaceUpdates{
-						Supported: sourceImage.SupportInPlaceUpdate,
-					}
-				}
+				existing.Classification = sourceImage.Classification                                 //nolint:staticcheck // legacy fields; Lifecycle needs the VersionClassificationLifecycle feature gate
+				existing.ExpirationDate = iu.resolveExpiration(sourceImage, existing.ExpirationDate) //nolint:staticcheck // legacy fields; Lifecycle needs the VersionClassificationLifecycle feature gate
+				existing.InPlaceUpdates = inPlaceUpdates(sourceImage.SupportInPlaceUpdate)
 			} else {
 				image.Versions = append(image.Versions, gardenerv1beta1.MachineImageVersion{
 					ExpirableVersion: gardenerv1beta1.ExpirableVersion{
-						Version: sourceImage.CleanVersion,
+						Version:        sourceImage.CleanVersion,
+						Classification: sourceImage.Classification,
+						ExpirationDate: iu.resolveExpiration(sourceImage, nil),
 					},
 					Architectures: slices.Clone(sourceImage.Architectures),
 				})
