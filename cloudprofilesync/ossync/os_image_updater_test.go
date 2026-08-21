@@ -393,7 +393,7 @@ var _ = Describe("ImageUpdater", func() {
 			updater := newUpdater()
 			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
 			Expect(cpSpec.MachineImages[0].Versions).To(HaveLen(1))
-			Expect(cpSpec.MachineImages[0].Versions[0].ExpirationDate).To(Equal(&existing))
+			Expect(cpSpec.MachineImages[0].Versions[0].ExpirationDate).To(Equal(&existing)) //nolint:staticcheck // legacy field; Lifecycle needs the VersionClassificationLifecycle feature gate
 		})
 
 		It("uses the source's expiration date for a new deprecated version", func(ctx SpecContext) {
@@ -405,7 +405,7 @@ var _ = Describe("ImageUpdater", func() {
 			var cpSpec gardencorev1beta1.CloudProfileSpec
 			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
 			Expect(cpSpec.MachineImages[0].Versions).To(HaveLen(1))
-			Expect(cpSpec.MachineImages[0].Versions[0].ExpirationDate).To(Equal(&fromSource))
+			Expect(cpSpec.MachineImages[0].Versions[0].ExpirationDate).To(Equal(&fromSource)) //nolint:staticcheck // legacy field; Lifecycle needs the VersionClassificationLifecycle feature gate
 		})
 
 		It("stamps an expiration date for a new deprecated version without one", func(ctx SpecContext) {
@@ -416,7 +416,7 @@ var _ = Describe("ImageUpdater", func() {
 			var cpSpec gardencorev1beta1.CloudProfileSpec
 			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
 			Expect(cpSpec.MachineImages[0].Versions).To(HaveLen(1))
-			Expect(cpSpec.MachineImages[0].Versions[0].ExpirationDate).NotTo(BeNil())
+			Expect(cpSpec.MachineImages[0].Versions[0].ExpirationDate).NotTo(BeNil()) //nolint:staticcheck // legacy field; Lifecycle needs the VersionClassificationLifecycle feature gate
 		})
 
 		It("does not set an expiration date for a non-deprecated version", func(ctx SpecContext) {
@@ -427,7 +427,7 @@ var _ = Describe("ImageUpdater", func() {
 			var cpSpec gardencorev1beta1.CloudProfileSpec
 			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
 			Expect(cpSpec.MachineImages[0].Versions).To(HaveLen(1))
-			Expect(cpSpec.MachineImages[0].Versions[0].ExpirationDate).To(BeNil())
+			Expect(cpSpec.MachineImages[0].Versions[0].ExpirationDate).To(BeNil()) //nolint:staticcheck // legacy field; Lifecycle needs the VersionClassificationLifecycle feature gate
 		})
 	})
 })
