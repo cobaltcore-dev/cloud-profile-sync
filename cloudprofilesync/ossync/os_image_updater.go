@@ -7,7 +7,6 @@ import (
 	"cmp"
 	"context"
 	"fmt"
-	"reflect"
 	"slices"
 	"time"
 
@@ -129,11 +128,27 @@ func mergeCapabilityFlavor(existing []gardenerv1beta1.MachineImageFlavor, caps g
 		return existing
 	}
 	for _, f := range existing {
-		if reflect.DeepEqual(f.Capabilities, caps) {
+		if capabilitiesEqual(f.Capabilities, caps) {
 			return existing
 		}
 	}
 	return append(existing, gardenerv1beta1.MachineImageFlavor{Capabilities: caps})
+}
+
+func capabilitiesEqual(a, b gardenerv1beta1.Capabilities) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k, aVals := range a {
+		bVals, ok := b[k]
+		if !ok {
+			return false
+		}
+		if !slices.Equal(aVals, bVals) {
+			return false
+		}
+	}
+	return true
 }
 
 func inPlaceUpdates(supported bool) *gardenerv1beta1.InPlaceUpdates {
@@ -204,8 +219,10 @@ func (iu *ImageUpdater) Update(ctx context.Context, cpSpec *gardenerv1beta1.Clou
 			}
 		}
 
-		// When capabilities are enabled, also write the clean version entry.
-		if iu.EnableCapabilities && sourceImage.CleanVersion != "" && sourceImage.CleanVersion != sourceImage.Version {
+		// When capabilities are enabled, also write/update the clean version entry.
+		// When CleanVersion == Version the entry already exists from the legacy path above;
+		// the existing-entry branch merges the flavor onto it without re-writing other fields.
+		if iu.EnableCapabilities && sourceImage.CleanVersion != "" {
 			if idx, exists := existingVersions[sourceImage.CleanVersion]; exists {
 				existing := &image.Versions[idx]
 				for _, arch := range sourceImage.Architectures {
