@@ -248,6 +248,143 @@ var _ = Describe("ImageUpdater", func() {
 	})
 
 	Describe("flag ON (dual-write clean version)", func() {
+		It("sets CapabilityFlavors on the clean version entry", func(ctx SpecContext) {
+			mockSource.images = []ossync.SourceImage{
+				{
+					Version:       "2254.0.0-baremetal-sci-usi-amd64",
+					CleanVersion:  "2254.0.0",
+					Architectures: []string{"amd64"},
+					Capabilities:  gardencorev1beta1.Capabilities{"architecture": {"amd64"}, "feature": {"sci", "_usi"}},
+				},
+			}
+			updater := ossync.ImageUpdater{
+				Log:                GinkgoLogr,
+				Source:             &mockSource,
+				ImageName:          "test",
+				EnableCapabilities: true,
+			}
+			var cpSpec gardencorev1beta1.CloudProfileSpec
+			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
+
+			versions := cpSpec.MachineImages[0].Versions
+			var cleanEntry *gardencorev1beta1.MachineImageVersion
+			for i := range versions {
+				if versions[i].Version == "2254.0.0" {
+					cleanEntry = &versions[i]
+					break
+				}
+			}
+			Expect(cleanEntry).NotTo(BeNil())
+			Expect(cleanEntry.CapabilityFlavors).To(HaveLen(1))
+			Expect(cleanEntry.CapabilityFlavors[0].Capabilities).To(Equal(
+				gardencorev1beta1.Capabilities{"architecture": {"amd64"}, "feature": {"sci", "_usi"}},
+			))
+		})
+
+		It("accumulates multiple flavors under the same clean version entry", func(ctx SpecContext) {
+			mockSource.images = []ossync.SourceImage{
+				{
+					Version:       "2254.0.0-baremetal-sci-usi-amd64",
+					CleanVersion:  "2254.0.0",
+					Architectures: []string{"amd64"},
+					Capabilities:  gardencorev1beta1.Capabilities{"architecture": {"amd64"}, "feature": {"sci", "_usi"}},
+				},
+				{
+					Version:       "2254.0.0-baremetal-sci-pxe-amd64",
+					CleanVersion:  "2254.0.0",
+					Architectures: []string{"amd64"},
+					Capabilities:  gardencorev1beta1.Capabilities{"architecture": {"amd64"}, "feature": {"sci", "_pxe"}},
+				},
+			}
+			updater := ossync.ImageUpdater{
+				Log:                GinkgoLogr,
+				Source:             &mockSource,
+				ImageName:          "test",
+				EnableCapabilities: true,
+			}
+			var cpSpec gardencorev1beta1.CloudProfileSpec
+			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
+
+			versions := cpSpec.MachineImages[0].Versions
+			var cleanEntry *gardencorev1beta1.MachineImageVersion
+			for i := range versions {
+				if versions[i].Version == "2254.0.0" {
+					cleanEntry = &versions[i]
+					break
+				}
+			}
+			Expect(cleanEntry).NotTo(BeNil())
+			Expect(cleanEntry.CapabilityFlavors).To(HaveLen(2))
+			flavors := []gardencorev1beta1.Capabilities{
+				cleanEntry.CapabilityFlavors[0].Capabilities,
+				cleanEntry.CapabilityFlavors[1].Capabilities,
+			}
+			Expect(flavors).To(ConsistOf(
+				gardencorev1beta1.Capabilities{"architecture": {"amd64"}, "feature": {"sci", "_usi"}},
+				gardencorev1beta1.Capabilities{"architecture": {"amd64"}, "feature": {"sci", "_pxe"}},
+			))
+		})
+
+		It("does not append duplicate flavors on re-reconcile", func(ctx SpecContext) {
+			mockSource.images = []ossync.SourceImage{
+				{
+					Version:       "2254.0.0-baremetal-sci-usi-amd64",
+					CleanVersion:  "2254.0.0",
+					Architectures: []string{"amd64"},
+					Capabilities:  gardencorev1beta1.Capabilities{"architecture": {"amd64"}, "feature": {"sci", "_usi"}},
+				},
+			}
+			updater := ossync.ImageUpdater{
+				Log:                GinkgoLogr,
+				Source:             &mockSource,
+				ImageName:          "test",
+				EnableCapabilities: true,
+			}
+			var cpSpec gardencorev1beta1.CloudProfileSpec
+			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
+			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
+
+			versions := cpSpec.MachineImages[0].Versions
+			var cleanEntry *gardencorev1beta1.MachineImageVersion
+			for i := range versions {
+				if versions[i].Version == "2254.0.0" {
+					cleanEntry = &versions[i]
+					break
+				}
+			}
+			Expect(cleanEntry).NotTo(BeNil())
+			Expect(cleanEntry.CapabilityFlavors).To(HaveLen(1))
+		})
+
+		It("does not set CapabilityFlavors when Capabilities is nil", func(ctx SpecContext) {
+			mockSource.images = []ossync.SourceImage{
+				{
+					Version:       "2254.0.0-baremetal-amd64",
+					CleanVersion:  "2254.0.0",
+					Architectures: []string{"amd64"},
+				},
+			}
+			updater := ossync.ImageUpdater{
+				Log:                GinkgoLogr,
+				Source:             &mockSource,
+				ImageName:          "test",
+				EnableCapabilities: true,
+			}
+			var cpSpec gardencorev1beta1.CloudProfileSpec
+			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
+
+			versions := cpSpec.MachineImages[0].Versions
+			var cleanEntry *gardencorev1beta1.MachineImageVersion
+			for i := range versions {
+				if versions[i].Version == "2254.0.0" {
+					cleanEntry = &versions[i]
+					break
+				}
+			}
+			Expect(cleanEntry).NotTo(BeNil())
+			Expect(cleanEntry.CapabilityFlavors).To(BeEmpty())
+		})
+
 		It("writes both full tag and clean version entries when CleanVersion differs", func(ctx SpecContext) {
 			mockSource.images = []ossync.SourceImage{
 				{
