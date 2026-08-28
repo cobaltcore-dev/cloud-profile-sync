@@ -545,8 +545,8 @@ var _ = Describe("ImageUpdater", func() {
 					{Name: "test", Versions: []gardencorev1beta1.MachineImageVersion{
 						{ExpirableVersion: gardencorev1beta1.ExpirableVersion{
 							Version:        "1.0.0",
-							Classification: &deprecated,
-							ExpirationDate: &existing,
+							Classification: &deprecated, //nolint:staticcheck // legacy fields; Lifecycle needs the VersionClassificationLifecycle feature gate
+							ExpirationDate: &existing,   //nolint:staticcheck // legacy fields; Lifecycle needs the VersionClassificationLifecycle feature gate
 						}, Architectures: []string{"amd64"}},
 					}},
 				},

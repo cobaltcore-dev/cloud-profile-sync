@@ -290,7 +290,6 @@ func compareSemverDesc(a, b string) int {
 // parseVersion extracts the semver version from a matching image name.
 func (g *Glance) parseVersion(name string) (string, bool) {
 	if strings.Contains(name, usiVariantMarker) {
-		g.log.V(1).Info("skipping usi image variant", "name", name)
 		return "", false
 	}
 
