@@ -205,8 +205,8 @@ func (iu *ImageUpdater) Update(ctx context.Context, cpSpec *gardenerv1beta1.Clou
 				image.Versions = append(image.Versions, gardenerv1beta1.MachineImageVersion{
 					ExpirableVersion: gardenerv1beta1.ExpirableVersion{
 						Version:        sourceImage.Version,
-						Classification: sourceImage.Classification,
-						ExpirationDate: iu.resolveExpiration(sourceImage, nil),
+						Classification: sourceImage.Classification,             //nolint:staticcheck // legacy fields; Lifecycle needs the VersionClassificationLifecycle feature gate
+						ExpirationDate: iu.resolveExpiration(sourceImage, nil), //nolint:staticcheck // legacy fields; Lifecycle needs the VersionClassificationLifecycle feature gate
 					},
 					Architectures: sourceImage.Architectures,
 				})
@@ -238,8 +238,8 @@ func (iu *ImageUpdater) Update(ctx context.Context, cpSpec *gardenerv1beta1.Clou
 				v := gardenerv1beta1.MachineImageVersion{
 					ExpirableVersion: gardenerv1beta1.ExpirableVersion{
 						Version:        sourceImage.CleanVersion,
-						Classification: sourceImage.Classification,
-						ExpirationDate: iu.resolveExpiration(sourceImage, nil),
+						Classification: sourceImage.Classification,             //nolint:staticcheck // legacy fields; Lifecycle needs the VersionClassificationLifecycle feature gate
+						ExpirationDate: iu.resolveExpiration(sourceImage, nil), //nolint:staticcheck // legacy fields; Lifecycle needs the VersionClassificationLifecycle feature gate
 					},
 					Architectures:     slices.Clone(sourceImage.Architectures),
 					CapabilityFlavors: mergeCapabilityFlavor(nil, sourceImage.Capabilities),
