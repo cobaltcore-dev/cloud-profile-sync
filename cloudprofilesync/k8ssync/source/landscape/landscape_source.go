@@ -338,8 +338,8 @@ func parseProviderVersions(raw []byte, provider string) ([]gardenerv1beta1.Expir
 			for _, v := range p.Versions {
 				result = append(result, gardenerv1beta1.ExpirableVersion{
 					Version:        v.Version,
-					Classification: v.Classification,
-					ExpirationDate: convertExpirationDate(v.ExpirationDate),
+					Classification: v.Classification,                        //nolint:staticcheck // legacy fields; Lifecycle needs the VersionClassificationLifecycle feature gate
+					ExpirationDate: convertExpirationDate(v.ExpirationDate), //nolint:staticcheck // legacy fields; Lifecycle needs the VersionClassificationLifecycle feature gate
 				})
 			}
 
