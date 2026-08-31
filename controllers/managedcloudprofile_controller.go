@@ -25,7 +25,7 @@ const (
 
 // OCISourceFactory defines an interface for creating OCI sources.
 type OCISourceFactory interface {
-	Create(params ocirepo.Params, parallel int64, log logr.Logger) (ossync.Source, error)
+	Create(params ocirepo.Params, parallel int64, log logr.Logger, capabilityKeys []string) (ossync.Source, error)
 }
 
 type RegistryClient interface {

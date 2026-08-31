@@ -30,8 +30,8 @@ import (
 // DefaultOCISourceFactory is the default implementation of OCISourceFactory.
 type DefaultOCISourceFactory struct{}
 
-func (f *DefaultOCISourceFactory) Create(params ocirepo.Params, parallel int64, log logr.Logger) (ossync.Source, error) {
-	return oci.NewOCI(params, parallel, log)
+func (f *DefaultOCISourceFactory) Create(params ocirepo.Params, parallel int64, log logr.Logger, capabilityKeys []string) (ossync.Source, error) {
+	return oci.NewOCI(params, parallel, log, capabilityKeys)
 }
 
 func (r *Reconciler) reconcileCloudProfile(ctx context.Context, log logr.Logger, mcp *v1alpha1.ManagedCloudProfile) error {
@@ -96,13 +96,19 @@ func (r *Reconciler) updateMachineImages(ctx context.Context, log logr.Logger, u
 		if err != nil {
 			return err
 		}
+		capabilityKeys := make([]string, 0, len(cpSpec.MachineCapabilities))
+		for _, cap := range cpSpec.MachineCapabilities {
+			if cap.Name != ossync.ArchitectureCapability {
+				capabilityKeys = append(capabilityKeys, cap.Name)
+			}
+		}
 		src, err := r.OCISourceFactory.Create(ocirepo.Params{
 			Registry:   update.Source.OCI.Registry,
 			Repository: update.Source.OCI.Repository,
 			Username:   update.Source.OCI.Username,
 			Password:   string(password),
 			Insecure:   update.Source.OCI.Insecure,
-		}, 1, log)
+		}, 1, log, capabilityKeys)
 		if err != nil {
 			return fmt.Errorf("failed to initialize OCI source: %w", err)
 		}
