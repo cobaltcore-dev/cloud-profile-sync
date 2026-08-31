@@ -122,6 +122,35 @@ func (iu *ImageUpdater) resolveExpiration(src SourceImage, existing *metav1.Time
 	return &now
 }
 
+// mergeCapabilityFlavor appends the flavor from src to existing if not already present.
+func mergeCapabilityFlavor(existing []gardenerv1beta1.MachineImageFlavor, caps gardenerv1beta1.Capabilities) []gardenerv1beta1.MachineImageFlavor {
+	if len(caps) == 0 {
+		return existing
+	}
+	for _, f := range existing {
+		if capabilitiesEqual(f.Capabilities, caps) {
+			return existing
+		}
+	}
+	return append(existing, gardenerv1beta1.MachineImageFlavor{Capabilities: caps})
+}
+
+func capabilitiesEqual(a, b gardenerv1beta1.Capabilities) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k, aVals := range a {
+		bVals, ok := b[k]
+		if !ok {
+			return false
+		}
+		if !slices.Equal(aVals, bVals) {
+			return false
+		}
+	}
+	return true
+}
+
 func inPlaceUpdates(supported bool) *gardenerv1beta1.InPlaceUpdates {
 	if !supported {
 		return nil
@@ -176,8 +205,8 @@ func (iu *ImageUpdater) Update(ctx context.Context, cpSpec *gardenerv1beta1.Clou
 				image.Versions = append(image.Versions, gardenerv1beta1.MachineImageVersion{
 					ExpirableVersion: gardenerv1beta1.ExpirableVersion{
 						Version:        sourceImage.Version,
-						Classification: sourceImage.Classification,
-						ExpirationDate: iu.resolveExpiration(sourceImage, nil),
+						Classification: sourceImage.Classification,             //nolint:staticcheck // legacy fields; Lifecycle needs the VersionClassificationLifecycle feature gate
+						ExpirationDate: iu.resolveExpiration(sourceImage, nil), //nolint:staticcheck // legacy fields; Lifecycle needs the VersionClassificationLifecycle feature gate
 					},
 					Architectures: sourceImage.Architectures,
 				})
@@ -190,8 +219,10 @@ func (iu *ImageUpdater) Update(ctx context.Context, cpSpec *gardenerv1beta1.Clou
 			}
 		}
 
-		// When capabilities are enabled, also write the clean version entry.
-		if iu.EnableCapabilities && sourceImage.CleanVersion != "" && sourceImage.CleanVersion != sourceImage.Version {
+		// When capabilities are enabled, also write/update the clean version entry.
+		// When CleanVersion == Version the entry already exists from the legacy path above;
+		// the existing-entry branch merges the flavor onto it without re-writing other fields.
+		if iu.EnableCapabilities && sourceImage.CleanVersion != "" {
 			if idx, exists := existingVersions[sourceImage.CleanVersion]; exists {
 				existing := &image.Versions[idx]
 				for _, arch := range sourceImage.Architectures {
@@ -202,20 +233,21 @@ func (iu *ImageUpdater) Update(ctx context.Context, cpSpec *gardenerv1beta1.Clou
 				existing.Classification = sourceImage.Classification                                 //nolint:staticcheck // legacy fields; Lifecycle needs the VersionClassificationLifecycle feature gate
 				existing.ExpirationDate = iu.resolveExpiration(sourceImage, existing.ExpirationDate) //nolint:staticcheck // legacy fields; Lifecycle needs the VersionClassificationLifecycle feature gate
 				existing.InPlaceUpdates = inPlaceUpdates(sourceImage.SupportInPlaceUpdate)
+				existing.CapabilityFlavors = mergeCapabilityFlavor(existing.CapabilityFlavors, sourceImage.Capabilities)
 			} else {
-				image.Versions = append(image.Versions, gardenerv1beta1.MachineImageVersion{
+				v := gardenerv1beta1.MachineImageVersion{
 					ExpirableVersion: gardenerv1beta1.ExpirableVersion{
 						Version:        sourceImage.CleanVersion,
-						Classification: sourceImage.Classification,
-						ExpirationDate: iu.resolveExpiration(sourceImage, nil),
+						Classification: sourceImage.Classification,             //nolint:staticcheck // legacy fields; Lifecycle needs the VersionClassificationLifecycle feature gate
+						ExpirationDate: iu.resolveExpiration(sourceImage, nil), //nolint:staticcheck // legacy fields; Lifecycle needs the VersionClassificationLifecycle feature gate
 					},
-					Architectures: slices.Clone(sourceImage.Architectures),
-				})
-				if sourceImage.SupportInPlaceUpdate {
-					image.Versions[len(image.Versions)-1].InPlaceUpdates = &gardenerv1beta1.InPlaceUpdates{
-						Supported: sourceImage.SupportInPlaceUpdate,
-					}
+					Architectures:     slices.Clone(sourceImage.Architectures),
+					CapabilityFlavors: mergeCapabilityFlavor(nil, sourceImage.Capabilities),
 				}
+				if sourceImage.SupportInPlaceUpdate {
+					v.InPlaceUpdates = &gardenerv1beta1.InPlaceUpdates{Supported: true}
+				}
+				image.Versions = append(image.Versions, v)
 				existingVersions[sourceImage.CleanVersion] = len(image.Versions) - 1
 			}
 		}

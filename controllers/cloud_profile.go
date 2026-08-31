@@ -45,13 +45,13 @@ func (r *Reconciler) reconcileCloudProfile(ctx context.Context, log logr.Logger,
 		cloudProfile.Spec = CloudProfileSpecToGardener(&mcp.Spec.CloudProfile)
 		errs := make([]error, 0)
 		for _, updates := range mcp.Spec.MachineImageUpdates {
-			log.Info("updating machine images", "cloudProfile", cloudProfile.Name)
+			log.V(1).Info("updating machine images", "cloudProfile", cloudProfile.Name)
 			if updateErr := r.updateMachineImages(ctx, log, updates, &cloudProfile.Spec); updateErr != nil {
 				errs = append(errs, updateErr)
 			}
 		}
 		if mcp.Spec.KubernetesVersionUpdateConfig != nil {
-			log.Info("updating kubernetes versions", "cloudProfile", cloudProfile.Name)
+			log.V(1).Info("updating kubernetes versions", "cloudProfile", cloudProfile.Name)
 			if updateErr := r.updateKubernetesVersions(ctx, *mcp.Spec.KubernetesVersionUpdateConfig, &cloudProfile.Spec); updateErr != nil {
 				errs = append(errs, updateErr)
 			}
@@ -65,7 +65,7 @@ func (r *Reconciler) reconcileCloudProfile(ctx context.Context, log logr.Logger,
 			Status:             metav1.ConditionFalse,
 			ObservedGeneration: mcp.Generation,
 			Reason:             "ApplyFailed",
-			Message:            fmt.Sprintf("Failed to apply CloudProfile: %s", err),
+			Message:            truncateConditionMessage(fmt.Sprintf("Failed to apply CloudProfile: %s", err)),
 		})
 		if statusErr != nil {
 			return fmt.Errorf("failed to patch ManagedCloudProfile status: %w", statusErr)
@@ -253,4 +253,14 @@ func (r *Reconciler) landscapeSetupSource(ctx context.Context, ls v1alpha1.Lands
 	}
 
 	return landscapeSource, nil
+}
+
+const maxConditionMessageLen = 32768
+
+func truncateConditionMessage(msg string) string {
+	if len(msg) <= maxConditionMessageLen {
+		return msg
+	}
+	const suffix = "...[truncated]"
+	return msg[:maxConditionMessageLen-len(suffix)] + suffix
 }
