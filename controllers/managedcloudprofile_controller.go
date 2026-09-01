@@ -10,9 +10,12 @@ import (
 
 	gardenerv1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
 	"github.com/go-logr/logr"
+	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	"github.com/cobaltcore-dev/cloud-profile-sync/api/v1alpha1"
 	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/ocirepo"
@@ -62,6 +65,9 @@ func (r *Reconciler) patchStatusAndCondition(ctx context.Context, mcp *v1alpha1.
 	mcp.Status.Status = status
 	if cond.Type != "" {
 		mcp.Status.Conditions = applyCondition(mcp.Status.Conditions, cond)
+	}
+	if equality.Semantic.DeepEqual(original.Status, mcp.Status) {
+		return nil
 	}
 	return r.Status().Patch(ctx, mcp, client.MergeFrom(original))
 }
@@ -116,7 +122,7 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		r.RegistryProviderFunc = r.getRegistryProvider
 	}
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&v1alpha1.ManagedCloudProfile{}).
+		For(&v1alpha1.ManagedCloudProfile{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Owns(&gardenerv1beta1.CloudProfile{}).
 		Complete(r)
 }

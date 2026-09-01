@@ -42,6 +42,7 @@ func (r *Reconciler) reconcileCloudProfile(ctx context.Context, log logr.Logger,
 		if err := controllerutil.SetControllerReference(mcp, &cloudProfile, r.Scheme()); err != nil {
 			return err
 		}
+		storedExpirations := collectExpirationDates(cloudProfile.Spec.MachineImages)
 		cloudProfile.Spec = CloudProfileSpecToGardener(&mcp.Spec.CloudProfile)
 		errs := make([]error, 0)
 		for _, updates := range mcp.Spec.MachineImageUpdates {
@@ -50,6 +51,7 @@ func (r *Reconciler) reconcileCloudProfile(ctx context.Context, log logr.Logger,
 				errs = append(errs, updateErr)
 			}
 		}
+		applyExpirationDates(cloudProfile.Spec.MachineImages, storedExpirations)
 		if mcp.Spec.KubernetesVersionUpdateConfig != nil {
 			log.V(1).Info("updating kubernetes versions", "cloudProfile", cloudProfile.Name)
 			if updateErr := r.updateKubernetesVersions(ctx, *mcp.Spec.KubernetesVersionUpdateConfig, &cloudProfile.Spec); updateErr != nil {
@@ -256,6 +258,31 @@ func (r *Reconciler) landscapeSetupSource(ctx context.Context, ls v1alpha1.Lands
 }
 
 const maxConditionMessageLen = 32768
+
+func collectExpirationDates(images []gardenerv1beta1.MachineImage) map[string]*metav1.Time {
+	out := make(map[string]*metav1.Time)
+	for _, img := range images {
+		for _, v := range img.Versions {
+			if v.ExpirationDate != nil { //nolint:staticcheck // legacy fields; Lifecycle needs the VersionClassificationLifecycle feature gate
+				out[img.Name+"/"+v.Version] = v.ExpirationDate //nolint:staticcheck // legacy fields; Lifecycle needs the VersionClassificationLifecycle feature gate
+			}
+		}
+	}
+	return out
+}
+
+func applyExpirationDates(images []gardenerv1beta1.MachineImage, stored map[string]*metav1.Time) {
+	for i := range images {
+		for j := range images[i].Versions {
+			v := &images[i].Versions[j]
+			if v.ExpirationDate == nil { //nolint:staticcheck // legacy fields; Lifecycle needs the VersionClassificationLifecycle feature gate
+				if exp, ok := stored[images[i].Name+"/"+v.Version]; ok {
+					v.ExpirationDate = exp //nolint:staticcheck // legacy fields; Lifecycle needs the VersionClassificationLifecycle feature gate
+				}
+			}
+		}
+	}
+}
 
 func truncateConditionMessage(msg string) string {
 	if len(msg) <= maxConditionMessageLen {
