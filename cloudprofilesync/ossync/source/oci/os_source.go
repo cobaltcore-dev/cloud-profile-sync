@@ -21,47 +21,49 @@ import (
 )
 
 const (
-	// chostFeature represent having containerd
-	chostFeature = "chost"
-	// pxeFeature represent pxe boot build
-	pxeFeature     = "_pxe"
-	sciFeature     = "sci"
-	sciBaseFeature = "scibase"
-	// capiFeature includes server, khost, and PXE; excludes SELinux and firewall
-	capiFeature = "capi"
-	// USIFeature shows UEFI build
-	usiFeature    = "_usi"
-	usiDevFeature = "_usidev"
-
-	architectureCapability = "architecture"
-	featureCapability      = "feature"
+	// usiCapabilityValue is the normalized capability value for the gardenlinux USI
+	// (UEFI Secure Image) feature, which indicates support for in-place node updates.
+	usiCapabilityValue = "usi"
+	// featureSetAnnotation is the gardenlinux OCI annotation key that lists the
+	// feature set of an image as a comma-separated list (e.g. "sci,_usi,_pxe").
+	featureSetAnnotation = "feature_set"
 )
 
-// validFeatureValues is the allowlist of feature values extracted from the feature_set annotation.
-var validFeatureValues = map[string]struct{}{
-	chostFeature:   {},
-	pxeFeature:     {},
-	sciFeature:     {},
-	sciBaseFeature: {},
-	capiFeature:    {},
-	usiFeature:     {},
-	usiDevFeature:  {},
+// supportsInPlaceUpdate reports whether the gardenlinux image described by the
+// given OCI annotations supports in-place node updates. It reads the feature_set
+// annotation directly, independent of which capabilityKeys the OCI source is
+// configured to expose, so USI detection is never accidentally suppressed.
+func supportsInPlaceUpdate(annotations map[string]string) bool {
+	raw, ok := annotations[featureSetAnnotation]
+	if !ok {
+		return false
+	}
+	return slices.Contains(filterAnnotationValues(raw), usiCapabilityValue)
 }
 
-func filterFeatureSet(featureSet string) []string {
-	raw := strings.Split(featureSet, ",")
-	seen := make(map[string]struct{}, len(raw))
-	result := make([]string, 0, len(raw))
-	for _, f := range raw {
+// normalizeCapabilityValue strips leading underscores from a feature annotation value
+// so it satisfies Gardener's requirement that capability values start with an
+// alphanumeric character. Gardenlinux uses a leading '_' convention for UEFI variants
+// (e.g. _usi, _pxe) that has no meaning in the Gardener capability key space.
+func normalizeCapabilityValue(v string) string {
+	return strings.TrimLeft(v, "_")
+}
+
+func filterAnnotationValues(raw string) []string {
+	parts := strings.Split(raw, ",")
+	seen := make(map[string]struct{}, len(parts))
+	result := make([]string, 0, len(parts))
+	for _, f := range parts {
 		f = strings.TrimSpace(f)
-		if _, valid := validFeatureValues[f]; !valid {
+		capVal := normalizeCapabilityValue(f)
+		if capVal == "" {
 			continue
 		}
-		if _, dup := seen[f]; dup {
+		if _, dup := seen[capVal]; dup {
 			continue
 		}
-		seen[f] = struct{}{}
-		result = append(result, f)
+		seen[capVal] = struct{}{}
+		result = append(result, capVal)
 	}
 	return result
 }
@@ -72,21 +74,23 @@ type Result[T any] struct {
 }
 
 type OCI struct {
-	log  logr.Logger
-	repo *remote.Repository
-	sema *semaphore.Weighted
+	log            logr.Logger
+	repo           *remote.Repository
+	sema           *semaphore.Weighted
+	capabilityKeys []string
 }
 
-func NewOCI(params ocirepo.Params, parallel int64, log logr.Logger) (*OCI, error) {
+func NewOCI(params ocirepo.Params, parallel int64, log logr.Logger, capabilityKeys []string) (*OCI, error) {
 	repo, err := ocirepo.New(params)
 	if err != nil {
 		return nil, err
 	}
 
 	return &OCI{
-		log:  log,
-		repo: repo,
-		sema: semaphore.NewWeighted(parallel),
+		log:            log,
+		repo:           repo,
+		sema:           semaphore.NewWeighted(parallel),
+		capabilityKeys: capabilityKeys,
 	}, nil
 }
 
@@ -122,25 +126,28 @@ func (o *OCI) GetVersions(ctx context.Context) ([]ossync.SourceImage, error) {
 				out <- Result[ossync.SourceImage]{err: fmt.Errorf("tag %s: failed to decode manifest: %w", tag, err)}
 				return
 			}
-			arch, ok := manifest.Annotations["architecture"]
+			arch, ok := manifest.Annotations[ossync.ArchitectureCapability]
 			if !ok {
 				out <- Result[ossync.SourceImage]{err: fmt.Errorf("tag %s: architecture annotation not found", tag)}
 				return
 			}
+			cleanVersion, _ := manifest.Annotations["version"]
 			var capabilities gardencorev1beta1.Capabilities
-			var cleanVersion string
-			var supportInPlaceUpdate bool
-			if featureSet, ok := manifest.Annotations["feature_set"]; ok {
-				if version, ok := manifest.Annotations["version"]; ok {
-					features := filterFeatureSet(featureSet)
-					if len(features) > 0 {
-						capabilities = gardencorev1beta1.Capabilities{
-							architectureCapability: {arch},
-							featureCapability:      features,
-						}
-						cleanVersion = version
-						supportInPlaceUpdate = slices.Contains(features, usiFeature)
+			if len(o.capabilityKeys) > 0 && cleanVersion != "" {
+				caps := make(gardencorev1beta1.Capabilities, 1+len(o.capabilityKeys))
+				caps[ossync.ArchitectureCapability] = []string{arch}
+				for _, key := range o.capabilityKeys {
+					raw, ok := manifest.Annotations[key]
+					if !ok {
+						continue
 					}
+					values := filterAnnotationValues(raw)
+					if len(values) > 0 {
+						caps[key] = values
+					}
+				}
+				if len(caps) > 1 { // more than just architecture
+					capabilities = caps
 				}
 			}
 			out <- Result[ossync.SourceImage]{
@@ -149,7 +156,7 @@ func (o *OCI) GetVersions(ctx context.Context) ([]ossync.SourceImage, error) {
 					CleanVersion:         cleanVersion,
 					Architectures:        []string{arch},
 					Capabilities:         capabilities,
-					SupportInPlaceUpdate: supportInPlaceUpdate,
+					SupportInPlaceUpdate: supportsInPlaceUpdate(manifest.Annotations),
 				},
 			}
 		}()

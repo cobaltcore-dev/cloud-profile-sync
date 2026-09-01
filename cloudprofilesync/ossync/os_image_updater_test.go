@@ -54,7 +54,7 @@ var _ = Describe("filterImages", func() {
 				Version:       "1877.9.2.0-metal-sci-pxe-amd64",
 				CleanVersion:  "1877.9.2",
 				Architectures: []string{"amd64"},
-				Capabilities:  gardencorev1beta1.Capabilities{"architecture": {"amd64"}, "feature": {"sci", "_pxe"}},
+				Capabilities:  gardencorev1beta1.Capabilities{"architecture": {"amd64"}, "feature_set": {"sci", "pxe"}},
 			},
 		})
 		Expect(result).To(HaveLen(1))
@@ -67,7 +67,7 @@ var _ = Describe("filterImages", func() {
 				Version:       "2254.0.0-baremetal-sci-usi-amd64",
 				CleanVersion:  "2254.0.0",
 				Architectures: []string{"amd64"},
-				Capabilities:  gardencorev1beta1.Capabilities{"architecture": {"amd64"}, "feature": {"sci", "_usi"}},
+				Capabilities:  gardencorev1beta1.Capabilities{"architecture": {"amd64"}, "feature_set": {"sci", "usi"}},
 			},
 		})
 		Expect(result).To(HaveLen(2))
@@ -89,7 +89,7 @@ var _ = Describe("filterImages", func() {
 				Version:       "1921.0.0-metal-sci-usi-amd64",
 				CleanVersion:  "1921.0",
 				Architectures: []string{"amd64"},
-				Capabilities:  gardencorev1beta1.Capabilities{"architecture": {"amd64"}, "feature": {"sci", "_usi"}},
+				Capabilities:  gardencorev1beta1.Capabilities{"architecture": {"amd64"}, "feature_set": {"sci", "usi"}},
 			},
 		})
 		Expect(result).To(HaveLen(2))
@@ -197,7 +197,7 @@ var _ = Describe("ImageUpdater", func() {
 					Version:       "2254.0.0-baremetal-sci-usi-amd64",
 					CleanVersion:  "2254.0.0",
 					Architectures: []string{"amd64"},
-					Capabilities:  gardencorev1beta1.Capabilities{"architecture": {"amd64"}, "feature": {"sci", "_usi"}},
+					Capabilities:  gardencorev1beta1.Capabilities{"architecture": {"amd64"}, "feature_set": {"sci", "usi"}},
 				},
 			}
 			updater := ossync.ImageUpdater{
@@ -248,13 +248,25 @@ var _ = Describe("ImageUpdater", func() {
 	})
 
 	Describe("flag ON (dual-write clean version)", func() {
+		// cpSpecWithCaps returns a CloudProfileSpec with MachineCapabilities covering
+		// the keys used by the test source images. Required because filterCapabilities
+		// returns nil when MachineCapabilities is empty.
+		cpSpecWithCaps := func() gardencorev1beta1.CloudProfileSpec {
+			return gardencorev1beta1.CloudProfileSpec{
+				MachineCapabilities: []gardencorev1beta1.CapabilityDefinition{
+					{Name: "architecture", Values: []string{"amd64", "arm64"}},
+					{Name: "feature_set", Values: []string{"sci", "usi", "pxe", "scibase"}},
+				},
+			}
+		}
+
 		It("sets CapabilityFlavors when CleanVersion equals Version (semver tag with matching annotation)", func(ctx SpecContext) {
 			mockSource.images = []ossync.SourceImage{
 				{
 					Version:       "2254.0.0",
 					CleanVersion:  "2254.0.0",
 					Architectures: []string{"amd64"},
-					Capabilities:  gardencorev1beta1.Capabilities{"architecture": {"amd64"}, "feature": {"sci", "_usi"}},
+					Capabilities:  gardencorev1beta1.Capabilities{"architecture": {"amd64"}, "feature_set": {"sci", "usi"}},
 				},
 			}
 			updater := ossync.ImageUpdater{
@@ -263,7 +275,7 @@ var _ = Describe("ImageUpdater", func() {
 				ImageName:          "test",
 				EnableCapabilities: true,
 			}
-			var cpSpec gardencorev1beta1.CloudProfileSpec
+			cpSpec := cpSpecWithCaps()
 			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
 
 			Expect(cpSpec.MachineImages[0].Versions).To(HaveLen(1))
@@ -271,7 +283,7 @@ var _ = Describe("ImageUpdater", func() {
 			Expect(v.Version).To(Equal("2254.0.0"))
 			Expect(v.CapabilityFlavors).To(HaveLen(1))
 			Expect(v.CapabilityFlavors[0].Capabilities).To(Equal(
-				gardencorev1beta1.Capabilities{"architecture": {"amd64"}, "feature": {"sci", "_usi"}},
+				gardencorev1beta1.Capabilities{"architecture": {"amd64"}, "feature_set": {"sci", "usi"}},
 			))
 		})
 
@@ -281,7 +293,7 @@ var _ = Describe("ImageUpdater", func() {
 					Version:       "2254.0.0-baremetal-sci-usi-amd64",
 					CleanVersion:  "2254.0.0",
 					Architectures: []string{"amd64"},
-					Capabilities:  gardencorev1beta1.Capabilities{"architecture": {"amd64"}, "feature": {"sci", "_usi"}},
+					Capabilities:  gardencorev1beta1.Capabilities{"architecture": {"amd64"}, "feature_set": {"sci", "usi"}},
 				},
 			}
 			updater := ossync.ImageUpdater{
@@ -290,7 +302,7 @@ var _ = Describe("ImageUpdater", func() {
 				ImageName:          "test",
 				EnableCapabilities: true,
 			}
-			var cpSpec gardencorev1beta1.CloudProfileSpec
+			cpSpec := cpSpecWithCaps()
 			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
 
 			versions := cpSpec.MachineImages[0].Versions
@@ -304,7 +316,7 @@ var _ = Describe("ImageUpdater", func() {
 			Expect(cleanEntry).NotTo(BeNil())
 			Expect(cleanEntry.CapabilityFlavors).To(HaveLen(1))
 			Expect(cleanEntry.CapabilityFlavors[0].Capabilities).To(Equal(
-				gardencorev1beta1.Capabilities{"architecture": {"amd64"}, "feature": {"sci", "_usi"}},
+				gardencorev1beta1.Capabilities{"architecture": {"amd64"}, "feature_set": {"sci", "usi"}},
 			))
 		})
 
@@ -314,13 +326,13 @@ var _ = Describe("ImageUpdater", func() {
 					Version:       "2254.0.0-baremetal-sci-usi-amd64",
 					CleanVersion:  "2254.0.0",
 					Architectures: []string{"amd64"},
-					Capabilities:  gardencorev1beta1.Capabilities{"architecture": {"amd64"}, "feature": {"sci", "_usi"}},
+					Capabilities:  gardencorev1beta1.Capabilities{"architecture": {"amd64"}, "feature_set": {"sci", "usi"}},
 				},
 				{
 					Version:       "2254.0.0-baremetal-sci-pxe-amd64",
 					CleanVersion:  "2254.0.0",
 					Architectures: []string{"amd64"},
-					Capabilities:  gardencorev1beta1.Capabilities{"architecture": {"amd64"}, "feature": {"sci", "_pxe"}},
+					Capabilities:  gardencorev1beta1.Capabilities{"architecture": {"amd64"}, "feature_set": {"sci", "pxe"}},
 				},
 			}
 			updater := ossync.ImageUpdater{
@@ -329,7 +341,7 @@ var _ = Describe("ImageUpdater", func() {
 				ImageName:          "test",
 				EnableCapabilities: true,
 			}
-			var cpSpec gardencorev1beta1.CloudProfileSpec
+			cpSpec := cpSpecWithCaps()
 			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
 
 			versions := cpSpec.MachineImages[0].Versions
@@ -347,8 +359,8 @@ var _ = Describe("ImageUpdater", func() {
 				cleanEntry.CapabilityFlavors[1].Capabilities,
 			}
 			Expect(flavors).To(ConsistOf(
-				gardencorev1beta1.Capabilities{"architecture": {"amd64"}, "feature": {"sci", "_usi"}},
-				gardencorev1beta1.Capabilities{"architecture": {"amd64"}, "feature": {"sci", "_pxe"}},
+				gardencorev1beta1.Capabilities{"architecture": {"amd64"}, "feature_set": {"sci", "usi"}},
+				gardencorev1beta1.Capabilities{"architecture": {"amd64"}, "feature_set": {"sci", "pxe"}},
 			))
 		})
 
@@ -358,7 +370,7 @@ var _ = Describe("ImageUpdater", func() {
 					Version:       "2254.0.0-baremetal-sci-usi-amd64",
 					CleanVersion:  "2254.0.0",
 					Architectures: []string{"amd64"},
-					Capabilities:  gardencorev1beta1.Capabilities{"architecture": {"amd64"}, "feature": {"sci", "_usi"}},
+					Capabilities:  gardencorev1beta1.Capabilities{"architecture": {"amd64"}, "feature_set": {"sci", "usi"}},
 				},
 			}
 			updater := ossync.ImageUpdater{
@@ -367,7 +379,7 @@ var _ = Describe("ImageUpdater", func() {
 				ImageName:          "test",
 				EnableCapabilities: true,
 			}
-			var cpSpec gardencorev1beta1.CloudProfileSpec
+			cpSpec := cpSpecWithCaps()
 			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
 			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
 
@@ -418,7 +430,7 @@ var _ = Describe("ImageUpdater", func() {
 					Version:              "2254.0.0-baremetal-sci-usi-amd64",
 					CleanVersion:         "2254.0.0",
 					Architectures:        []string{"amd64"},
-					Capabilities:         gardencorev1beta1.Capabilities{"architecture": {"amd64"}, "feature": {"sci", "_usi"}},
+					Capabilities:         gardencorev1beta1.Capabilities{"architecture": {"amd64"}, "feature_set": {"sci", "usi"}},
 					SupportInPlaceUpdate: true,
 				},
 			}
@@ -444,7 +456,7 @@ var _ = Describe("ImageUpdater", func() {
 					Version:       "2254.0.0-baremetal-sci-usi-amd64",
 					CleanVersion:  "2254.0.0",
 					Architectures: []string{"amd64"},
-					Capabilities:  gardencorev1beta1.Capabilities{"architecture": {"amd64"}, "feature": {"sci", "_usi"}},
+					Capabilities:  gardencorev1beta1.Capabilities{"architecture": {"amd64"}, "feature_set": {"sci", "usi"}},
 				},
 			}
 			updater := ossync.ImageUpdater{
@@ -465,7 +477,7 @@ var _ = Describe("ImageUpdater", func() {
 					Version:       "1877.9.2.0-metal-sci-pxe-amd64-1877-9-2-6bb2b442",
 					CleanVersion:  "1877.9.2",
 					Architectures: []string{"amd64"},
-					Capabilities:  gardencorev1beta1.Capabilities{"architecture": {"amd64"}, "feature": {"sci", "_pxe"}},
+					Capabilities:  gardencorev1beta1.Capabilities{"architecture": {"amd64"}, "feature_set": {"sci", "pxe"}},
 				},
 			}
 			updater := ossync.ImageUpdater{
@@ -528,6 +540,130 @@ var _ = Describe("ImageUpdater", func() {
 			Expect(cpSpec.MachineImages[0].Versions[1].Version).To(Equal("1.1.0"))
 			Expect(cpSpec.MachineImages[0].Versions[1].InPlaceUpdates).NotTo(BeNil())
 			Expect(cpSpec.MachineImages[0].Versions[1].InPlaceUpdates.Supported).To(BeTrue())
+		})
+	})
+
+	Describe("capability filtering via MachineCapabilities", func() {
+		It("writes no CapabilityFlavors when MachineCapabilities is empty", func(ctx SpecContext) {
+			mockSource.images = []ossync.SourceImage{{
+				Version:       "2254.0.0",
+				CleanVersion:  "2254.0.0",
+				Architectures: []string{"amd64"},
+				Capabilities: gardencorev1beta1.Capabilities{
+					"architecture": {"amd64"},
+					"feature_set":  {"sci", "usi"},
+					"hypervisor":   {"kvm"},
+				},
+			}}
+			updater := ossync.ImageUpdater{
+				Log:                GinkgoLogr,
+				Source:             &mockSource,
+				ImageName:          "test",
+				EnableCapabilities: true,
+			}
+			var cpSpec gardencorev1beta1.CloudProfileSpec
+			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
+			v := cpSpec.MachineImages[0].Versions[0]
+			Expect(v.CapabilityFlavors).To(BeEmpty())
+		})
+
+		It("drops capability values absent from MachineCapabilities", func(ctx SpecContext) {
+			mockSource.images = []ossync.SourceImage{{
+				Version:       "2254.0.0",
+				CleanVersion:  "2254.0.0",
+				Architectures: []string{"amd64"},
+				Capabilities: gardencorev1beta1.Capabilities{
+					"architecture": {"amd64"},
+					"feature_set":  {"sci", "usi", "rescue"},
+				},
+			}}
+			updater := ossync.ImageUpdater{
+				Log:                GinkgoLogr,
+				Source:             &mockSource,
+				ImageName:          "test",
+				EnableCapabilities: true,
+			}
+			cpSpec := gardencorev1beta1.CloudProfileSpec{
+				MachineCapabilities: []gardencorev1beta1.CapabilityDefinition{
+					{Name: "architecture", Values: []string{"amd64", "arm64"}},
+					{Name: "feature_set", Values: []string{"sci", "usi"}},
+				},
+			}
+			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
+			v := cpSpec.MachineImages[0].Versions[0]
+			Expect(v.CapabilityFlavors).To(HaveLen(1))
+			Expect(v.CapabilityFlavors[0].Capabilities).To(Equal(gardencorev1beta1.Capabilities{
+				"architecture": {"amd64"},
+				"feature_set":  {"sci", "usi"}, // "rescue" dropped — not in MachineCapabilities
+			}))
+		})
+
+		It("populates all declared capability keys into capabilityFlavors", func(ctx SpecContext) {
+			mockSource.images = []ossync.SourceImage{{
+				Version:       "2254.0.0",
+				CleanVersion:  "2254.0.0",
+				Architectures: []string{"amd64"},
+				Capabilities: gardencorev1beta1.Capabilities{
+					"architecture": {"amd64"},
+					"feature_set":  {"sci", "usi"},
+					"hypervisor":   {"kvm"},
+				},
+			}}
+			updater := ossync.ImageUpdater{
+				Log:                GinkgoLogr,
+				Source:             &mockSource,
+				ImageName:          "test",
+				EnableCapabilities: true,
+			}
+			cpSpec := gardencorev1beta1.CloudProfileSpec{
+				MachineCapabilities: []gardencorev1beta1.CapabilityDefinition{
+					{Name: "architecture", Values: []string{"amd64", "arm64"}},
+					{Name: "feature_set", Values: []string{"sci", "usi", "scibase"}},
+					{Name: "hypervisor", Values: []string{"kvm", "xen"}},
+				},
+			}
+			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
+			v := cpSpec.MachineImages[0].Versions[0]
+			Expect(v.CapabilityFlavors).To(HaveLen(1))
+			Expect(v.CapabilityFlavors[0].Capabilities).To(Equal(gardencorev1beta1.Capabilities{
+				"architecture": {"amd64"},
+				"feature_set":  {"sci", "usi"},
+				"hypervisor":   {"kvm"},
+			}))
+		})
+
+		It("drops a capability key entirely when none of its values are in MachineCapabilities", func(ctx SpecContext) {
+			mockSource.images = []ossync.SourceImage{{
+				Version:       "2254.0.0",
+				CleanVersion:  "2254.0.0",
+				Architectures: []string{"amd64"},
+				Capabilities: gardencorev1beta1.Capabilities{
+					"architecture": {"amd64"},
+					"feature_set":  {"sci", "usi"},
+					"hypervisor":   {"kvm"},
+				},
+			}}
+			updater := ossync.ImageUpdater{
+				Log:                GinkgoLogr,
+				Source:             &mockSource,
+				ImageName:          "test",
+				EnableCapabilities: true,
+			}
+			cpSpec := gardencorev1beta1.CloudProfileSpec{
+				MachineCapabilities: []gardencorev1beta1.CapabilityDefinition{
+					{Name: "architecture", Values: []string{"amd64", "arm64"}},
+					{Name: "feature_set", Values: []string{"sci", "usi"}},
+					// hypervisor not declared → key dropped entirely
+				},
+			}
+			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
+			v := cpSpec.MachineImages[0].Versions[0]
+			Expect(v.CapabilityFlavors).To(HaveLen(1))
+			Expect(v.CapabilityFlavors[0].Capabilities).To(Equal(gardencorev1beta1.Capabilities{
+				"architecture": {"amd64"},
+				"feature_set":  {"sci", "usi"},
+			}))
+			Expect(v.CapabilityFlavors[0].Capabilities).NotTo(HaveKey("hypervisor"))
 		})
 	})
 
