@@ -49,9 +49,9 @@ func (r *Reconciler) reconcileCloudProfile(ctx context.Context, log logr.Logger,
 				errs = append(errs, updateErr)
 			}
 		}
-		if mcp.Spec.KubernetesVersionUpdateConfig != nil {
+		if mcp.Spec.KubernetesUpdate != nil {
 			log.V(1).Info("updating kubernetes versions", "cloudProfile", cloudProfile.Name)
-			if updateErr := r.updateKubernetesVersions(ctx, *mcp.Spec.KubernetesVersionUpdateConfig, &cloudProfile.Spec); updateErr != nil {
+			if updateErr := r.updateKubernetesVersions(ctx, *mcp.Spec.KubernetesUpdate, &cloudProfile.Spec); updateErr != nil {
 				errs = append(errs, updateErr)
 			}
 		}
