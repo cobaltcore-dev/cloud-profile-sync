@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
 
 	gardenerv1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
 	"github.com/go-logr/logr"
@@ -50,9 +49,9 @@ func (r *Reconciler) reconcileCloudProfile(ctx context.Context, log logr.Logger,
 				errs = append(errs, updateErr)
 			}
 		}
-		if mcp.Spec.KubernetesVersionUpdateConfig != nil {
+		if mcp.Spec.KubernetesUpdate != nil {
 			log.V(1).Info("updating kubernetes versions", "cloudProfile", cloudProfile.Name)
-			if updateErr := r.updateKubernetesVersions(ctx, *mcp.Spec.KubernetesVersionUpdateConfig, &cloudProfile.Spec); updateErr != nil {
+			if updateErr := r.updateKubernetesVersions(ctx, *mcp.Spec.KubernetesUpdate, &cloudProfile.Spec); updateErr != nil {
 				errs = append(errs, updateErr)
 			}
 		}
@@ -222,42 +221,10 @@ func (r *Reconciler) landscapeSetupSource(ctx context.Context, ls v1alpha1.Lands
 		Password:   string(ociPassword),
 		Insecure:   ls.OCI.Insecure,
 	}
-
-	gh := ls.Github
-	var ghTransport http.RoundTripper
-	switch {
-	case gh.PersonalAccessTokenSecret != nil:
-		pat, err := r.getCredential(ctx, *gh.PersonalAccessTokenSecret)
-		if err != nil {
-			return nil, fmt.Errorf("getting github PAT: %w", err)
-		}
-		ghTransport = landscape.GithubPATTransport(string(pat))
-	case gh.GithubApp != nil:
-		privateKey, err := r.getCredential(ctx, gh.GithubApp.PrivateKeySecret)
-		if err != nil {
-			return nil, fmt.Errorf("getting github app private key: %w", err)
-		}
-		ghTransport, err = landscape.GithubAppTransport(gh.RepositoryApiURL, gh.GithubApp.AppID, gh.GithubApp.InstallationID, privateKey)
-		if err != nil {
-			return nil, fmt.Errorf("initializing github app transport: %w", err)
-		}
-	default:
-		return nil, errors.New("github source requires personalAccessTokenSecret or githubApp")
-	}
-
-	ghParams := landscape.GithubParams{
-		RepositoryApiURL: gh.RepositoryApiURL,
-		Repository:       gh.Repository,
-		FilePath:         gh.FilePath,
-		Provider:         gh.Provider,
-		Transport:        ghTransport,
-	}
-
-	landscapeSource, err := landscape.NewLandscapeKubernetesSource(ociParams, ghParams)
+	landscapeSource, err := landscape.NewLandscapeKubernetesSource(ociParams, ls.Provider)
 	if err != nil {
 		return nil, fmt.Errorf("initializing landscape source: %w", err)
 	}
-
 	return landscapeSource, nil
 }
 

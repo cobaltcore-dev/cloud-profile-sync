@@ -7,26 +7,17 @@ import (
 	"archive/tar"
 	"bytes"
 	"context"
-	"crypto"
-	"crypto/rand"
-	"crypto/rsa"
-	"crypto/sha256"
-	"crypto/x509"
-	"encoding/base64"
 	"encoding/json"
-	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
-	"net/url"
 	"slices"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/blang/semver/v4"
 	gardenerv1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
+	digest "github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"go.yaml.in/yaml/v3"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -45,20 +36,31 @@ const componentDescriptorFile = "component-descriptor.yaml"
 // as Kubernetes versions.
 const kubeAPIServerResourceName = "kube-apiserver"
 
-const githubClientTimeout = 30 * time.Second
+// kubernetesVersionDataResourceName is the OCM resource that embeds
+// KUBERNETES_VERSIONS.yaml as a localBlob.
+const kubernetesVersionDataResourceName = "kubernetes-version-data"
+
+// resourceAccess is the minimal shape of a resource's access stanza.
+type resourceAccess struct {
+	Type           string `yaml:"type"`
+	LocalReference string `yaml:"localReference"`
+	MediaType      string `yaml:"mediaType"`
+	Size           int64  `yaml:"size"`
+}
 
 // componentDescriptor is the minimal shape of component-descriptor.yaml.
 type componentDescriptor struct {
 	Component struct {
 		Resources []struct {
-			Name    string `yaml:"name"`
-			Version string `yaml:"version"`
+			Name    string         `yaml:"name"`
+			Version string         `yaml:"version"`
+			Access  resourceAccess `yaml:"access"`
 		} `yaml:"resources"`
 	} `yaml:"component"`
 }
 
 // yamlExpirableVersion is a YAML-unmarshalling intermediate for entries in the
-// GitHub versions file. metav1.Time has no UnmarshalYAML, so we use *time.Time
+// versions file. metav1.Time has no UnmarshalYAML, so we use *time.Time
 // here and convert to gardenerv1beta1.ExpirableVersion after parsing.
 type yamlExpirableVersion struct {
 	Version        string                                 `yaml:"version"`
@@ -66,7 +68,7 @@ type yamlExpirableVersion struct {
 	ExpirationDate *time.Time                             `yaml:"expirationDate"`
 }
 
-// kubernetesVersions is the shape of the GitHub versions file.
+// kubernetesVersions is the shape of the versions file (KUBERNETES_VERSIONS.yaml).
 type kubernetesVersions struct {
 	Providers []struct {
 		Name     string                 `yaml:"name"`
@@ -74,73 +76,34 @@ type kubernetesVersions struct {
 	} `yaml:"providers"`
 }
 
-// GithubParams configures the GitHub classification source.
-type GithubParams struct {
-	// RepositoryApiURL is the GitHub REST API base URL,
-	// e.g. "https://api.github.com" or "https://github.mycompany.com/api/v3".
-	RepositoryApiURL string
-	// Repository is the owner/repo path, e.g. "my-org/landscape-setup".
-	Repository string
-	// FilePath is the path to the versions YAML file within the repository.
-	FilePath string
-	// Provider is the provider name to select from the versions file.
-	Provider string
-
-	// Transport is an optional custom HTTP transport for the GitHub client.
-	Transport http.RoundTripper
-}
-
-// LandscapeKubernetesSource fetches Kubernetes versions from a Keppel OCI
-// registry and their classifications from a GitHub repository, returning the
-// intersection as []gardenerv1beta1.ExpirableVersion.
+// LandscapeKubernetesSource fetches Kubernetes versions exclusively from the
+// OCI component descriptor and its embedded kubernetes-version-data localBlob.
 type LandscapeKubernetesSource struct {
-	ociRepo      *remote.Repository
-	githubClient *http.Client
-	fileURL      string
-	provider     string
+	ociRepo  *remote.Repository
+	provider string
 }
 
-func GithubPATTransport(token string) http.RoundTripper {
-	return &patTransport{token: token, base: http.DefaultTransport}
-}
-
-func GithubAppTransport(apiBase string, appID, installationID int64, privateKeyPEM []byte) (http.RoundTripper, error) {
-	key, err := parseRSAPrivateKey(privateKeyPEM)
-	if err != nil {
-		return nil, fmt.Errorf("parsing private key: %w", err)
-	}
-	return &githubAppTransport{
-		appID:          appID,
-		installationID: installationID,
-		apiBase:        apiBase,
-		key:            key,
-		base:           http.DefaultTransport,
-	}, nil
-}
-
-func NewLandscapeKubernetesSource(ociParams ocirepo.Params, gh GithubParams) (*LandscapeKubernetesSource, error) {
-	if gh.RepositoryApiURL == "" {
-		return nil, errors.New("repositoryApiUrl must be set")
+// NewLandscapeKubernetesSource creates a source that fetches Kubernetes
+// versions and their classifications from the OCI component descriptor.
+// provider must match a provider name in the kubernetes-version-data blob.
+func NewLandscapeKubernetesSource(ociParams ocirepo.Params, provider string) (*LandscapeKubernetesSource, error) {
+	if provider == "" {
+		return nil, errors.New("provider must be set")
 	}
 	repo, err := ocirepo.New(ociParams)
 	if err != nil {
 		return nil, fmt.Errorf("initializing OCI repository: %w", err)
 	}
-	fileURL, err := contentsURL(gh.RepositoryApiURL, gh.Repository, gh.FilePath)
-	if err != nil {
-		return nil, fmt.Errorf("building github contents URL: %w", err)
-	}
 	return &LandscapeKubernetesSource{
-		ociRepo:      repo,
-		githubClient: &http.Client{Transport: gh.Transport, Timeout: githubClientTimeout},
-		fileURL:      fileURL,
-		provider:     gh.Provider,
+		ociRepo:  repo,
+		provider: provider,
 	}, nil
 }
 
 // FetchVersions resolves the latest OCI tag, fetches the component descriptor
-// to get supported versions, fetches the GitHub classification file at the same
-// tag, and returns the intersection as []gardenerv1beta1.ExpirableVersion.
+// to get supported versions, fetches the kubernetes-version-data localBlob for
+// classifications at the same tag, and returns the intersection as
+// []gardenerv1beta1.ExpirableVersion.
 func (s *LandscapeKubernetesSource) FetchVersions(ctx context.Context) ([]gardenerv1beta1.ExpirableVersion, error) {
 	tag, err := s.LatestTag(ctx)
 	if err != nil {
@@ -226,6 +189,44 @@ func (s *LandscapeKubernetesSource) fetchSupportedVersions(ctx context.Context, 
 	return versions, nil
 }
 
+// fetchKubernetesVersionsBlob reads the component descriptor at the given OCI
+// tag, locates the kubernetes-version-data resource, and fetches its localBlob
+// content from the same OCI repository. The raw YAML bytes are returned.
+func (s *LandscapeKubernetesSource) fetchKubernetesVersionsBlob(ctx context.Context, tag string) ([]byte, error) {
+	cd, err := s.fetchComponentDescriptor(ctx, tag)
+	if err != nil {
+		return nil, fmt.Errorf("fetching component descriptor: %w", err)
+	}
+
+	for _, res := range cd.Component.Resources {
+		if res.Name != kubernetesVersionDataResourceName {
+			continue
+		}
+		if res.Access.Type != "localBlob/v1" {
+			return nil, fmt.Errorf("resource %q has unexpected access type %q, want localBlob/v1", kubernetesVersionDataResourceName, res.Access.Type)
+		}
+		localRef := res.Access.LocalReference
+		if localRef == "" {
+			return nil, fmt.Errorf("resource %q has empty localReference", kubernetesVersionDataResourceName)
+		}
+		rc, err := s.ociRepo.Blobs().Fetch(ctx, ocispec.Descriptor{
+			Digest:    digest.Digest(localRef),
+			Size:      res.Access.Size,
+			MediaType: res.Access.MediaType,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("fetching blob %s: %w", localRef, err)
+		}
+		defer rc.Close()
+		raw, err := io.ReadAll(rc)
+		if err != nil {
+			return nil, fmt.Errorf("reading blob %s: %w", localRef, err)
+		}
+		return raw, nil
+	}
+	return nil, fmt.Errorf("resource %q not found in component descriptor at tag %s", kubernetesVersionDataResourceName, tag)
+}
+
 func (s *LandscapeKubernetesSource) fetchComponentDescriptor(ctx context.Context, tag string) (*componentDescriptor, error) {
 	_, manifestBytes, err := oras.FetchBytes(ctx, s.ociRepo, tag, oras.DefaultFetchBytesOptions)
 	if err != nil {
@@ -283,45 +284,17 @@ func matchesFile(name, target string) bool {
 	return name == target || strings.HasSuffix(name, "/"+target)
 }
 
-// fetchClassification downloads the versions YAML from GitHub at the given ref
-// and returns the versions for the configured provider.
-func (s *LandscapeKubernetesSource) fetchClassification(ctx context.Context, ref string) ([]gardenerv1beta1.ExpirableVersion, error) {
+// fetchClassification fetches the kubernetes-version-data localBlob at the
+// given tag and returns the versions for the configured provider.
+func (s *LandscapeKubernetesSource) fetchClassification(ctx context.Context, tag string) ([]gardenerv1beta1.ExpirableVersion, error) {
 	if s.provider == "" {
 		return nil, errors.New("provider must be set")
 	}
-	raw, err := s.fetchGithubFile(ctx, ref)
+	raw, err := s.fetchKubernetesVersionsBlob(ctx, tag)
 	if err != nil {
-		return nil, fmt.Errorf("fetch github file: %w", err)
+		return nil, fmt.Errorf("fetching kubernetes versions blob: %w", err)
 	}
 	return parseProviderVersions(raw, s.provider)
-}
-
-func (s *LandscapeKubernetesSource) fetchGithubFile(ctx context.Context, ref string) ([]byte, error) {
-	fileURL := s.fileURL
-	if ref != "" {
-		fileURL += "?ref=" + ref
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fileURL, http.NoBody)
-	if err != nil {
-		return nil, fmt.Errorf("creating request: %w", err)
-	}
-	req.Header.Set("Accept", "application/vnd.github.raw")
-
-	resp, err := s.githubClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("executing request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return nil, fmt.Errorf("can't read body, github API returned %d: %w", resp.StatusCode, err)
-		}
-		return nil, fmt.Errorf("github API returned %d: %s", resp.StatusCode, body)
-	}
-
-	return io.ReadAll(resp.Body)
 }
 
 func parseProviderVersions(raw []byte, provider string) ([]gardenerv1beta1.ExpirableVersion, error) {
@@ -349,161 +322,9 @@ func parseProviderVersions(raw []byte, provider string) ([]gardenerv1beta1.Expir
 	return nil, fmt.Errorf("provider %q not found in the fetched data", provider)
 }
 
-func contentsURL(apiURL, repo, filePath string) (string, error) {
-	return url.JoinPath(apiURL, "repos", repo, "contents", filePath)
-}
-
 func convertExpirationDate(t *time.Time) *metav1.Time {
 	if t == nil {
 		return nil
 	}
 	return &metav1.Time{Time: *t}
-}
-
-// ---- GitHub PAT transport ----
-
-type patTransport struct {
-	token string
-	base  http.RoundTripper
-}
-
-func (t *patTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	r := req.Clone(req.Context())
-	r.Header.Set("Authorization", "Bearer "+t.token)
-	return t.base.RoundTrip(r)
-}
-
-// ---- GitHub App transport ----
-
-const tokenExpiryMargin = 5 * time.Minute
-
-type githubAppTransport struct {
-	appID          int64
-	installationID int64
-	apiBase        string
-	key            *rsa.PrivateKey
-	base           http.RoundTripper
-
-	mu        sync.Mutex
-	cached    string
-	expiresAt time.Time
-}
-
-func (t *githubAppTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	token, err := t.installationToken(req.Context())
-	if err != nil {
-		return nil, fmt.Errorf("getting installation token: %w", err)
-	}
-	r := req.Clone(req.Context())
-	r.Header.Set("Authorization", "Bearer "+token)
-	return t.base.RoundTrip(r)
-}
-
-func (t *githubAppTransport) installationToken(ctx context.Context) (string, error) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	if t.cached != "" && time.Now().Add(tokenExpiryMargin).Before(t.expiresAt) {
-		return t.cached, nil
-	}
-	jwt, err := t.mintJWT()
-	if err != nil {
-		return "", fmt.Errorf("minting JWT: %w", err)
-	}
-	token, expiresAt, err := exchangeInstallationToken(ctx, t.base, t.apiBase, jwt, t.installationID)
-	if err != nil {
-		return "", err
-	}
-	t.cached = token
-	t.expiresAt = expiresAt
-	return token, nil
-}
-
-func (t *githubAppTransport) mintJWT() (string, error) {
-	now := time.Now()
-	header := base64.RawURLEncoding.EncodeToString(mustJSON(map[string]string{
-		"alg": "RS256",
-		"typ": "JWT",
-	}))
-	payload := base64.RawURLEncoding.EncodeToString(mustJSON(map[string]any{
-		"iat": now.Add(-60 * time.Second).Unix(),
-		"exp": now.Add(10 * time.Minute).Unix(),
-		"iss": t.appID,
-	}))
-
-	sigInput := header + "." + payload
-	h := sha256.New()
-	h.Write([]byte(sigInput))
-
-	sig, err := rsa.SignPKCS1v15(rand.Reader, t.key, crypto.SHA256, h.Sum(nil))
-	if err != nil {
-		return "", fmt.Errorf("signing JWT: %w", err)
-	}
-	return sigInput + "." + base64.RawURLEncoding.EncodeToString(sig), nil
-}
-
-func exchangeInstallationToken(ctx context.Context, base http.RoundTripper, apiBase, jwt string, installationID int64) (string, time.Time, error) {
-	tokenURL := fmt.Sprintf("%s/app/installations/%d/access_tokens", apiBase, installationID)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, tokenURL, http.NoBody)
-	if err != nil {
-		return "", time.Time{}, fmt.Errorf("creating token request: %w", err)
-	}
-	req.Header.Set("Authorization", "Bearer "+jwt)
-	req.Header.Set("Accept", "application/vnd.github+json")
-
-	resp, err := base.RoundTrip(req)
-	if err != nil {
-		return "", time.Time{}, fmt.Errorf("requesting installation token: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", time.Time{}, fmt.Errorf("reading token response: %w", err)
-	}
-	if resp.StatusCode != http.StatusCreated {
-		return "", time.Time{}, fmt.Errorf("github returned %d: %s", resp.StatusCode, body)
-	}
-
-	var result struct {
-		Token     string    `json:"token"`
-		ExpiresAt time.Time `json:"expires_at"`
-	}
-	if err := json.Unmarshal(body, &result); err != nil {
-		return "", time.Time{}, fmt.Errorf("decoding token response: %w", err)
-	}
-	if result.Token == "" {
-		return "", time.Time{}, errors.New("empty token in response")
-	}
-	return result.Token, result.ExpiresAt, nil
-}
-
-func parseRSAPrivateKey(pemBytes []byte) (*rsa.PrivateKey, error) {
-	block, _ := pem.Decode(pemBytes)
-	if block == nil {
-		return nil, errors.New("no PEM block found")
-	}
-	switch block.Type {
-	case "RSA PRIVATE KEY":
-		return x509.ParsePKCS1PrivateKey(block.Bytes)
-	case "PRIVATE KEY":
-		key, err := x509.ParsePKCS8PrivateKey(block.Bytes)
-		if err != nil {
-			return nil, err
-		}
-		rsaKey, ok := key.(*rsa.PrivateKey)
-		if !ok {
-			return nil, errors.New("PKCS8 key is not RSA")
-		}
-		return rsaKey, nil
-	default:
-		return nil, fmt.Errorf("unsupported PEM block type %q", block.Type)
-	}
-}
-
-func mustJSON(v any) []byte {
-	b, err := json.Marshal(v)
-	if err != nil {
-		panic(fmt.Sprintf("mustJSON: %v", err))
-	}
-	return b
 }
