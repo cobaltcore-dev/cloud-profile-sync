@@ -7,15 +7,11 @@ import (
 	"archive/tar"
 	"bytes"
 	"context"
-	"crypto/rand"
-	"crypto/rsa"
-	"crypto/x509"
+	"crypto/sha256"
 	"encoding/json"
-	"encoding/pem"
 	"fmt"
 	"net"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -23,6 +19,7 @@ import (
 	"github.com/distribution/distribution/v3/configuration"
 	"github.com/distribution/distribution/v3/registry"
 	_ "github.com/distribution/distribution/v3/registry/storage/driver/inmemory"
+	. "github.com/onsi/gomega"
 	specs "github.com/opencontainers/image-spec/specs-go"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2/content"
@@ -47,32 +44,6 @@ func tarWith(t *testing.T, name, body string) []byte {
 	return buf.Bytes()
 }
 
-func generateTestKey(t *testing.T) (key *rsa.PrivateKey, pemBytes []byte) {
-	t.Helper()
-	var err error
-	key, err = rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		t.Fatalf("generating key: %v", err)
-	}
-	pemBytes = pem.EncodeToMemory(&pem.Block{
-		Type:  "RSA PRIVATE KEY",
-		Bytes: x509.MarshalPKCS1PrivateKey(key),
-	})
-	return key, pemBytes
-}
-
-const testDescriptor = `
-component:
-  name: landscape-setup
-  resources:
-  - name: kube-apiserver
-    version: 1.31.4
-  - name: kube-apiserver
-    version: 1.32.1
-  - name: kubelet
-    version: 1.31.4
-`
-
 const testProvidersYAML = `
 providers:
 - name: converged-cloud
@@ -86,204 +57,35 @@ providers:
     classification: supported
 `
 
+// descriptorYAMLWithBlob builds a component descriptor YAML that includes both
+// kube-apiserver resources and a kubernetes-version-data localBlob resource
+// pointing to the given digest and size.
+func descriptorYAMLWithBlob(t *testing.T, versionsDigest string, versionsSize int) string {
+	t.Helper()
+	return fmt.Sprintf(`
+component:
+  name: landscape-setup
+  resources:
+  - name: kube-apiserver
+    version: 1.31.4
+  - name: kube-apiserver
+    version: 1.32.1
+  - name: kubelet
+    version: 1.31.4
+  - name: kubernetes-version-data
+    version: v1.2.3
+    type: gardener.cloud/kubernetes-versions+yaml
+    access:
+      type: localBlob/v1
+      localReference: %s
+      mediaType: application/vnd.gardener.cloud/kubernetes-versions+yaml
+      size: %d
+`, versionsDigest, versionsSize)
+}
+
 // ---- OCI helpers ----
 
-func TestExtractComponentDescriptor(t *testing.T) {
-	t.Run("parses resources from the tar", func(t *testing.T) {
-		blob := tarWith(t, componentDescriptorFile, testDescriptor)
-		cd, err := extractComponentDescriptor(bytes.NewReader(blob))
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if got := len(cd.Component.Resources); got != 3 {
-			t.Fatalf("expected 3 resources, got %d", got)
-		}
-	})
-	t.Run("tolerates a leading path prefix", func(t *testing.T) {
-		blob := tarWith(t, "landscape-setup/"+componentDescriptorFile, testDescriptor)
-		if _, err := extractComponentDescriptor(bytes.NewReader(blob)); err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-	})
-	t.Run("errors when the file is absent", func(t *testing.T) {
-		blob := tarWith(t, "other-file.yaml", "hello")
-		_, err := extractComponentDescriptor(bytes.NewReader(blob))
-		if err == nil || !strings.Contains(err.Error(), "not found in layer") {
-			t.Fatalf("expected not-found error, got %v", err)
-		}
-	})
-	t.Run("errors on a non-tar blob", func(t *testing.T) {
-		_, err := extractComponentDescriptor(strings.NewReader("not a tar"))
-		if err == nil {
-			t.Fatal("expected error for non-tar blob")
-		}
-	})
-}
-
-// ---- GitHub classification helpers ----
-
-func TestParseProviderVersions(t *testing.T) {
-	t.Run("selects the configured provider", func(t *testing.T) {
-		versions, err := parseProviderVersions([]byte(testProvidersYAML), "converged-cloud")
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if len(versions) != 3 {
-			t.Fatalf("expected 3 versions, got %d", len(versions))
-		}
-		if versions[1].ExpirationDate == nil { //nolint:staticcheck
-			t.Error("expected expiration date to be parsed for deprecated version")
-		}
-	})
-	t.Run("errors for an unknown provider", func(t *testing.T) {
-		_, err := parseProviderVersions([]byte(testProvidersYAML), "gcp")
-		if err == nil || !strings.Contains(err.Error(), "not found") {
-			t.Fatalf("expected not-found error, got %v", err)
-		}
-	})
-	t.Run("errors when the provider has no versions", func(t *testing.T) {
-		_, err := parseProviderVersions([]byte("providers:\n- name: empty\n  versions: []\n"), "empty")
-		if err == nil || !strings.Contains(err.Error(), "no versions") {
-			t.Fatalf("expected no-versions error, got %v", err)
-		}
-	})
-}
-
-// ---- GitHub App transport ----
-
-func TestGithubAppTransport_MintJWT(t *testing.T) {
-	key, _ := generateTestKey(t)
-	tr := &githubAppTransport{appID: 42, installationID: 99, key: key, base: http.DefaultTransport}
-
-	jwt, err := tr.mintJWT()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if parts := strings.Split(jwt, "."); len(parts) != 3 {
-		t.Fatalf("expected 3 JWT parts, got %d", len(parts))
-	}
-}
-
-func TestGithubAppTransport_TokenCaching(t *testing.T) {
-	key, _ := generateTestKey(t)
-
-	tokenCalls := 0
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.Contains(r.URL.Path, "access_tokens") {
-			tokenCalls++
-			w.WriteHeader(http.StatusCreated)
-			resp := map[string]any{
-				"token":      fmt.Sprintf("inst-token-%d", tokenCalls),
-				"expires_at": time.Now().Add(1 * time.Hour).Format(time.RFC3339),
-			}
-			if err := json.NewEncoder(w).Encode(resp); err != nil {
-				t.Error(err)
-			}
-			return
-		}
-		w.WriteHeader(http.StatusOK)
-		if _, err := w.Write([]byte(testProvidersYAML)); err != nil {
-			t.Error(err)
-		}
-	}))
-	defer srv.Close()
-
-	tr := &githubAppTransport{
-		appID:          42,
-		installationID: 99,
-		apiBase:        srv.URL,
-		key:            key,
-		base:           http.DefaultTransport,
-	}
-
-	// Two requests should produce only one token exchange call due to caching.
-	for range 2 {
-		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, srv.URL, http.NoBody)
-		if err != nil {
-			t.Fatalf("creating request: %v", err)
-		}
-		resp, err := tr.RoundTrip(req)
-		if err != nil {
-			t.Fatalf("request: %v", err)
-		}
-		resp.Body.Close()
-	}
-
-	if tokenCalls != 1 {
-		t.Errorf("expected 1 token exchange, got %d", tokenCalls)
-	}
-}
-
-func TestParseRSAPrivateKey(t *testing.T) {
-	t.Run("parses PKCS1 PEM", func(t *testing.T) {
-		_, pemBytes := generateTestKey(t)
-		if _, err := parseRSAPrivateKey(pemBytes); err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-	})
-	t.Run("errors on non-PEM input", func(t *testing.T) {
-		if _, err := parseRSAPrivateKey([]byte("not a pem")); err == nil {
-			t.Fatal("expected error")
-		}
-	})
-	t.Run("errors on unsupported PEM type", func(t *testing.T) {
-		b := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: []byte("x")})
-		if _, err := parseRSAPrivateKey(b); err == nil || !strings.Contains(err.Error(), "unsupported") {
-			t.Fatalf("expected unsupported error, got %v", err)
-		}
-	})
-}
-
-// ---- GitHub fetch helpers ----
-
-// TestFetchGithubFile_RefQueryParam verifies that fetchGithubFile appends
-// the ?ref= query parameter when a ref is provided.
-func TestFetchGithubFile_RefQueryParam(t *testing.T) {
-	var gotQuery string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotQuery = r.URL.RawQuery
-		if _, err := w.Write([]byte(testProvidersYAML)); err != nil {
-			t.Error(err)
-		}
-	}))
-	defer srv.Close()
-
-	src := &LandscapeKubernetesSource{
-		githubClient: &http.Client{Transport: &patTransport{token: "tok", base: http.DefaultTransport}},
-		fileURL:      srv.URL,
-		provider:     "converged-cloud",
-	}
-	if _, err := src.fetchClassification(context.Background(), "v1.2.3"); err != nil {
-		t.Fatalf("fetchClassification: %v", err)
-	}
-	if gotQuery != "ref=v1.2.3" {
-		t.Errorf("expected ref=v1.2.3 query param, got %q", gotQuery)
-	}
-}
-
-// TestFetchGithubFile_NonOKStatus verifies that a non-200 GitHub response is
-// propagated as an error containing the status code.
-func TestFetchGithubFile_NonOKStatus(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, "forbidden", http.StatusForbidden)
-	}))
-	defer srv.Close()
-
-	src := &LandscapeKubernetesSource{
-		githubClient: &http.Client{},
-		fileURL:      srv.URL,
-		provider:     "converged-cloud",
-	}
-	_, err := src.fetchClassification(context.Background(), "")
-	if err == nil || !strings.Contains(err.Error(), "403") {
-		t.Fatalf("expected 403 error, got %v", err)
-	}
-}
-
-// ---- FetchVersions end-to-end (real OCI registry + httptest GitHub) ----
-
-// freePort returns a TCP port number that is free at call time. There is a
-// small TOCTOU window but it is negligible for local test registries.
+// freePort returns a TCP port number that is free at call time.
 func freePort(t *testing.T) string {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -295,9 +97,7 @@ func freePort(t *testing.T) string {
 	return addr
 }
 
-// startRegistry spins up an in-process distribution registry on addr and
-// returns a cleanup function. It fails the test immediately if the registry
-// does not become ready within 500 ms.
+// startRegistry spins up an in-process distribution registry on addr.
 func startRegistry(t *testing.T, addr string) func() {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -337,10 +137,11 @@ func startRegistry(t *testing.T, addr string) func() {
 	}
 }
 
-// pushComponentDescriptorArtifact pushes a minimal OCI artifact whose first
-// layer is a tar containing componentDescriptorFile with the given YAML body,
-// tagged with tag.
-func pushComponentDescriptorArtifact(t *testing.T, addr, repoName, tag, descriptorYAML string) {
+// pushArtifactWithVersionsBlob pushes an OCI artifact that contains:
+//   - a tar layer with the component descriptor (including a kubernetes-version-data
+//     resource pointing to the versions blob by digest)
+//   - the raw versions YAML as a standalone OCI blob
+func pushArtifactWithVersionsBlob(t *testing.T, addr, repoName, tag, versionsYAML string) {
 	t.Helper()
 	ctx := context.Background()
 
@@ -350,7 +151,20 @@ func pushComponentDescriptorArtifact(t *testing.T, addr, repoName, tag, descript
 	}
 	repo.PlainHTTP = true
 
-	// Build the tar layer.
+	// Push the versions YAML blob first; compute its digest.
+	versionsBlobBytes := []byte(versionsYAML)
+	h := sha256.Sum256(versionsBlobBytes)
+	versionsDigest := fmt.Sprintf("sha256:%x", h)
+	versionsSize := len(versionsBlobBytes)
+	versionsDesc := content.NewDescriptorFromBytes("application/vnd.gardener.cloud/kubernetes-versions+yaml", versionsBlobBytes)
+	if err := repo.Push(ctx, versionsDesc, bytes.NewReader(versionsBlobBytes)); err != nil {
+		t.Fatalf("push versions blob: %v", err)
+	}
+
+	// Build the component descriptor YAML referencing the versions blob.
+	descriptorYAML := descriptorYAMLWithBlob(t, versionsDigest, versionsSize)
+
+	// Build the tar layer containing the component descriptor.
 	layerBytes := tarWith(t, componentDescriptorFile, descriptorYAML)
 	layerDesc := content.NewDescriptorFromBytes(ocispec.MediaTypeImageLayer, layerBytes)
 	if err := repo.Push(ctx, layerDesc, bytes.NewReader(layerBytes)); err != nil {
@@ -367,6 +181,45 @@ func pushComponentDescriptorArtifact(t *testing.T, addr, repoName, tag, descript
 		Versioned: specs.Versioned{SchemaVersion: 2},
 		MediaType: ocispec.MediaTypeImageManifest,
 		Config:    ocispec.DescriptorEmptyJSON,
+		Layers:    []ocispec.Descriptor{layerDesc, versionsDesc},
+	}
+	manifestBytes, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatalf("marshal manifest: %v", err)
+	}
+	manifestDesc := content.NewDescriptorFromBytes(ocispec.MediaTypeImageManifest, manifestBytes)
+	if err := repo.PushReference(ctx, manifestDesc, bytes.NewReader(manifestBytes), tag); err != nil {
+		t.Fatalf("push manifest: %v", err)
+	}
+}
+
+// pushComponentDescriptorArtifact pushes a minimal OCI artifact whose first
+// layer is a tar containing componentDescriptorFile with the given YAML body.
+// Use this for tests that do not need the versions blob.
+func pushComponentDescriptorArtifact(t *testing.T, addr, repoName, tag, descriptorYAML string) {
+	t.Helper()
+	ctx := context.Background()
+
+	repo, err := remote.NewRepository(addr + "/" + repoName)
+	if err != nil {
+		t.Fatalf("new repo: %v", err)
+	}
+	repo.PlainHTTP = true
+
+	layerBytes := tarWith(t, componentDescriptorFile, descriptorYAML)
+	layerDesc := content.NewDescriptorFromBytes(ocispec.MediaTypeImageLayer, layerBytes)
+	if err := repo.Push(ctx, layerDesc, bytes.NewReader(layerBytes)); err != nil {
+		t.Fatalf("push layer: %v", err)
+	}
+
+	if err := repo.Push(ctx, ocispec.DescriptorEmptyJSON, strings.NewReader("{}")); err != nil {
+		t.Fatalf("push config: %v", err)
+	}
+
+	manifest := ocispec.Manifest{
+		Versioned: specs.Versioned{SchemaVersion: 2},
+		MediaType: ocispec.MediaTypeImageManifest,
+		Config:    ocispec.DescriptorEmptyJSON,
 		Layers:    []ocispec.Descriptor{layerDesc},
 	}
 	manifestBytes, err := json.Marshal(manifest)
@@ -379,17 +232,10 @@ func pushComponentDescriptorArtifact(t *testing.T, addr, repoName, tag, descript
 	}
 }
 
-// TestFetchVersions_EndToEnd exercises the full FetchVersions code path: the
-// OCI component descriptor is fetched from a real in-process registry; the
-// GitHub classification file is served by an httptest.Server.
-// It verifies that only versions present in both sources are returned.
-func TestFetchVersions_EndToEnd(t *testing.T) {
-	addr := freePort(t)
-	stop := startRegistry(t, addr)
-	defer stop()
+// ---- unit tests ----
 
-	// OCI: descriptor contains 1.31.4 and 1.32.1 only (1.33.0 absent).
-	descriptor := `
+func TestExtractComponentDescriptor(t *testing.T) {
+	const testDescriptor = `
 component:
   name: landscape-setup
   resources:
@@ -400,21 +246,186 @@ component:
   - name: kubelet
     version: 1.31.4
 `
-	pushComponentDescriptorArtifact(t, addr, "k8s-versions", "v1.2.3", descriptor)
-
-	// GitHub: has 1.31.4, 1.32.1, and 1.33.0 — 1.33.0 must be filtered out
-	// because it is absent from the OCI component descriptor.
-	githubSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if _, err := w.Write([]byte(testProvidersYAML)); err != nil {
-			t.Error(err)
-		}
-	}))
-	defer githubSrv.Close()
-
-	fileURL, err := contentsURL(githubSrv.URL, "org/repo", "kubernetes/versions.yaml")
-	if err != nil {
-		t.Fatalf("contentsURL: %v", err)
+	tests := []struct {
+		name         string
+		tarName      string
+		tarBody      string
+		wantResCount int
+		wantErr      string
+	}{
+		{
+			name:         "parses resources from the tar",
+			tarName:      componentDescriptorFile,
+			tarBody:      testDescriptor,
+			wantResCount: 3,
+		},
+		{
+			name:         "tolerates a leading path prefix",
+			tarName:      "landscape-setup/" + componentDescriptorFile,
+			tarBody:      testDescriptor,
+			wantResCount: 3,
+		},
+		{
+			name:    "errors when the file is absent",
+			tarName: "other-file.yaml",
+			tarBody: "hello",
+			wantErr: "not found in layer",
+		},
 	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			blob := tarWith(t, tc.tarName, tc.tarBody)
+			cd, err := extractComponentDescriptor(bytes.NewReader(blob))
+			if tc.wantErr != "" {
+				g.Expect(err).To(MatchError(ContainSubstring(tc.wantErr)))
+				return
+			}
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(cd.Component.Resources).To(HaveLen(tc.wantResCount))
+		})
+	}
+	t.Run("errors on a non-tar blob", func(t *testing.T) {
+		// Not a table entry: uses a non-tar io.Reader, not a tarWith blob.
+		g := NewWithT(t)
+		_, err := extractComponentDescriptor(strings.NewReader("not a tar"))
+		g.Expect(err).To(HaveOccurred())
+	})
+}
+
+func TestParseProviderVersions(t *testing.T) {
+	tests := []struct {
+		name       string
+		raw        string
+		provider   string
+		wantCount  int
+		wantExpiry bool // true if versions[1] must have a non-nil ExpirationDate
+		wantErr    string
+	}{
+		{
+			name:       "selects the configured provider",
+			raw:        testProvidersYAML,
+			provider:   "converged-cloud",
+			wantCount:  3,
+			wantExpiry: true,
+		},
+		{
+			name:     "errors for an unknown provider",
+			raw:      testProvidersYAML,
+			provider: "gcp",
+			wantErr:  "not found",
+		},
+		{
+			name:     "errors when the provider has no versions",
+			raw:      "providers:\n- name: empty\n  versions: []\n",
+			provider: "empty",
+			wantErr:  "no versions",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			versions, err := parseProviderVersions([]byte(tc.raw), tc.provider)
+			if tc.wantErr != "" {
+				g.Expect(err).To(MatchError(ContainSubstring(tc.wantErr)))
+				return
+			}
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(versions).To(HaveLen(tc.wantCount))
+			if tc.wantExpiry {
+				g.Expect(versions[1].ExpirationDate).ToNot(BeNil()) //nolint:staticcheck
+			}
+		})
+	}
+}
+
+// TestFetchKubernetesVersionsBlob tests fetchKubernetesVersionsBlob directly.
+func TestFetchKubernetesVersionsBlob(t *testing.T) {
+	addr := freePort(t)
+	stop := startRegistry(t, addr)
+	defer stop()
+
+	tests := []struct {
+		name    string
+		setup   func(t *testing.T) // pushes the artifact to addr
+		repo    string
+		wantStr string // non-empty: raw bytes must contain this string
+		wantErr string // non-empty: error must contain this string
+	}{
+		{
+			name: "returns versions YAML from localBlob",
+			setup: func(t *testing.T) {
+				pushArtifactWithVersionsBlob(t, addr, "blob-ok", "v1.0.0", testProvidersYAML)
+			},
+			repo:    "blob-ok",
+			wantStr: "converged-cloud",
+		},
+		{
+			name: "errors when kubernetes-version-data resource is absent",
+			setup: func(t *testing.T) {
+				pushComponentDescriptorArtifact(t, addr, "blob-missing", "v1.0.0", `
+component:
+  name: landscape-setup
+  resources:
+  - name: kube-apiserver
+    version: 1.31.4
+`)
+			},
+			repo:    "blob-missing",
+			wantErr: kubernetesVersionDataResourceName,
+		},
+		{
+			name: "errors when access type is not localBlob/v1",
+			setup: func(t *testing.T) {
+				pushComponentDescriptorArtifact(t, addr, "blob-wrongtype", "v1.0.0", `
+component:
+  name: landscape-setup
+  resources:
+  - name: kubernetes-version-data
+    version: v1.0.0
+    access:
+      type: ociBlob/v1
+      localReference: sha256:abc123
+`)
+			},
+			repo:    "blob-wrongtype",
+			wantErr: "unexpected access type",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			tc.setup(t)
+			ociRepo, err := remote.NewRepository(addr + "/" + tc.repo)
+			g.Expect(err).ToNot(HaveOccurred())
+			ociRepo.PlainHTTP = true
+
+			src := &LandscapeKubernetesSource{ociRepo: ociRepo, provider: "converged-cloud"}
+			raw, err := src.fetchKubernetesVersionsBlob(context.Background(), "v1.0.0")
+			if tc.wantErr != "" {
+				g.Expect(err).To(MatchError(ContainSubstring(tc.wantErr)))
+				return
+			}
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(string(raw)).To(ContainSubstring(tc.wantStr))
+		})
+	}
+}
+
+// TestFetchVersions_EndToEnd exercises the full FetchVersions code path using
+// a real in-process OCI registry. The component descriptor and the
+// kubernetes-version-data localBlob are both served from the same registry.
+// It verifies that only versions present in both the kube-apiserver resources
+// and the classifications blob are returned.
+func TestFetchVersions_EndToEnd(t *testing.T) {
+	addr := freePort(t)
+	stop := startRegistry(t, addr)
+	defer stop()
+
+	// OCI descriptor contains 1.31.4 and 1.32.1; versions blob has 1.33.0 too.
+	// 1.33.0 must be filtered out because it is absent from kube-apiserver resources.
+	pushArtifactWithVersionsBlob(t, addr, "k8s-versions", "v1.2.3", testProvidersYAML)
 
 	ociRepo, err := remote.NewRepository(addr + "/k8s-versions")
 	if err != nil {
@@ -422,12 +433,7 @@ component:
 	}
 	ociRepo.PlainHTTP = true
 
-	src := &LandscapeKubernetesSource{
-		ociRepo:      ociRepo,
-		githubClient: &http.Client{},
-		fileURL:      fileURL,
-		provider:     "converged-cloud",
-	}
+	src := &LandscapeKubernetesSource{ociRepo: ociRepo, provider: "converged-cloud"}
 
 	versions, err := src.FetchVersions(context.Background())
 	if err != nil {
@@ -447,7 +453,7 @@ component:
 		}
 	}
 	if got["1.33.0"] {
-		t.Error("1.33.0 should not be in result (absent from OCI component descriptor)")
+		t.Error("1.33.0 should not be in result (absent from kube-apiserver resources)")
 	}
 }
 
@@ -458,8 +464,7 @@ func TestFetchVersions_NoSemverTags(t *testing.T) {
 	stop := startRegistry(t, addr)
 	defer stop()
 
-	// Push a single manifest under a non-semver tag.
-	pushComponentDescriptorArtifact(t, addr, "k8s-nosemver", "not-a-version", testDescriptor)
+	pushComponentDescriptorArtifact(t, addr, "k8s-nosemver", "not-a-version", "component:\n  name: x\n  resources: []\n")
 
 	ociRepo, err := remote.NewRepository(addr + "/k8s-nosemver")
 	if err != nil {
@@ -467,12 +472,7 @@ func TestFetchVersions_NoSemverTags(t *testing.T) {
 	}
 	ociRepo.PlainHTTP = true
 
-	src := &LandscapeKubernetesSource{
-		ociRepo:      ociRepo,
-		githubClient: &http.Client{},
-		fileURL:      "http://unused",
-		provider:     "converged-cloud",
-	}
+	src := &LandscapeKubernetesSource{ociRepo: ociRepo, provider: "converged-cloud"}
 	_, err = src.FetchVersions(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "no semver tags") {
 		t.Fatalf("expected no-semver-tags error, got %v", err)
@@ -487,25 +487,58 @@ func TestFetchVersions_NoKubeAPIServerResources(t *testing.T) {
 	stop := startRegistry(t, addr)
 	defer stop()
 
-	noAPIServerDescriptor := `
+	// Build an artifact where the versions blob is present but there are no
+	// kube-apiserver resources — the intersection must be empty.
+	versionsBlobBytes := []byte(testProvidersYAML)
+	h := sha256.Sum256(versionsBlobBytes)
+	versionsDigest := fmt.Sprintf("sha256:%x", h)
+	versionsSize := len(versionsBlobBytes)
+	descriptorYAML := fmt.Sprintf(`
 component:
   name: landscape-setup
   resources:
   - name: kubelet
     version: 1.31.4
-`
-	pushComponentDescriptorArtifact(t, addr, "k8s-noapiserver", "v1.0.0", noAPIServerDescriptor)
+  - name: kubernetes-version-data
+    version: v1.0.0
+    access:
+      type: localBlob/v1
+      localReference: %s
+      mediaType: application/vnd.gardener.cloud/kubernetes-versions+yaml
+      size: %d
+`, versionsDigest, versionsSize)
 
-	githubSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if _, err := w.Write([]byte(testProvidersYAML)); err != nil {
-			t.Error(err)
-		}
-	}))
-	defer githubSrv.Close()
-
-	fileURL, err := contentsURL(githubSrv.URL, "org/repo", "kubernetes/versions.yaml")
+	ctx := context.Background()
+	repo2, err := remote.NewRepository(addr + "/k8s-noapiserver")
 	if err != nil {
-		t.Fatalf("contentsURL: %v", err)
+		t.Fatalf("new repo: %v", err)
+	}
+	repo2.PlainHTTP = true
+	vDesc := content.NewDescriptorFromBytes("application/vnd.gardener.cloud/kubernetes-versions+yaml", versionsBlobBytes)
+	if err := repo2.Push(ctx, vDesc, bytes.NewReader(versionsBlobBytes)); err != nil {
+		t.Fatalf("push versions blob: %v", err)
+	}
+	layerBytes := tarWith(t, componentDescriptorFile, descriptorYAML)
+	layerDesc := content.NewDescriptorFromBytes(ocispec.MediaTypeImageLayer, layerBytes)
+	if err := repo2.Push(ctx, layerDesc, bytes.NewReader(layerBytes)); err != nil {
+		t.Fatalf("push layer: %v", err)
+	}
+	if err := repo2.Push(ctx, ocispec.DescriptorEmptyJSON, strings.NewReader("{}")); err != nil {
+		t.Fatalf("push config: %v", err)
+	}
+	manifest := ocispec.Manifest{
+		Versioned: specs.Versioned{SchemaVersion: 2},
+		MediaType: ocispec.MediaTypeImageManifest,
+		Config:    ocispec.DescriptorEmptyJSON,
+		Layers:    []ocispec.Descriptor{layerDesc, vDesc},
+	}
+	manifestBytes, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatalf("marshal manifest: %v", err)
+	}
+	manifestDesc := content.NewDescriptorFromBytes(ocispec.MediaTypeImageManifest, manifestBytes)
+	if err := repo2.PushReference(ctx, manifestDesc, bytes.NewReader(manifestBytes), "v1.0.0"); err != nil {
+		t.Fatalf("push manifest: %v", err)
 	}
 
 	ociRepo, err := remote.NewRepository(addr + "/k8s-noapiserver")
@@ -514,12 +547,7 @@ component:
 	}
 	ociRepo.PlainHTTP = true
 
-	src := &LandscapeKubernetesSource{
-		ociRepo:      ociRepo,
-		githubClient: &http.Client{},
-		fileURL:      fileURL,
-		provider:     "converged-cloud",
-	}
+	src := &LandscapeKubernetesSource{ociRepo: ociRepo, provider: "converged-cloud"}
 	versions, err := src.FetchVersions(context.Background())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

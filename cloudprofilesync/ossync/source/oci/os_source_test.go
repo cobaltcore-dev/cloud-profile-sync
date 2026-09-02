@@ -62,7 +62,7 @@ var _ = Describe("OCISource", func() {
 			Registry:   registryAddr,
 			Repository: "repo",
 			Insecure:   true,
-		}, 4, logr.Discard())
+		}, 4, logr.Discard(), nil)
 		Expect(err).To(Succeed())
 		versions, err := oci.GetVersions(ctx)
 		Expect(err).To(Succeed())
@@ -106,7 +106,7 @@ var _ = Describe("OCISource", func() {
 			Registry:   registryAddr,
 			Repository: "repo-caps",
 			Insecure:   true,
-		}, 4, logr.Discard())
+		}, 4, logr.Discard(), []string{"feature_set"})
 		Expect(err).To(Succeed())
 		versions, err := oci.GetVersions(ctx)
 		Expect(err).To(Succeed())
@@ -116,7 +116,7 @@ var _ = Describe("OCISource", func() {
 		Expect(versions[0].Architectures).To(Equal([]string{"amd64"}))
 		Expect(versions[0].Capabilities).To(Equal(gardencorev1beta1.Capabilities{
 			"architecture": {"amd64"},
-			"feature":      {"sci", "_usi"}, // _rescue and log are filtered out
+			"feature_set":  {"sci", "usi", "rescue", "log"}, // all values passed through normalized; filtering against machineCapabilities happens in the updater
 		}))
 	})
 
@@ -151,7 +151,7 @@ var _ = Describe("OCISource", func() {
 			Registry:   registryAddr,
 			Repository: "repo-legacy",
 			Insecure:   true,
-		}, 4, logr.Discard())
+		}, 4, logr.Discard(), nil)
 		Expect(err).To(Succeed())
 		versions, err := oci.GetVersions(ctx)
 		Expect(err).To(Succeed())
@@ -200,7 +200,7 @@ var _ = Describe("OCISource", func() {
 			Registry:   registryAddr,
 			Repository: "repo-missing-arch",
 			Insecure:   true,
-		}, 4, logr.Discard())
+		}, 4, logr.Discard(), nil)
 		Expect(err).To(Succeed())
 		versions, err := oci.GetVersions(ctx)
 		Expect(err).To(Succeed())
@@ -208,7 +208,7 @@ var _ = Describe("OCISource", func() {
 		Expect(versions[0].Version).To(Equal("1.0.0"))
 	})
 
-	It("leaves Capabilities nil when feature_set contains no valid values", func(ctx SpecContext) {
+	It("normalizes all feature_set values and passes them through", func(ctx SpecContext) {
 		repo, err := remote.NewRepository(registryAddr + "/repo-no-valid-features")
 		Expect(err).To(Succeed())
 		repo.PlainHTTP = true
@@ -237,13 +237,98 @@ var _ = Describe("OCISource", func() {
 			Registry:   registryAddr,
 			Repository: "repo-no-valid-features",
 			Insecure:   true,
-		}, 4, logr.Discard())
+		}, 4, logr.Discard(), []string{"feature_set"})
 		Expect(err).To(Succeed())
 		versions, err := oci.GetVersions(ctx)
 		Expect(err).To(Succeed())
 		Expect(versions).To(HaveLen(1))
+		Expect(versions[0].Capabilities).To(Equal(gardencorev1beta1.Capabilities{
+			"architecture": {"amd64"},
+			"feature_set":  {"rescue", "log", "sap", "ssh"},
+		}))
+		Expect(versions[0].CleanVersion).To(Equal("3.0.0"))
+	})
+
+	It("detects SupportInPlaceUpdate from feature_set even when feature_set is not in capabilityKeys", func(ctx SpecContext) {
+		repo, err := remote.NewRepository(registryAddr + "/repo-usi-no-caps")
+		Expect(err).To(Succeed())
+		repo.PlainHTTP = true
+
+		index := ocispec.Index{
+			Versioned: specs.Versioned{SchemaVersion: 2},
+			Manifests: []ocispec.Descriptor{
+				{MediaType: ocispec.MediaTypeImageManifest, Size: 0, Digest: ocispec.DescriptorEmptyJSON.Digest},
+			},
+			Annotations: map[string]string{
+				"architecture": "amd64",
+				"feature_set":  "sci,_usi",
+				"version":      "4.0.0",
+				"hypervisor":   "kvm",
+			},
+		}
+		indexBlob, err := json.Marshal(index)
+		Expect(err).To(Succeed())
+		indexDesc := content.NewDescriptorFromBytes(ocispec.MediaTypeImageIndex, indexBlob)
+
+		err = repo.Push(ctx, ocispec.DescriptorEmptyJSON, strings.NewReader("{}"))
+		Expect(err).To(Succeed())
+		err = repo.PushReference(ctx, indexDesc, bytes.NewReader(indexBlob), "4.0.0")
+		Expect(err).To(Succeed())
+
+		// capabilityKeys only includes "hypervisor", NOT "feature_set"
+		oci, err := oci.NewOCI(ocirepo.Params{
+			Registry:   registryAddr,
+			Repository: "repo-usi-no-caps",
+			Insecure:   true,
+		}, 4, logr.Discard(), []string{"hypervisor"})
+		Expect(err).To(Succeed())
+		versions, err := oci.GetVersions(ctx)
+		Expect(err).To(Succeed())
+		Expect(versions).To(HaveLen(1))
+		Expect(versions[0].SupportInPlaceUpdate).To(BeTrue())
+		Expect(versions[0].Capabilities).To(Equal(gardencorev1beta1.Capabilities{
+			"architecture": {"amd64"},
+			"hypervisor":   {"kvm"},
+		}))
+	})
+
+	It("populates CleanVersion from version annotation even when capabilityKeys is empty", func(ctx SpecContext) {
+		repo, err := remote.NewRepository(registryAddr + "/repo-clean-version-no-caps")
+		Expect(err).To(Succeed())
+		repo.PlainHTTP = true
+
+		index := ocispec.Index{
+			Versioned: specs.Versioned{SchemaVersion: 2},
+			Manifests: []ocispec.Descriptor{
+				{MediaType: ocispec.MediaTypeImageManifest, Size: 0, Digest: ocispec.DescriptorEmptyJSON.Digest},
+			},
+			Annotations: map[string]string{
+				"architecture": "amd64",
+				"version":      "5.0.0",
+				"feature_set":  "sci,_usi",
+			},
+		}
+		indexBlob, err := json.Marshal(index)
+		Expect(err).To(Succeed())
+		indexDesc := content.NewDescriptorFromBytes(ocispec.MediaTypeImageIndex, indexBlob)
+
+		err = repo.Push(ctx, ocispec.DescriptorEmptyJSON, strings.NewReader("{}"))
+		Expect(err).To(Succeed())
+		err = repo.PushReference(ctx, indexDesc, bytes.NewReader(indexBlob), "5.0.0-build-abc")
+		Expect(err).To(Succeed())
+
+		oci, err := oci.NewOCI(ocirepo.Params{
+			Registry:   registryAddr,
+			Repository: "repo-clean-version-no-caps",
+			Insecure:   true,
+		}, 4, logr.Discard(), nil)
+		Expect(err).To(Succeed())
+		versions, err := oci.GetVersions(ctx)
+		Expect(err).To(Succeed())
+		Expect(versions).To(HaveLen(1))
+		Expect(versions[0].CleanVersion).To(Equal("5.0.0"))
 		Expect(versions[0].Capabilities).To(BeNil())
-		Expect(versions[0].CleanVersion).To(BeEmpty())
+		Expect(versions[0].SupportInPlaceUpdate).To(BeTrue())
 	})
 
 })

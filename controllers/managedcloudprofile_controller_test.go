@@ -59,17 +59,17 @@ func (f *emptyOCISource) GetVersions(ctx context.Context) ([]ossync.SourceImage,
 
 type fakeFactory struct{}
 
-func (f *fakeFactory) Create(params ocirepo.Params, _ int64, _ logr.Logger) (ossync.Source, error) {
+func (f *fakeFactory) Create(params ocirepo.Params, _ int64, _ logr.Logger, _ []string) (ossync.Source, error) {
 	return &fakeOCISource{}, nil
 }
 
 type emptyFactory struct{}
 
-func (f *emptyFactory) Create(params ocirepo.Params, parallel int64, _ logr.Logger) (ossync.Source, error) {
+func (f *emptyFactory) Create(params ocirepo.Params, parallel int64, _ logr.Logger, _ []string) (ossync.Source, error) {
 	return &emptyOCISource{}, nil
 }
 
-func (m *mockOCIFactory) Create(params ocirepo.Params, parallel int64, _ logr.Logger) (ossync.Source, error) {
+func (m *mockOCIFactory) Create(params ocirepo.Params, parallel int64, _ logr.Logger, _ []string) (ossync.Source, error) {
 	return m.createFunc(params, parallel)
 }
 
