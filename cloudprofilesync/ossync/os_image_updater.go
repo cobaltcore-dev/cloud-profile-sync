@@ -113,6 +113,9 @@ type ImageUpdater struct {
 // resolveExpiration preserves an already-stamped expiration date, otherwise takes
 // the date the source derived. The updater never invents a date.
 func (iu *ImageUpdater) resolveExpiration(src SourceImage, existing *metav1.Time) *metav1.Time {
+	if src.ExpirationDate == nil {
+		return nil
+	}
 	if existing != nil {
 		return existing
 	}
