@@ -718,5 +718,28 @@ var _ = Describe("ImageUpdater", func() {
 			Expect(cpSpec.MachineImages[0].Versions).To(HaveLen(1))
 			Expect(cpSpec.MachineImages[0].Versions[0].ExpirationDate).To(BeNil()) //nolint:staticcheck // legacy field; Lifecycle needs the VersionClassificationLifecycle feature gate
 		})
+
+		It("clears a stale expiration date when a version returns to supported (e.g. KeepLatest increase)", func(ctx SpecContext) {
+			supported := gardencorev1beta1.ClassificationSupported
+			existing := metav1.NewTime(time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC))
+			cpSpec := gardencorev1beta1.CloudProfileSpec{
+				MachineImages: []gardencorev1beta1.MachineImage{
+					{Name: "test", Versions: []gardencorev1beta1.MachineImageVersion{
+						{ExpirableVersion: gardencorev1beta1.ExpirableVersion{
+							Version:        "1.0.0",
+							Classification: &deprecated, //nolint:staticcheck // legacy fields; Lifecycle needs the VersionClassificationLifecycle feature gate
+							ExpirationDate: &existing,   //nolint:staticcheck // legacy fields; Lifecycle needs the VersionClassificationLifecycle feature gate
+						}, Architectures: []string{"amd64"}},
+					}},
+				},
+			}
+			mockSource.images = []ossync.SourceImage{
+				{Version: "1.0.0", Architectures: []string{"amd64"}, Classification: &supported},
+			}
+			updater := newUpdater()
+			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
+			Expect(cpSpec.MachineImages[0].Versions).To(HaveLen(1))
+			Expect(cpSpec.MachineImages[0].Versions[0].ExpirationDate).To(BeNil()) //nolint:staticcheck // legacy field; Lifecycle needs the VersionClassificationLifecycle feature gate
+		})
 	})
 })
