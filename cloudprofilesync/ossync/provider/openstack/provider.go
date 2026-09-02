@@ -72,7 +72,10 @@ func (p *OpenStackProvider) Configure(cpSpec *gardencorev1beta1.CloudProfileSpec
 		// reconciles; the source does not guarantee a consistent region order,
 		// which would otherwise churn the CloudProfile and cause a reconcile loop.
 		slices.SortFunc(entry.Regions, func(a, b openstackv1alpha1.RegionIDMapping) int {
-			return cmp.Compare(a.Name, b.Name)
+			if c := cmp.Compare(a.Name, b.Name); c != 0 {
+				return c
+			}
+			return cmp.Compare(a.ID, b.ID)
 		})
 	}
 
