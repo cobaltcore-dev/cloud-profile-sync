@@ -20,9 +20,9 @@ type ManagedCloudProfileSpec struct {
 	// +optional
 	GarbageCollection *GarbageCollectionConfig `json:"garbageCollection,omitempty"`
 
-	// KubernetesVersionUpdateConfig contains the source and provider information to automate Kubernetes version updates.
+	// KubernetesUpdate contains the source and provider information to automate Kubernetes version updates.
 	// +optional
-	KubernetesVersionUpdateConfig *KubernetesVersionUpdateConfig `json:"kubernetesVersionUpdateConfig,omitempty"`
+	KubernetesUpdate *KubernetesVersionUpdateConfig `json:"kubernetesUpdate,omitempty"`
 }
 
 // Copy the cloud profile spec to override some validation
@@ -119,52 +119,17 @@ type KubernetesVersionUpdateConfig struct {
 	// removed from the CloudProfile.
 	ExpirationThreshold metav1.Duration `json:"expirationThreshold,omitempty"`
 
-	// LandscapeSetup contains the required OCI and GitHub sources for Kubernetes versions.
+	// LandscapeSetup contains the OCI source configuration for Kubernetes versions.
 	// +optional
 	LandscapeSetup *LandscapeSetup `json:"landscapeSetup,omitempty"`
 }
 
-// LandscapeSetup configures the combined OCI and GitHub sources for Kubernetes versions.
+// LandscapeSetup configures the OCI component-descriptor source for Kubernetes versions.
 type LandscapeSetup struct {
 	// OCI contains configuration for the OCI component-descriptor source.
 	OCI OCI `json:"oci"`
-	// Github contains configuration for fetching Kubernetes version classifications from a GitHub repository.
-	Github KubernetesVersionSourceGithub `json:"github"`
-}
-
-// KubernetesVersionSourceGithub configures fetching Kubernetes versions from a
-// YAML file in a GitHub repository. The file has a providers[].versions[] shape.
-type KubernetesVersionSourceGithub struct {
-	// RepositoryApiURL is the base URL of the GitHub REST API, e.g.
-	// "https://api.github.com" or "https://github.mycompany.com/api/v3".
-	RepositoryApiURL string `json:"repositoryApiUrl"`
-	// Repository is the owner/repo path, e.g. "my-org/landscape-setup".
-	Repository string `json:"repository"`
-	// FilePath is the path to the versions file within the repository,
-	// e.g. "kubernetes/versions.yaml".
-	FilePath string `json:"filePath"`
-	// Provider is the provider whose Kubernetes versions are read from the file.
+	// Provider is the provider name to select from the kubernetes-version-data blob,
 	Provider string `json:"provider"`
-	// PersonalAccessTokenSecret is a reference to a secret containing a GitHub
-	// personal access token. Mutually exclusive with GithubApp.
-	// +optional
-	PersonalAccessTokenSecret *SecretReference `json:"personalAccessTokenSecret,omitempty"`
-	// GithubApp configures authentication via a GitHub App installation.
-	// Mutually exclusive with PersonalAccessTokenSecret.
-	// +optional
-	GithubApp *GithubAppAuth `json:"githubApp,omitempty"`
-}
-
-// GithubAppAuth holds the credentials needed to authenticate as a GitHub App
-// installation.
-type GithubAppAuth struct {
-	// AppID is the numeric GitHub App ID.
-	AppID int64 `json:"appID"`
-	// InstallationID is the numeric installation ID for the target repository.
-	InstallationID int64 `json:"installationID"`
-	// PrivateKeySecret is a reference to a secret containing the RSA private key
-	// (PEM-encoded) used to sign JWTs.
-	PrivateKeySecret SecretReference `json:"privateKeySecret"`
 }
 
 type MachineImageUpdateSource struct {
