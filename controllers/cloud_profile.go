@@ -227,7 +227,6 @@ func (r *Reconciler) landscapeSetupSource(ctx context.Context, ls v1alpha1.Lands
 	if err != nil {
 		return nil, fmt.Errorf("initializing landscape source: %w", err)
 	}
-
 	return landscapeSource, nil
 }
 
@@ -253,6 +252,10 @@ func applyExpirationDates(images []gardenerv1beta1.MachineImage, stored map[stri
 	for i := range images {
 		for j := range images[i].Versions {
 			v := &images[i].Versions[j]
+			isDeprecated := v.Classification != nil && *v.Classification == gardenerv1beta1.ClassificationDeprecated //nolint:staticcheck // legacy fields; Lifecycle needs the VersionClassificationLifecycle feature gate
+			if !isDeprecated {
+				continue
+			}
 			if exp, ok := stored[expirationDateKey(images[i].Name, v.Version)]; ok {
 				v.ExpirationDate = exp //nolint:staticcheck // legacy fields; Lifecycle needs the VersionClassificationLifecycle feature gate
 			}
