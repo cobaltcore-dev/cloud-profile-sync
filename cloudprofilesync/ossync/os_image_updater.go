@@ -8,7 +8,6 @@ import (
 	"context"
 	"fmt"
 	"slices"
-	"time"
 
 	"github.com/blang/semver/v4"
 	gardenerv1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
@@ -111,20 +110,13 @@ type ImageUpdater struct {
 	EnableCapabilities bool
 }
 
-// resolveExpiration decides the expiration date to write for a source image.
+// resolveExpiration preserves an already-stamped expiration date, otherwise takes
+// the date the source derived. The updater never invents a date.
 func (iu *ImageUpdater) resolveExpiration(src SourceImage, existing *metav1.Time) *metav1.Time {
-	isDeprecated := src.Classification != nil && *src.Classification == gardenerv1beta1.ClassificationDeprecated
-	if !isDeprecated {
-		return src.ExpirationDate
-	}
 	if existing != nil {
 		return existing
 	}
-	if src.ExpirationDate != nil {
-		return src.ExpirationDate
-	}
-	now := metav1.NewTime(time.Now())
-	return &now
+	return src.ExpirationDate
 }
 
 // mergeCapabilityFlavor appends the flavor from src to existing if not already present.
@@ -245,8 +237,7 @@ func (iu *ImageUpdater) Update(ctx context.Context, cpSpec *gardenerv1beta1.Clou
 		// Always write the full tag version (legacy path, safe for running Shoots).
 		if idx, exists := existingVersions[sourceImage.Version]; exists {
 			image.Versions[idx].Architectures = sourceImage.Architectures
-			image.Versions[idx].Classification = sourceImage.Classification //nolint:staticcheck // legacy fields; Lifecycle needs the VersionClassificationLifecycle feature gate
-			// Stamp expiration once on the transition to deprecated; preserve it thereafter.
+			image.Versions[idx].Classification = sourceImage.Classification                                            //nolint:staticcheck // legacy fields; Lifecycle needs the VersionClassificationLifecycle feature gate
 			image.Versions[idx].ExpirationDate = iu.resolveExpiration(sourceImage, image.Versions[idx].ExpirationDate) //nolint:staticcheck // legacy fields; Lifecycle needs the VersionClassificationLifecycle feature gate
 			image.Versions[idx].InPlaceUpdates = inPlaceUpdates(sourceImage.SupportInPlaceUpdate)
 		} else {

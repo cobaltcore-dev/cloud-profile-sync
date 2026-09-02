@@ -15,6 +15,8 @@ import (
 	"github.com/blang/semver/v4"
 	gardenerv1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
 	"github.com/go-logr/logr"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	"github.com/gophercloud/gophercloud/v2"
 	"github.com/gophercloud/gophercloud/v2/openstack"
 	"github.com/gophercloud/gophercloud/v2/openstack/image/v2/images"
@@ -217,7 +219,12 @@ func (g *Glance) GetVersions(ctx context.Context) ([]ossync.SourceImage, error) 
 	}
 	if len(versions) > 0 {
 		deprecated := gardenerv1beta1.ClassificationDeprecated
-		versions[len(versions)-1].Classification = &deprecated
+		last := &versions[len(versions)-1]
+		last.Classification = &deprecated
+		if last.ExpirationDate == nil {
+			now := metav1.NewTime(time.Now())
+			last.ExpirationDate = &now
+		}
 	}
 
 	return versions, nil

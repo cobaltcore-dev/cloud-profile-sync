@@ -141,6 +141,32 @@ func TestPreferImageDeterministic(t *testing.T) {
 	}
 }
 
+// The oldest version is marked deprecated and gets an expiration date stamped;
+// newer (supported) versions have none.
+func TestGetVersionsStampsExpirationOnDeprecated(t *testing.T) {
+	imgs := []images.Image{
+		{ID: "old-uuid", Name: "gardenlinux-openstack-gardener_prod-amd64-2150.8.0-40f62d58"},
+		{ID: "new-uuid", Name: "gardenlinux-openstack-gardener_prod-amd64-2151.0.0-50f62d58"},
+	}
+	g := newTestGlance(t, GlanceParams{Regions: []string{testRegion}}, map[string][]images.Image{testRegion: imgs})
+
+	versions, err := g.GetVersions(context.Background())
+	if err != nil {
+		t.Fatalf("GetVersions: %v", err)
+	}
+	if len(versions) != 2 {
+		t.Fatalf("got %d versions, want 2: %+v", len(versions), versions)
+	}
+	// versions is sorted newest-first, so the last entry is the deprecated one.
+	newest, oldest := versions[0], versions[len(versions)-1]
+	if oldest.ExpirationDate == nil {
+		t.Error("deprecated version should have an expiration date stamped")
+	}
+	if newest.ExpirationDate != nil {
+		t.Errorf("supported version should not have an expiration date, got %v", newest.ExpirationDate)
+	}
+}
+
 // newTestGlance builds a Glance source with auth/list stubbed so no real OpenStack is contacted.
 func newTestGlance(t *testing.T, params GlanceParams, imgsByRegion map[string][]images.Image) *Glance {
 	t.Helper()

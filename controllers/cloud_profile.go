@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
 
 	gardenerv1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
 	"github.com/go-logr/logr"
@@ -234,12 +233,16 @@ func (r *Reconciler) landscapeSetupSource(ctx context.Context, ls v1alpha1.Lands
 
 const maxConditionMessageLen = 32768
 
+func expirationDateKey(imageName, version string) string {
+	return imageName + "/" + version
+}
+
 func collectExpirationDates(images []gardenerv1beta1.MachineImage) map[string]*metav1.Time {
 	out := make(map[string]*metav1.Time)
 	for _, img := range images {
 		for _, v := range img.Versions {
 			if v.ExpirationDate != nil { //nolint:staticcheck // legacy fields; Lifecycle needs the VersionClassificationLifecycle feature gate
-				out[img.Name+"/"+v.Version] = v.ExpirationDate //nolint:staticcheck // legacy fields; Lifecycle needs the VersionClassificationLifecycle feature gate
+				out[expirationDateKey(img.Name, v.Version)] = v.ExpirationDate //nolint:staticcheck // legacy fields; Lifecycle needs the VersionClassificationLifecycle feature gate
 			}
 		}
 	}
@@ -250,10 +253,8 @@ func applyExpirationDates(images []gardenerv1beta1.MachineImage, stored map[stri
 	for i := range images {
 		for j := range images[i].Versions {
 			v := &images[i].Versions[j]
-			if v.ExpirationDate == nil { //nolint:staticcheck // legacy fields; Lifecycle needs the VersionClassificationLifecycle feature gate
-				if exp, ok := stored[images[i].Name+"/"+v.Version]; ok {
-					v.ExpirationDate = exp //nolint:staticcheck // legacy fields; Lifecycle needs the VersionClassificationLifecycle feature gate
-				}
+			if exp, ok := stored[expirationDateKey(images[i].Name, v.Version)]; ok {
+				v.ExpirationDate = exp //nolint:staticcheck // legacy fields; Lifecycle needs the VersionClassificationLifecycle feature gate
 			}
 		}
 	}
