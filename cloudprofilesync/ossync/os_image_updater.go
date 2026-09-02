@@ -110,10 +110,15 @@ type ImageUpdater struct {
 	EnableCapabilities bool
 }
 
-// resolveExpiration preserves an already-stamped expiration date, otherwise takes
-// the date the source derived. The updater never invents a date.
+// resolveExpiration decides a version's expiration date from the source's
+// classification. A version the source reports as supported carries no date, so
+// any previously stamped date is cleared (e.g. it returned to supported after a
+// KeepLatest increase). For a deprecated version the existing date is preserved
+// so the timestamp does not drift on every reconcile; otherwise the source's
+// date is used. The updater never invents a date.
 func (iu *ImageUpdater) resolveExpiration(src SourceImage, existing *metav1.Time) *metav1.Time {
-	if src.ExpirationDate == nil {
+	isDeprecated := src.Classification != nil && *src.Classification == gardenerv1beta1.ClassificationDeprecated
+	if !isDeprecated {
 		return nil
 	}
 	if existing != nil {
