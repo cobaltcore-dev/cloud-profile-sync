@@ -37,7 +37,7 @@ func (r *Reconciler) reconcileCloudProfile(ctx context.Context, log logr.Logger,
 	var cloudProfile gardenerv1beta1.CloudProfile
 	cloudProfile.Name = mcp.Name
 
-	_, err := controllerutil.CreateOrPatch(ctx, r.Client, &cloudProfile, func() error {
+	op, err := controllerutil.CreateOrPatch(ctx, r.Client, &cloudProfile, func() error {
 		if err := controllerutil.SetControllerReference(mcp, &cloudProfile, r.Scheme()); err != nil {
 			return err
 		}
@@ -60,6 +60,7 @@ func (r *Reconciler) reconcileCloudProfile(ctx context.Context, log logr.Logger,
 		gardenerv1beta1.SetObjectDefaults_CloudProfile(&cloudProfile)
 		return errors.Join(errs...)
 	})
+	log.Info("CloudProfile patch operation", "operation", op)
 	if err != nil {
 		statusErr := r.patchStatusAndCondition(ctx, mcp, v1alpha1.FailedReconcileStatus, metav1.Condition{
 			Type:               CloudProfileAppliedConditionType,
@@ -72,6 +73,7 @@ func (r *Reconciler) reconcileCloudProfile(ctx context.Context, log logr.Logger,
 			return fmt.Errorf("failed to patch ManagedCloudProfile status: %w", statusErr)
 		}
 		if apierrors.IsInvalid(err) {
+			log.Error(err, "CloudProfile is invalid, skipping retry")
 			return nil
 		}
 		return fmt.Errorf("failed to create or patch CloudProfile: %w", err)
