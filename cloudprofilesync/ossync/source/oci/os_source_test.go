@@ -12,7 +12,6 @@ import (
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"github.com/opencontainers/image-spec/specs-go"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2/content"
 	"oras.land/oras-go/v2/registry/remote"
@@ -30,7 +29,7 @@ var _ = Describe("OCISource", func() {
 		repo.PlainHTTP = true
 
 		index := ocispec.Index{
-			Versioned: specs.Versioned{SchemaVersion: 2},
+			SchemaVersion: 2,
 			Manifests: []ocispec.Descriptor{
 				{
 					MediaType: ocispec.MediaTypeImageManifest,
@@ -79,7 +78,7 @@ var _ = Describe("OCISource", func() {
 		repo.PlainHTTP = true
 
 		index := ocispec.Index{
-			Versioned: specs.Versioned{SchemaVersion: 2},
+			SchemaVersion: 2,
 			Manifests: []ocispec.Descriptor{
 				{
 					MediaType: ocispec.MediaTypeImageManifest,
@@ -126,7 +125,7 @@ var _ = Describe("OCISource", func() {
 		repo.PlainHTTP = true
 
 		index := ocispec.Index{
-			Versioned: specs.Versioned{SchemaVersion: 2},
+			SchemaVersion: 2,
 			Manifests: []ocispec.Descriptor{
 				{
 					MediaType: ocispec.MediaTypeImageManifest,
@@ -165,7 +164,7 @@ var _ = Describe("OCISource", func() {
 		repo.PlainHTTP = true
 
 		withArch := ocispec.Index{
-			Versioned: specs.Versioned{SchemaVersion: 2},
+			SchemaVersion: 2,
 			Manifests: []ocispec.Descriptor{
 				{MediaType: ocispec.MediaTypeImageManifest, Size: 0, Digest: ocispec.DescriptorEmptyJSON.Digest},
 			},
@@ -178,7 +177,7 @@ var _ = Describe("OCISource", func() {
 		withArchDesc := content.NewDescriptorFromBytes(ocispec.MediaTypeImageIndex, withArchBlob)
 
 		noArch := ocispec.Index{
-			Versioned: specs.Versioned{SchemaVersion: 2},
+			SchemaVersion: 2,
 			Manifests: []ocispec.Descriptor{
 				{MediaType: ocispec.MediaTypeImageManifest, Size: 0, Digest: ocispec.DescriptorEmptyJSON.Digest},
 			},
@@ -214,7 +213,7 @@ var _ = Describe("OCISource", func() {
 		repo.PlainHTTP = true
 
 		index := ocispec.Index{
-			Versioned: specs.Versioned{SchemaVersion: 2},
+			SchemaVersion: 2,
 			Manifests: []ocispec.Descriptor{
 				{MediaType: ocispec.MediaTypeImageManifest, Size: 0, Digest: ocispec.DescriptorEmptyJSON.Digest},
 			},
@@ -255,7 +254,7 @@ var _ = Describe("OCISource", func() {
 		repo.PlainHTTP = true
 
 		index := ocispec.Index{
-			Versioned: specs.Versioned{SchemaVersion: 2},
+			SchemaVersion: 2,
 			Manifests: []ocispec.Descriptor{
 				{MediaType: ocispec.MediaTypeImageManifest, Size: 0, Digest: ocispec.DescriptorEmptyJSON.Digest},
 			},
@@ -298,7 +297,7 @@ var _ = Describe("OCISource", func() {
 		repo.PlainHTTP = true
 
 		index := ocispec.Index{
-			Versioned: specs.Versioned{SchemaVersion: 2},
+			SchemaVersion: 2,
 			Manifests: []ocispec.Descriptor{
 				{MediaType: ocispec.MediaTypeImageManifest, Size: 0, Digest: ocispec.DescriptorEmptyJSON.Digest},
 			},

@@ -145,8 +145,8 @@ var _ = Describe("ImageUpdater", func() {
 			var cpSpec gardencorev1beta1.CloudProfileSpec
 			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
 			Expect(cpSpec.MachineImages[0].Versions).To(ConsistOf([]gardencorev1beta1.MachineImageVersion{
-				{ExpirableVersion: gardencorev1beta1.ExpirableVersion{Version: "1.0.0"}, Architectures: []string{"amd64"}},
-				{ExpirableVersion: gardencorev1beta1.ExpirableVersion{Version: "2.0.0"}, Architectures: []string{"arm64", "amd64"}},
+				{Version: "1.0.0", Architectures: []string{"amd64"}},
+				{Version: "2.0.0", Architectures: []string{"arm64", "amd64"}},
 			}))
 		})
 
@@ -154,7 +154,7 @@ var _ = Describe("ImageUpdater", func() {
 			cpSpec := gardencorev1beta1.CloudProfileSpec{
 				MachineImages: []gardencorev1beta1.MachineImage{
 					{Name: "test", Versions: []gardencorev1beta1.MachineImageVersion{
-						{ExpirableVersion: gardencorev1beta1.ExpirableVersion{Version: "1.0.0"}, Architectures: []string{"amd64"}},
+						{Version: "1.0.0", Architectures: []string{"amd64"}},
 					}},
 				},
 			}
@@ -170,10 +170,10 @@ var _ = Describe("ImageUpdater", func() {
 			cpSpec := gardencorev1beta1.CloudProfileSpec{
 				MachineImages: []gardencorev1beta1.MachineImage{
 					{Name: "test", Versions: []gardencorev1beta1.MachineImageVersion{
-						{ExpirableVersion: gardencorev1beta1.ExpirableVersion{Version: "1.0.0"}, Architectures: []string{"amd64"}},
+						{Version: "1.0.0", Architectures: []string{"amd64"}},
 					}},
 					{Name: "other", Versions: []gardencorev1beta1.MachineImageVersion{
-						{ExpirableVersion: gardencorev1beta1.ExpirableVersion{Version: "2.0.0"}, Architectures: []string{"arm64"}},
+						{Version: "2.0.0", Architectures: []string{"arm64"}},
 					}},
 				},
 			}
@@ -182,11 +182,11 @@ var _ = Describe("ImageUpdater", func() {
 			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
 			Expect(cpSpec.MachineImages).To(ConsistOf([]gardencorev1beta1.MachineImage{
 				{Name: "test", Versions: []gardencorev1beta1.MachineImageVersion{
-					{ExpirableVersion: gardencorev1beta1.ExpirableVersion{Version: "1.0.0"}, Architectures: []string{"amd64"}},
-					{ExpirableVersion: gardencorev1beta1.ExpirableVersion{Version: "1.1.0"}, Architectures: []string{"arm64"}},
+					{Version: "1.0.0", Architectures: []string{"amd64"}},
+					{Version: "1.1.0", Architectures: []string{"arm64"}},
 				}},
 				{Name: "other", Versions: []gardencorev1beta1.MachineImageVersion{
-					{ExpirableVersion: gardencorev1beta1.ExpirableVersion{Version: "2.0.0"}, Architectures: []string{"arm64"}},
+					{Version: "2.0.0", Architectures: []string{"arm64"}},
 				}},
 			}))
 		})

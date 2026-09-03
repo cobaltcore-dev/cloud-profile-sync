@@ -19,7 +19,6 @@ import (
 	gardenerv1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"github.com/opencontainers/image-spec/specs-go"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset/scheme"
@@ -129,7 +128,7 @@ var _ = BeforeSuite(func(ctx SpecContext) {
 	Expect(err).To(Succeed())
 
 	index := ocispec.Index{
-		Versioned: specs.Versioned{SchemaVersion: 2},
+		SchemaVersion: 2,
 		Manifests: []ocispec.Descriptor{
 			{
 				MediaType: ocispec.MediaTypeImageManifest,

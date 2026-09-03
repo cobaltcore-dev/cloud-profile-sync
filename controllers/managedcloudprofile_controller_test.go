@@ -100,9 +100,9 @@ func validMachineImage(name string, versions ...string) gardenerv1beta1.MachineI
 	mivs := make([]gardenerv1beta1.MachineImageVersion, 0, len(versions))
 	for _, v := range versions {
 		mivs = append(mivs, gardenerv1beta1.MachineImageVersion{
-			ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: v},
-			CRI:              []gardenerv1beta1.CRI{{Name: "containerd"}},
-			Architectures:    []string{"amd64"},
+			Version:       v,
+			CRI:           []gardenerv1beta1.CRI{{Name: "containerd"}},
+			Architectures: []string{"amd64"},
 		})
 	}
 	return gardenerv1beta1.MachineImage{
@@ -321,8 +321,8 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 		Expect(mi).To(HaveLen(1))
 		Expect(mi[0].Name).To(Equal("the-image"))
 		vers := mi[0].Versions
-		Expect(vers).To(ContainElement(gardenerv1beta1.MachineImageVersion{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: "1.0.0"}, Architectures: []string{"amd64"}, CRI: []gardenerv1beta1.CRI{{Name: "containerd"}}}))
-		Expect(vers).To(ContainElement(gardenerv1beta1.MachineImageVersion{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: "1.0.1+abc"}, Architectures: []string{"amd64"}, CRI: []gardenerv1beta1.CRI{{Name: "containerd"}}}))
+		Expect(vers).To(ContainElement(gardenerv1beta1.MachineImageVersion{Version: "1.0.0", Architectures: []string{"amd64"}, CRI: []gardenerv1beta1.CRI{{Name: "containerd"}}}))
+		Expect(vers).To(ContainElement(gardenerv1beta1.MachineImageVersion{Version: "1.0.1+abc", Architectures: []string{"amd64"}, CRI: []gardenerv1beta1.CRI{{Name: "containerd"}}}))
 
 		Expect(k8sClient.Delete(ctx, &mcp)).To(Succeed())
 		Expect(k8sClient.Delete(ctx, cloudProfile)).To(Succeed())
@@ -386,8 +386,8 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 			gardenerv1beta1.MachineImage{
 				Name: "gc-image",
 				Versions: []gardenerv1beta1.MachineImageVersion{
-					{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: oldVersion}, Architectures: []string{"amd64"}},
-					{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: newVersion}, Architectures: []string{"amd64"}},
+					{Version: oldVersion, Architectures: []string{"amd64"}},
+					{Version: newVersion, Architectures: []string{"amd64"}},
 				},
 			},
 		)
@@ -419,10 +419,8 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 		Expect(k8sClient.Create(ctx, &mcp)).To(Succeed())
 
 		shoot := &gardenerv1beta1.Shoot{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "test-shoot",
-				Namespace: metav1.NamespaceDefault,
-			},
+			Name:      "test-shoot",
+			Namespace: metav1.NamespaceDefault,
 			Spec: gardenerv1beta1.ShootSpec{
 				CloudProfile: &gardenerv1beta1.CloudProfileReference{
 					Name: mcp.Name,
@@ -453,7 +451,7 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 		}
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
-			NamespacedName: client.ObjectKey{Name: mcp.Name},
+			Name: mcp.Name,
 		})
 		Expect(err).ToNot(HaveOccurred())
 
@@ -485,9 +483,9 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 			{
 				Name: "preserve-image",
 				Versions: []gardenerv1beta1.MachineImageVersion{
-					{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: "1.0.0"}, Architectures: []string{amd64}},
-					{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: "2.0.0"}, Architectures: []string{amd64}},
-					{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: "3.0.0"}, Architectures: []string{amd64}},
+					{Version: "1.0.0", Architectures: []string{amd64}},
+					{Version: "2.0.0", Architectures: []string{amd64}},
+					{Version: "3.0.0", Architectures: []string{amd64}},
 				},
 			},
 		}
@@ -518,9 +516,9 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 			gardenerv1beta1.MachineImage{
 				Name: "preserve-image",
 				Versions: []gardenerv1beta1.MachineImageVersion{
-					{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: "1.0.0"}, Architectures: []string{amd64}},
-					{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: "2.0.0"}, Architectures: []string{amd64}},
-					{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: "3.0.0"}, Architectures: []string{amd64}},
+					{Version: "1.0.0", Architectures: []string{amd64}},
+					{Version: "2.0.0", Architectures: []string{amd64}},
+					{Version: "3.0.0", Architectures: []string{amd64}},
 				},
 			},
 		)
@@ -567,9 +565,7 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 		version := "1.0.0"
 
 		cp := &gardenerv1beta1.CloudProfile{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "test-shoot-preserve",
-			},
+			Name: "test-shoot-preserve",
 			Spec: gardenerv1beta1.CloudProfileSpec{
 				Regions:      []gardenerv1beta1.Region{{Name: "foo"}},
 				MachineTypes: []gardenerv1beta1.MachineType{{Name: "baz"}},
@@ -577,8 +573,8 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 					{
 						Name: "shoot-preserve-image",
 						Versions: []gardenerv1beta1.MachineImageVersion{
-							{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: "1.0.0"}, Architectures: []string{amd64}},
-							{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: "1.0.1+abc"}, Architectures: []string{amd64}},
+							{Version: "1.0.0", Architectures: []string{amd64}},
+							{Version: "1.0.1+abc", Architectures: []string{amd64}},
 						},
 					},
 				},
@@ -587,10 +583,8 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 		Expect(k8sClient.Create(ctx, cp)).To(Succeed())
 
 		shoot := &gardenerv1beta1.Shoot{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "test-shoot",
-				Namespace: metav1.NamespaceDefault,
-			},
+			Name:      "test-shoot",
+			Namespace: metav1.NamespaceDefault,
 			Spec: gardenerv1beta1.ShootSpec{
 				CloudProfile: &gardenerv1beta1.CloudProfileReference{Name: cp.Name},
 				Provider: gardenerv1beta1.Provider{
@@ -611,16 +605,14 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 		Expect(k8sClient.Create(ctx, shoot)).To(Succeed())
 
 		mcp := &v1alpha1.ManagedCloudProfile{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "test-shoot-preserve",
-			},
+			Name: "test-shoot-preserve",
 			Spec: v1alpha1.ManagedCloudProfileSpec{
 				CloudProfile: baseCloudProfileSpec(
 					gardenerv1beta1.MachineImage{
 						Name: "shoot-preserve-image",
 						Versions: []gardenerv1beta1.MachineImageVersion{
-							{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: "1.0.0"}, Architectures: []string{amd64}},
-							{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: "1.0.1+abc"}, Architectures: []string{amd64}},
+							{Version: "1.0.0", Architectures: []string{amd64}},
+							{Version: "1.0.1+abc", Architectures: []string{amd64}},
 						},
 					},
 				),
@@ -659,7 +651,7 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 		}
 
 		req := ctrl.Request{
-			NamespacedName: client.ObjectKey{Name: mcp.Name},
+			Name: mcp.Name,
 		}
 
 		res, err := reconciler.Reconcile(context.Background(), req)
@@ -768,7 +760,7 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 			gardenerv1beta1.MachineImage{
 				Name: "test-image",
 				Versions: []gardenerv1beta1.MachineImageVersion{
-					{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: "1.0.0"}, Architectures: []string{"amd64"}},
+					{Version: "1.0.0", Architectures: []string{"amd64"}},
 				},
 			},
 		)
@@ -796,7 +788,7 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 				{
 					Name: "existing-image",
 					Versions: []gardenerv1beta1.MachineImageVersion{
-						{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: "1.0.0"}, Architectures: []string{"amd64"}},
+						{Version: "1.0.0", Architectures: []string{"amd64"}},
 					},
 				},
 			},
@@ -838,8 +830,8 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 			{
 				Name: "provider-config-image",
 				Versions: []gardenerv1beta1.MachineImageVersion{
-					{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: "1.0.0"}, Architectures: []string{"amd64"}},
-					{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: "1.0.1+abc"}, Architectures: []string{"amd64"}},
+					{Version: "1.0.0", Architectures: []string{"amd64"}},
+					{Version: "1.0.1+abc", Architectures: []string{"amd64"}},
 				},
 			},
 		}
@@ -865,8 +857,8 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 			gardenerv1beta1.MachineImage{
 				Name: "provider-config-image",
 				Versions: []gardenerv1beta1.MachineImageVersion{
-					{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: "1.0.0"}, Architectures: []string{"amd64"}},
-					{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: "1.0.1+abc"}, Architectures: []string{"amd64"}},
+					{Version: "1.0.0", Architectures: []string{"amd64"}},
+					{Version: "1.0.1+abc", Architectures: []string{"amd64"}},
 				},
 			},
 		)
@@ -943,7 +935,7 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 		Expect(err).To(Succeed())
 
 		shoot := &gardenerv1beta1.Shoot{
-			ObjectMeta: metav1.ObjectMeta{Name: "test-shoot-cap", Namespace: metav1.NamespaceDefault},
+			Name: "test-shoot-cap", Namespace: metav1.NamespaceDefault,
 			Spec: gardenerv1beta1.ShootSpec{
 				CloudProfile: &gardenerv1beta1.CloudProfileReference{Name: "test-gc-protect-flavors"},
 				Provider: gardenerv1beta1.Provider{
@@ -964,15 +956,15 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 		Expect(k8sClient.Create(ctx, shoot)).To(Succeed())
 
 		mcp := &v1alpha1.ManagedCloudProfile{
-			ObjectMeta: metav1.ObjectMeta{Name: "test-gc-protect-flavors"},
+			Name: "test-gc-protect-flavors",
 			Spec: v1alpha1.ManagedCloudProfileSpec{
 				CloudProfile: func() v1alpha1.CloudProfileSpec {
 					cp := baseCloudProfileSpec(
 						gardenerv1beta1.MachineImage{
 							Name: "cap-image",
 							Versions: []gardenerv1beta1.MachineImageVersion{
-								{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: rawTag}, Architectures: []string{"amd64"}},
-								{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: cleanVersion}, Architectures: []string{"amd64"}},
+								{Version: rawTag, Architectures: []string{"amd64"}},
+								{Version: cleanVersion, Architectures: []string{"amd64"}},
 							},
 						},
 					)
@@ -1014,7 +1006,7 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 				}}, nil
 			},
 		}
-		req := ctrl.Request{NamespacedName: client.ObjectKey{Name: mcp.Name}}
+		req := ctrl.Request{Name: mcp.Name}
 		_, err = r.Reconcile(ctx, req)
 		Expect(err).ToNot(HaveOccurred())
 
@@ -1074,15 +1066,15 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 		mcpSpec := baseCloudProfileSpec(gardenerv1beta1.MachineImage{
 			Name: "gc-flavor-image",
 			Versions: []gardenerv1beta1.MachineImageVersion{
-				{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: oldTag}, Architectures: []string{"amd64"}},
-				{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: newTag}, Architectures: []string{"amd64"}},
-				{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: cleanVersion}, Architectures: []string{"amd64"}},
+				{Version: oldTag, Architectures: []string{"amd64"}},
+				{Version: newTag, Architectures: []string{"amd64"}},
+				{Version: cleanVersion, Architectures: []string{"amd64"}},
 			},
 		})
 		mcpSpec.ProviderConfig = &runtime.RawExtension{Raw: raw}
 
 		mcp := &v1alpha1.ManagedCloudProfile{
-			ObjectMeta: metav1.ObjectMeta{Name: "test-gc-flavor-removal"},
+			Name: "test-gc-flavor-removal",
 			Spec: v1alpha1.ManagedCloudProfileSpec{
 				CloudProfile: mcpSpec,
 				MachineImageUpdates: []v1alpha1.MachineImageUpdate{{
@@ -1134,7 +1126,7 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 				}}, nil
 			},
 		}
-		_, err = r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKey{Name: mcp.Name}})
+		_, err = r.Reconcile(ctx, ctrl.Request{Name: mcp.Name})
 		Expect(err).ToNot(HaveOccurred())
 
 		Expect(k8sClient.Get(ctx, client.ObjectKey{Name: mcp.Name}, cp)).To(Succeed())
@@ -1191,15 +1183,15 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 		mcpSpec := baseCloudProfileSpec(gardenerv1beta1.MachineImage{
 			Name: "multi-flavor-image",
 			Versions: []gardenerv1beta1.MachineImageVersion{
-				{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: oldTag}, Architectures: []string{"amd64"}},
-				{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: newTag}, Architectures: []string{"arm64"}},
-				{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: cleanVersion}, Architectures: []string{"amd64", "arm64"}},
+				{Version: oldTag, Architectures: []string{"amd64"}},
+				{Version: newTag, Architectures: []string{"arm64"}},
+				{Version: cleanVersion, Architectures: []string{"amd64", "arm64"}},
 			},
 		})
 		mcpSpec.ProviderConfig = &runtime.RawExtension{Raw: raw}
 
 		mcp := &v1alpha1.ManagedCloudProfile{
-			ObjectMeta: metav1.ObjectMeta{Name: "test-gc-partial-flavor"},
+			Name: "test-gc-partial-flavor",
 			Spec: v1alpha1.ManagedCloudProfileSpec{
 				CloudProfile: mcpSpec,
 				MachineImageUpdates: []v1alpha1.MachineImageUpdate{
@@ -1258,7 +1250,7 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 				}}, nil
 			},
 		}
-		req := ctrl.Request{NamespacedName: client.ObjectKey{Name: mcp.Name}}
+		req := ctrl.Request{Name: mcp.Name}
 		_, err = r.Reconcile(ctx, req)
 		Expect(err).ToNot(HaveOccurred())
 
@@ -1329,15 +1321,15 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 		Expect(err).To(Succeed())
 
 		mcp := &v1alpha1.ManagedCloudProfile{
-			ObjectMeta: metav1.ObjectMeta{Name: "test-gc-cascade"},
+			Name: "test-gc-cascade",
 			Spec: v1alpha1.ManagedCloudProfileSpec{
 				CloudProfile: func() v1alpha1.CloudProfileSpec {
 					cp := baseCloudProfileSpec(
 						gardenerv1beta1.MachineImage{
 							Name: "cascade-image",
 							Versions: []gardenerv1beta1.MachineImageVersion{
-								{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: oldTag}, Architectures: []string{"amd64"}},
-								{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: cleanVersion}, Architectures: []string{"amd64"}},
+								{Version: oldTag, Architectures: []string{"amd64"}},
+								{Version: cleanVersion, Architectures: []string{"amd64"}},
 							},
 						},
 					)
@@ -1379,7 +1371,7 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 				}}, nil
 			},
 		}
-		req := ctrl.Request{NamespacedName: client.ObjectKey{Name: mcp.Name}}
+		req := ctrl.Request{Name: mcp.Name}
 		_, err = r.Reconcile(ctx, req)
 		Expect(err).ToNot(HaveOccurred())
 
@@ -1425,14 +1417,14 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 		Expect(err).To(Succeed())
 
 		mcp := &v1alpha1.ManagedCloudProfile{
-			ObjectMeta: metav1.ObjectMeta{Name: "test-gc-stale-clean"},
+			Name: "test-gc-stale-clean",
 			Spec: v1alpha1.ManagedCloudProfileSpec{
 				CloudProfile: func() v1alpha1.CloudProfileSpec {
 					cp := baseCloudProfileSpec(
 						gardenerv1beta1.MachineImage{
 							Name: "stale-clean-image",
 							Versions: []gardenerv1beta1.MachineImageVersion{
-								{ExpirableVersion: gardenerv1beta1.ExpirableVersion{Version: cleanVersion}, Architectures: []string{"amd64"}},
+								{Version: cleanVersion, Architectures: []string{"amd64"}},
 							},
 						},
 					)
@@ -1473,7 +1465,7 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 				return &fakeRegistryClientWithTags{tags: map[string]time.Time{}}, nil
 			},
 		}
-		req := ctrl.Request{NamespacedName: client.ObjectKey{Name: mcp.Name}}
+		req := ctrl.Request{Name: mcp.Name}
 		_, err = r.Reconcile(ctx, req)
 		Expect(err).ToNot(HaveOccurred())
 

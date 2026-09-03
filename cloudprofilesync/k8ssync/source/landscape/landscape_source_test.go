@@ -20,7 +20,6 @@ import (
 	"github.com/distribution/distribution/v3/registry"
 	_ "github.com/distribution/distribution/v3/registry/storage/driver/inmemory"
 	. "github.com/onsi/gomega"
-	specs "github.com/opencontainers/image-spec/specs-go"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2/content"
 	"oras.land/oras-go/v2/registry/remote"
@@ -178,10 +177,10 @@ func pushArtifactWithVersionsBlob(t *testing.T, addr, repoName, tag, versionsYAM
 
 	// Build and push the OCI manifest.
 	manifest := ocispec.Manifest{
-		Versioned: specs.Versioned{SchemaVersion: 2},
-		MediaType: ocispec.MediaTypeImageManifest,
-		Config:    ocispec.DescriptorEmptyJSON,
-		Layers:    []ocispec.Descriptor{layerDesc, versionsDesc},
+		SchemaVersion: 2,
+		MediaType:     ocispec.MediaTypeImageManifest,
+		Config:        ocispec.DescriptorEmptyJSON,
+		Layers:        []ocispec.Descriptor{layerDesc, versionsDesc},
 	}
 	manifestBytes, err := json.Marshal(manifest)
 	if err != nil {
@@ -217,10 +216,10 @@ func pushComponentDescriptorArtifact(t *testing.T, addr, repoName, tag, descript
 	}
 
 	manifest := ocispec.Manifest{
-		Versioned: specs.Versioned{SchemaVersion: 2},
-		MediaType: ocispec.MediaTypeImageManifest,
-		Config:    ocispec.DescriptorEmptyJSON,
-		Layers:    []ocispec.Descriptor{layerDesc},
+		SchemaVersion: 2,
+		MediaType:     ocispec.MediaTypeImageManifest,
+		Config:        ocispec.DescriptorEmptyJSON,
+		Layers:        []ocispec.Descriptor{layerDesc},
 	}
 	manifestBytes, err := json.Marshal(manifest)
 	if err != nil {
@@ -527,10 +526,10 @@ component:
 		t.Fatalf("push config: %v", err)
 	}
 	manifest := ocispec.Manifest{
-		Versioned: specs.Versioned{SchemaVersion: 2},
-		MediaType: ocispec.MediaTypeImageManifest,
-		Config:    ocispec.DescriptorEmptyJSON,
-		Layers:    []ocispec.Descriptor{layerDesc, vDesc},
+		SchemaVersion: 2,
+		MediaType:     ocispec.MediaTypeImageManifest,
+		Config:        ocispec.DescriptorEmptyJSON,
+		Layers:        []ocispec.Descriptor{layerDesc, vDesc},
 	}
 	manifestBytes, err := json.Marshal(manifest)
 	if err != nil {
