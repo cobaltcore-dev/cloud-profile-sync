@@ -60,7 +60,7 @@ func (r *Reconciler) reconcileCloudProfile(ctx context.Context, log logr.Logger,
 		gardenerv1beta1.SetObjectDefaults_CloudProfile(&cloudProfile)
 		return errors.Join(errs...)
 	})
-	log.Info("CloudProfile patch operation", "operation", op)
+	log.V(1).Info("CloudProfile patch operation", "operation", op)
 	if err != nil {
 		statusErr := r.patchStatusAndCondition(ctx, mcp, v1alpha1.FailedReconcileStatus, metav1.Condition{
 			Type:               CloudProfileAppliedConditionType,
