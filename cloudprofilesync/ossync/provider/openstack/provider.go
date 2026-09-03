@@ -1,9 +1,9 @@
-package openstack
-
 // SPDX-FileCopyrightText: 2025 SAP SE or an SAP affiliate company
 // SPDX-License-Identifier: Apache-2.0
+package openstack
 
 import (
+	"cmp"
 	"encoding/json"
 	"slices"
 
@@ -68,6 +68,15 @@ func (p *OpenStackProvider) Configure(cpSpec *gardencorev1beta1.CloudProfileSpec
 			// Update in place: a rebuilt image keeps the version but gets a new UUID.
 			entry.Regions[existing].ID = r.ID
 		}
+		// Sort regions by name so the marshaled ProviderConfig is stable across
+		// reconciles; the source does not guarantee a consistent region order,
+		// which would otherwise churn the CloudProfile and cause a reconcile loop.
+		slices.SortFunc(entry.Regions, func(a, b openstackv1alpha1.RegionIDMapping) int {
+			if c := cmp.Compare(a.Name, b.Name); c != 0 {
+				return c
+			}
+			return cmp.Compare(a.ID, b.ID)
+		})
 	}
 
 	raw, err := json.Marshal(cfg)

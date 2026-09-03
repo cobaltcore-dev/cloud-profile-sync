@@ -8,7 +8,6 @@ import (
 	"context"
 	"fmt"
 	"slices"
-	"time"
 
 	"github.com/blang/semver/v4"
 	gardenerv1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
@@ -111,20 +110,8 @@ type ImageUpdater struct {
 	EnableCapabilities bool
 }
 
-// resolveExpiration decides the expiration date to write for a source image.
 func (iu *ImageUpdater) resolveExpiration(src SourceImage, existing *metav1.Time) *metav1.Time {
-	isDeprecated := src.Classification != nil && *src.Classification == gardenerv1beta1.ClassificationDeprecated
-	if !isDeprecated {
-		return src.ExpirationDate
-	}
-	if existing != nil {
-		return existing
-	}
-	if src.ExpirationDate != nil {
-		return src.ExpirationDate
-	}
-	now := metav1.NewTime(time.Now())
-	return &now
+	return cmp.Or(existing, src.ExpirationDate)
 }
 
 // mergeCapabilityFlavor appends the flavor from src to existing if not already present.
@@ -245,8 +232,7 @@ func (iu *ImageUpdater) Update(ctx context.Context, cpSpec *gardenerv1beta1.Clou
 		// Always write the full tag version (legacy path, safe for running Shoots).
 		if idx, exists := existingVersions[sourceImage.Version]; exists {
 			image.Versions[idx].Architectures = sourceImage.Architectures
-			image.Versions[idx].Classification = sourceImage.Classification //nolint:staticcheck // legacy fields; Lifecycle needs the VersionClassificationLifecycle feature gate
-			// Stamp expiration once on the transition to deprecated; preserve it thereafter.
+			image.Versions[idx].Classification = sourceImage.Classification                                            //nolint:staticcheck // legacy fields; Lifecycle needs the VersionClassificationLifecycle feature gate
 			image.Versions[idx].ExpirationDate = iu.resolveExpiration(sourceImage, image.Versions[idx].ExpirationDate) //nolint:staticcheck // legacy fields; Lifecycle needs the VersionClassificationLifecycle feature gate
 			image.Versions[idx].InPlaceUpdates = inPlaceUpdates(sourceImage.SupportInPlaceUpdate)
 		} else {
@@ -260,8 +246,8 @@ func (iu *ImageUpdater) Update(ctx context.Context, cpSpec *gardenerv1beta1.Clou
 				image.Versions = append(image.Versions, gardenerv1beta1.MachineImageVersion{
 					ExpirableVersion: gardenerv1beta1.ExpirableVersion{
 						Version:        sourceImage.Version,
-						Classification: sourceImage.Classification,             //nolint:staticcheck // legacy fields; Lifecycle needs the VersionClassificationLifecycle feature gate
-						ExpirationDate: iu.resolveExpiration(sourceImage, nil), //nolint:staticcheck // legacy fields; Lifecycle needs the VersionClassificationLifecycle feature gate
+						Classification: sourceImage.Classification, //nolint:staticcheck // legacy fields; Lifecycle needs the VersionClassificationLifecycle feature gate
+						ExpirationDate: sourceImage.ExpirationDate, //nolint:staticcheck // legacy fields; Lifecycle needs the VersionClassificationLifecycle feature gate
 					},
 					Architectures: sourceImage.Architectures,
 				})
@@ -293,8 +279,8 @@ func (iu *ImageUpdater) Update(ctx context.Context, cpSpec *gardenerv1beta1.Clou
 				v := gardenerv1beta1.MachineImageVersion{
 					ExpirableVersion: gardenerv1beta1.ExpirableVersion{
 						Version:        sourceImage.CleanVersion,
-						Classification: sourceImage.Classification,             //nolint:staticcheck // legacy fields; Lifecycle needs the VersionClassificationLifecycle feature gate
-						ExpirationDate: iu.resolveExpiration(sourceImage, nil), //nolint:staticcheck // legacy fields; Lifecycle needs the VersionClassificationLifecycle feature gate
+						Classification: sourceImage.Classification, //nolint:staticcheck // legacy fields; Lifecycle needs the VersionClassificationLifecycle feature gate
+						ExpirationDate: sourceImage.ExpirationDate, //nolint:staticcheck // legacy fields; Lifecycle needs the VersionClassificationLifecycle feature gate
 					},
 					Architectures:     slices.Clone(sourceImage.Architectures),
 					CapabilityFlavors: mergeCapabilityFlavor(nil, sourceImage.Capabilities),

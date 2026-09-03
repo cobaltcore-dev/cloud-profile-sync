@@ -708,17 +708,6 @@ var _ = Describe("ImageUpdater", func() {
 			Expect(cpSpec.MachineImages[0].Versions[0].ExpirationDate).To(Equal(&fromSource)) //nolint:staticcheck // legacy field; Lifecycle needs the VersionClassificationLifecycle feature gate
 		})
 
-		It("stamps an expiration date for a new deprecated version without one", func(ctx SpecContext) {
-			mockSource.images = []ossync.SourceImage{
-				{Version: "1.0.0", Architectures: []string{"amd64"}, Classification: &deprecated},
-			}
-			updater := newUpdater()
-			var cpSpec gardencorev1beta1.CloudProfileSpec
-			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
-			Expect(cpSpec.MachineImages[0].Versions).To(HaveLen(1))
-			Expect(cpSpec.MachineImages[0].Versions[0].ExpirationDate).NotTo(BeNil()) //nolint:staticcheck // legacy field; Lifecycle needs the VersionClassificationLifecycle feature gate
-		})
-
 		It("does not set an expiration date for a non-deprecated version", func(ctx SpecContext) {
 			mockSource.images = []ossync.SourceImage{
 				{Version: "1.0.0", Architectures: []string{"amd64"}},
