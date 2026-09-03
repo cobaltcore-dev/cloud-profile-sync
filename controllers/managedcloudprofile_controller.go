@@ -49,6 +49,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
+	log.V(1).Info("reconcile triggered", "generation", mcp.Generation, "resourceVersion", mcp.ResourceVersion)
+
 	if err := r.reconcileCloudProfile(ctx, log, &mcp); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -61,14 +63,17 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 }
 
 func (r *Reconciler) patchStatusAndCondition(ctx context.Context, mcp *v1alpha1.ManagedCloudProfile, status v1alpha1.ReconcileStatus, cond metav1.Condition) error {
+	log := ctrl.LoggerFrom(ctx)
 	original := mcp.DeepCopy()
 	mcp.Status.Status = status
 	if cond.Type != "" {
 		mcp.Status.Conditions = applyCondition(mcp.Status.Conditions, cond)
 	}
 	if equality.Semantic.DeepEqual(original.Status, mcp.Status) {
+		log.V(1).Info("MCP status patch skipped, no change")
 		return nil
 	}
+	log.V(1).Info("MCP status patch issued", "status", status, "condition", cond.Type)
 	return r.Status().Patch(ctx, mcp, client.MergeFrom(original))
 }
 
