@@ -4,6 +4,7 @@ package controllers
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -37,7 +38,9 @@ func (r *Reconciler) reconcileCloudProfile(ctx context.Context, log logr.Logger,
 	var cloudProfile gardenerv1beta1.CloudProfile
 	cloudProfile.Name = mcp.Name
 
-	_, err := controllerutil.CreateOrPatch(ctx, r.Client, &cloudProfile, func() error {
+	var specBefore gardenerv1beta1.CloudProfileSpec
+	op, err := controllerutil.CreateOrPatch(ctx, r.Client, &cloudProfile, func() error {
+		specBefore = *cloudProfile.Spec.DeepCopy()
 		if err := controllerutil.SetControllerReference(mcp, &cloudProfile, r.Scheme()); err != nil {
 			return err
 		}
@@ -60,6 +63,12 @@ func (r *Reconciler) reconcileCloudProfile(ctx context.Context, log logr.Logger,
 		gardenerv1beta1.SetObjectDefaults_CloudProfile(&cloudProfile)
 		return errors.Join(errs...)
 	})
+	log.Info("CloudProfile patch operation", "operation", op)
+	if op == controllerutil.OperationResultUpdated {
+		beforeJSON, _ := json.Marshal(specBefore)
+		afterJSON, _ := json.Marshal(cloudProfile.Spec)
+		log.V(1).Info("CloudProfile spec diff", "before", string(beforeJSON), "after", string(afterJSON))
+	}
 	if err != nil {
 		statusErr := r.patchStatusAndCondition(ctx, mcp, v1alpha1.FailedReconcileStatus, metav1.Condition{
 			Type:               CloudProfileAppliedConditionType,
