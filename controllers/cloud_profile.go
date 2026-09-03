@@ -64,9 +64,15 @@ func (r *Reconciler) reconcileCloudProfile(ctx context.Context, log logr.Logger,
 		return errors.Join(errs...)
 	})
 	log.Info("CloudProfile patch operation", "operation", op)
-	if op == controllerutil.OperationResultUpdated {
-		beforeJSON, _ := json.Marshal(specBefore)
-		afterJSON, _ := json.Marshal(cloudProfile.Spec)
+	if op == controllerutil.OperationResultUpdated && log.V(1).Enabled() {
+		beforeJSON, err := json.Marshal(specBefore)
+		if err != nil {
+			log.Error(err, "failed to marshal spec before")
+		}
+		afterJSON, err := json.Marshal(cloudProfile.Spec)
+		if err != nil {
+			log.Error(err, "failed to marshal spec after")
+		}
 		log.V(1).Info("CloudProfile spec diff", "before", string(beforeJSON), "after", string(afterJSON))
 	}
 	if err != nil {
@@ -81,6 +87,7 @@ func (r *Reconciler) reconcileCloudProfile(ctx context.Context, log logr.Logger,
 			return fmt.Errorf("failed to patch ManagedCloudProfile status: %w", statusErr)
 		}
 		if apierrors.IsInvalid(err) {
+			log.Error(err, "CloudProfile is invalid, skipping retry")
 			return nil
 		}
 		return fmt.Errorf("failed to create or patch CloudProfile: %w", err)
