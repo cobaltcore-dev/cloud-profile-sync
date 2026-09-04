@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 
 	gardenerv1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
 	"github.com/go-logr/logr"
@@ -49,6 +50,11 @@ func (r *Reconciler) reconcileCloudProfile(ctx context.Context, log logr.Logger,
 			if updates.Paused {
 				log.V(1).Info("machine image update paused, keeping existing images", "cloudProfile", cloudProfile.Name, "imageName", updates.ImageName)
 				if img, ok := storedImages[updates.ImageName]; ok {
+					// Replace any entry the MCP spec contributed for this image so the
+					// stored (previously reconciled) versions are kept without duplicating.
+					cloudProfile.Spec.MachineImages = slices.DeleteFunc(cloudProfile.Spec.MachineImages, func(m gardenerv1beta1.MachineImage) bool {
+						return m.Name == updates.ImageName
+					})
 					cloudProfile.Spec.MachineImages = append(cloudProfile.Spec.MachineImages, img)
 				}
 				continue

@@ -669,10 +669,12 @@ spec:
                 items:
                   properties:
                     imageName:
-                      description: ImagesName is the name of the image to maintain
+                      description: ImageName is the name of the image to maintain
                         automatically
                       type: string
                     paused:
+                      description: Paused disables automatic updates for this image
+                        and keeps the existing CloudProfile machine images.
                       type: boolean
                     provider:
                       description: Provider contains configuration for a provider
@@ -763,8 +765,8 @@ spec:
                               description: Username for authentication.
                               type: string
                             versionOffset:
-                              description: VersionOffset control which slice of GardenLinux
-                                versions is published
+                              description: VersionOffset controls how many newest
+                                GardenLinux versions to skip before applying KeepLatest.
                               type: integer
                           required:
                           - authURLFormat

@@ -218,8 +218,17 @@ func (g *Glance) GetVersions(ctx context.Context) ([]ossync.SourceImage, error) 
 	slices.SortFunc(versions, func(a, b ossync.SourceImage) int {
 		return compareSemverDesc(a.Version, b.Version)
 	})
-	if g.keepLatest > 0 && len(versions) > g.keepLatest {
-		versions = versions[g.offset : g.offset+g.keepLatest]
+	if g.keepLatest > 0 || g.offset > 0 {
+		// Skip the newest `offset` versions, then keep the next `keepLatest`.
+		// Clamp both bounds so an offset that runs past the available versions
+		// never slices out of range. A keepLatest of 0 keeps everything after
+		// the offset.
+		lo := min(g.offset, len(versions))
+		hi := len(versions)
+		if g.keepLatest > 0 {
+			hi = min(lo+g.keepLatest, len(versions))
+		}
+		versions = versions[lo:hi]
 	}
 
 	supported := gardenerv1beta1.ClassificationSupported
