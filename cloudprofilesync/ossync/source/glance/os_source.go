@@ -31,8 +31,9 @@ const (
 	DefaultGlanceKeepLatest = 3
 	// defaultGlanceParallel is the region query concurrency used when GlanceParams.Parallel
 	// is not set.
-	defaultGlanceParallel = 8
-	usiVariantMarker      = "_usi"
+	defaultGlanceParallel      = 8
+	defaultGlanceVersionOffset = 0
+	usiVariantMarker           = "_usi"
 )
 
 type Result[T any] struct {
@@ -55,7 +56,8 @@ type GlanceParams struct {
 	KeepLatest int
 
 	// Parallel bounds how many regions are queried concurrently.
-	Parallel int64
+	Parallel      int64
+	VersionOffset int
 
 	// ProjectName / ProjectDomainName scope the token.
 	ProjectName       string
@@ -73,6 +75,7 @@ type Glance struct {
 	params       GlanceParams
 	namePrefix   string
 	keepLatest   int
+	offset       int
 	sema         *semaphore.Weighted
 	authenticate func(ctx context.Context, authURL string, opts gophercloud.AuthOptions) (*gophercloud.ProviderClient, error)
 	listImages   func(ctx context.Context, provider *gophercloud.ProviderClient, region string) ([]images.Image, error)
@@ -102,11 +105,17 @@ func NewGlance(params GlanceParams, log logr.Logger) (*Glance, error) {
 		parallel = defaultGlanceParallel
 	}
 
+	offset := params.VersionOffset
+	if offset <= 0 {
+		offset = defaultGlanceVersionOffset
+	}
+
 	return &Glance{
 		log:          log,
 		params:       params,
 		namePrefix:   prefix,
 		keepLatest:   keepLatest,
+		offset:       offset,
 		sema:         semaphore.NewWeighted(parallel),
 		authenticate: defaultAuthenticate,
 		listImages:   defaultListImages,
@@ -210,7 +219,7 @@ func (g *Glance) GetVersions(ctx context.Context) ([]ossync.SourceImage, error) 
 		return compareSemverDesc(a.Version, b.Version)
 	})
 	if g.keepLatest > 0 && len(versions) > g.keepLatest {
-		versions = versions[:g.keepLatest]
+		versions = versions[g.offset : g.offset+g.keepLatest]
 	}
 
 	supported := gardenerv1beta1.ClassificationSupported

@@ -100,6 +100,7 @@ type MachineImageUpdate struct {
 
 	// ImagesName is the name of the image to maintain automatically
 	ImageName string `json:"imageName"`
+	Paused    bool   `json:"paused,omitempty"`
 }
 
 type GarbageCollectionConfig struct {
@@ -153,6 +154,9 @@ type GlanceSource struct {
 	// KeepLatest limits results to the newest N versions.
 	// +optional
 	KeepLatest int `json:"keepLatest,omitempty"`
+	// VersionOffset control which slice of GardenLinux versions is published
+	// +optional
+	VersionOffset int `json:"versionOffset,omitempty"`
 	// Parallel bounds how many regions are queried concurrently.
 	// +optional
 	Parallel int64 `json:"parallel,omitempty"`
