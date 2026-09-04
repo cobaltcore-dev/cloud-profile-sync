@@ -98,8 +98,11 @@ type MachineImageUpdate struct {
 	// Provider contains configuration for a provider for machine images.
 	Provider MachineImageUpdateProvider `json:"provider"`
 
-	// ImagesName is the name of the image to maintain automatically
+	// ImageName is the name of the image to maintain automatically
 	ImageName string `json:"imageName"`
+	// Paused disables automatic updates for this image and keeps the existing CloudProfile machine images.
+	// +optional
+	Paused bool `json:"paused,omitempty"`
 }
 
 type GarbageCollectionConfig struct {
@@ -153,6 +156,9 @@ type GlanceSource struct {
 	// KeepLatest limits results to the newest N versions.
 	// +optional
 	KeepLatest int `json:"keepLatest,omitempty"`
+	// VersionOffset controls how many newest GardenLinux versions to skip before applying KeepLatest.
+	// +optional
+	VersionOffset int `json:"versionOffset,omitempty"`
 	// Parallel bounds how many regions are queried concurrently.
 	// +optional
 	Parallel int64 `json:"parallel,omitempty"`

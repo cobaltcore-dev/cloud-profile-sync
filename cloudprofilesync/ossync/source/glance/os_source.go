@@ -31,8 +31,9 @@ const (
 	DefaultGlanceKeepLatest = 3
 	// defaultGlanceParallel is the region query concurrency used when GlanceParams.Parallel
 	// is not set.
-	defaultGlanceParallel = 8
-	usiVariantMarker      = "_usi"
+	defaultGlanceParallel      = 8
+	defaultGlanceVersionOffset = 0
+	usiVariantMarker           = "_usi"
 )
 
 type Result[T any] struct {
@@ -55,7 +56,8 @@ type GlanceParams struct {
 	KeepLatest int
 
 	// Parallel bounds how many regions are queried concurrently.
-	Parallel int64
+	Parallel      int64
+	VersionOffset int
 
 	// ProjectName / ProjectDomainName scope the token.
 	ProjectName       string
@@ -73,6 +75,7 @@ type Glance struct {
 	params       GlanceParams
 	namePrefix   string
 	keepLatest   int
+	offset       int
 	sema         *semaphore.Weighted
 	authenticate func(ctx context.Context, authURL string, opts gophercloud.AuthOptions) (*gophercloud.ProviderClient, error)
 	listImages   func(ctx context.Context, provider *gophercloud.ProviderClient, region string) ([]images.Image, error)
@@ -102,11 +105,17 @@ func NewGlance(params GlanceParams, log logr.Logger) (*Glance, error) {
 		parallel = defaultGlanceParallel
 	}
 
+	offset := params.VersionOffset
+	if offset <= 0 {
+		offset = defaultGlanceVersionOffset
+	}
+
 	return &Glance{
 		log:          log,
 		params:       params,
 		namePrefix:   prefix,
 		keepLatest:   keepLatest,
+		offset:       offset,
 		sema:         semaphore.NewWeighted(parallel),
 		authenticate: defaultAuthenticate,
 		listImages:   defaultListImages,
@@ -209,8 +218,17 @@ func (g *Glance) GetVersions(ctx context.Context) ([]ossync.SourceImage, error) 
 	slices.SortFunc(versions, func(a, b ossync.SourceImage) int {
 		return compareSemverDesc(a.Version, b.Version)
 	})
-	if g.keepLatest > 0 && len(versions) > g.keepLatest {
-		versions = versions[:g.keepLatest]
+	if g.keepLatest > 0 || g.offset > 0 {
+		// Skip the newest `offset` versions, then keep the next `keepLatest`.
+		// Clamp both bounds so an offset that runs past the available versions
+		// never slices out of range. A keepLatest of 0 keeps everything after
+		// the offset.
+		lo := min(g.offset, len(versions))
+		hi := len(versions)
+		if g.keepLatest > 0 {
+			hi = min(lo+g.keepLatest, len(versions))
+		}
+		versions = versions[lo:hi]
 	}
 
 	supported := gardenerv1beta1.ClassificationSupported

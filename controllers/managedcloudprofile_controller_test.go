@@ -328,6 +328,57 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 		Expect(k8sClient.Delete(ctx, cloudProfile)).To(Succeed())
 	})
 
+	It("keeps existing images when the update is paused", func(ctx SpecContext) {
+		keptVersion := "4242.0.0"
+
+		var mcp v1alpha1.ManagedCloudProfile
+		mcp.Name = "test-paused"
+		mcp.Spec.CloudProfile = baseCloudProfileSpec(
+			gardenerv1beta1.MachineImage{
+				Name: "the-image",
+				Versions: []gardenerv1beta1.MachineImageVersion{
+					{Version: keptVersion, Architectures: []string{"amd64"}},
+				},
+			},
+		)
+		mcp.Spec.MachineImageUpdates = []v1alpha1.MachineImageUpdate{
+			{
+				Source: v1alpha1.MachineImageUpdateSource{
+					OCI: &v1alpha1.OCI{
+						Registry:   registryAddr,
+						Repository: orasRepoName("repo"),
+						Insecure:   true,
+					},
+				},
+				Provider: v1alpha1.MachineImageUpdateProvider{
+					IroncoreMetal: &v1alpha1.MachineImagesUpdateProviderIroncoreMetal{
+						Registry:   registryAddr,
+						Repository: orasRepoName("repo"),
+					},
+				},
+				ImageName: "the-image",
+				Paused:    true,
+			},
+		}
+		Expect(k8sClient.Create(ctx, &mcp)).To(Succeed())
+
+		expectReconcileStatus(ctx, &mcp, v1alpha1.SucceededReconcileStatus)
+		expectAppliedCondition(&mcp, metav1.ConditionTrue)
+
+		cloudProfile := getCloudProfile(ctx, mcp.Name)
+		mi := cloudProfile.Spec.MachineImages
+		Expect(mi).To(HaveLen(1))
+		Expect(mi[0].Name).To(Equal("the-image"))
+		// The updater was skipped, so the pre-existing version is kept and the OCI
+		// source versions (1.0.0, 1.0.1+abc) were never fetched.
+		vers := mi[0].Versions
+		Expect(vers).To(HaveLen(1))
+		Expect(vers[0].Version).To(Equal(keptVersion))
+
+		Expect(k8sClient.Delete(ctx, &mcp)).To(Succeed())
+		Expect(k8sClient.Delete(ctx, cloudProfile)).To(Succeed())
+	})
+
 	It("fetches a secret for the OCI source", func(ctx SpecContext) {
 		var secret corev1.Secret
 		secret.Name = "oci"
