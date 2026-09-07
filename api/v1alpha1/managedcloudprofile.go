@@ -102,6 +102,15 @@ type MachineImageUpdate struct {
 	ImageName string `json:"imageName"`
 }
 
+// ImageFilter defines admission criteria for source images.
+type ImageFilter struct {
+	// RequiredFeatureSetValues lists exact values that must all be present in the
+	// image's feature_set OCI annotation (e.g. "_usi", "scibase"). Images missing
+	// any of these values are excluded from the CloudProfile entirely.
+	// +optional
+	RequiredFeatureSetValues []string `json:"requiredFeatureSetValues,omitempty"`
+}
+
 type GarbageCollectionConfig struct {
 	// Enabled toggles garbage collection for this image.
 	// +optional
@@ -182,6 +191,17 @@ type OCI struct {
 	// Insecure disables TLS
 	// +optional
 	Insecure bool `json:"insecure,omitempty"`
+	// ImageFilter defines criteria for filtering source images before they are
+	// written into the CloudProfile. Only applies when this OCI source is used
+	// for machine image updates (not for Kubernetes version sources).
+	// +optional
+	ImageFilter *ImageFilter `json:"imageFilter,omitempty"`
+	// FeatureToCapabilityMap maps raw feature_set annotation values (e.g. "_usidev")
+	// to boolean CloudProfile capability names (e.g. "usidev"). For each entry,
+	// presence of the key in the annotation produces CapabilityName: [true],
+	// absence produces CapabilityName: [false].
+	// +optional
+	FeatureToCapabilityMap map[string]string `json:"featureToCapabilityMap,omitempty"`
 }
 
 type MachineImageUpdateProvider struct {

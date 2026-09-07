@@ -619,6 +619,30 @@ spec:
                         description: OCI contains configuration for the OCI component-descriptor
                           source.
                         properties:
+                          featureToCapabilityMap:
+                            additionalProperties:
+                              type: string
+                            description: |-
+                              FeatureToCapabilityMap maps raw feature_set annotation values (e.g. "_usidev")
+                              to boolean CloudProfile capability names (e.g. "usidev"). For each entry,
+                              presence of the key in the annotation produces CapabilityName: [true],
+                              absence produces CapabilityName: [false].
+                            type: object
+                          imageFilter:
+                            description: |-
+                              ImageFilter defines criteria for filtering source images before they are
+                              written into the CloudProfile. Only applies when this OCI source is used
+                              for machine image updates (not for Kubernetes version sources).
+                            properties:
+                              requiredFeatureSetValues:
+                                description: |-
+                                  RequiredFeatureSetValues lists exact values that must all be present in the
+                                  image's feature_set OCI annotation (e.g. "_usi", "scibase"). Images missing
+                                  any of these values are excluded from the CloudProfile entirely.
+                                items:
+                                  type: string
+                                type: array
+                            type: object
                           insecure:
                             description: Insecure disables TLS
                             type: boolean
@@ -772,6 +796,30 @@ spec:
                         oci:
                           description: OCI contains configuration for an OCI source.
                           properties:
+                            featureToCapabilityMap:
+                              additionalProperties:
+                                type: string
+                              description: |-
+                                FeatureToCapabilityMap maps raw feature_set annotation values (e.g. "_usidev")
+                                to boolean CloudProfile capability names (e.g. "usidev"). For each entry,
+                                presence of the key in the annotation produces CapabilityName: [true],
+                                absence produces CapabilityName: [false].
+                              type: object
+                            imageFilter:
+                              description: |-
+                                ImageFilter defines criteria for filtering source images before they are
+                                written into the CloudProfile. Only applies when this OCI source is used
+                                for machine image updates (not for Kubernetes version sources).
+                              properties:
+                                requiredFeatureSetValues:
+                                  description: |-
+                                    RequiredFeatureSetValues lists exact values that must all be present in the
+                                    image's feature_set OCI annotation (e.g. "_usi", "scibase"). Images missing
+                                    any of these values are excluded from the CloudProfile entirely.
+                                  items:
+                                    type: string
+                                  type: array
+                              type: object
                             insecure:
                               description: Insecure disables TLS
                               type: boolean
