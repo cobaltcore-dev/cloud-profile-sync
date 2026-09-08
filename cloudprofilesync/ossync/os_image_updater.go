@@ -20,6 +20,10 @@ import (
 // capabilityKeys since it is always populated automatically by the OCI source.
 const ArchitectureCapability = "architecture"
 
+// FeatureSetAnnotation is the gardenlinux OCI annotation key that carries the image's
+// feature set as a comma-separated list (e.g. "sci,_usi,vhost").
+const FeatureSetAnnotation = "feature_set"
+
 type SourceImage struct {
 	// Version is the full tag from the registry (used as version key for legacy images).
 	Version string
@@ -67,7 +71,7 @@ type Provider interface {
 	Configure(cloudProfile *gardenerv1beta1.CloudProfileSpec, versions []SourceImage) error
 }
 
-func filterImages(log logr.Logger, versions []SourceImage) []SourceImage {
+func validateImageVersions(log logr.Logger, versions []SourceImage) []SourceImage {
 	filtered := make([]SourceImage, 0, len(versions))
 	for _, version := range versions {
 		if len(version.Architectures) == 0 {
@@ -200,7 +204,7 @@ func (iu *ImageUpdater) Update(ctx context.Context, cpSpec *gardenerv1beta1.Clou
 	if err != nil {
 		return fmt.Errorf("failed to retrieve image versions from OCI registry: %w", err)
 	}
-	sourceImages = filterImages(iu.Log, sourceImages)
+	sourceImages = validateImageVersions(iu.Log, sourceImages)
 	// Images from a source arrive in no guaranteed order. A changed order
 	// in the source images may lead to a changed order in the CloudProfile,
 	// causing unnecesscary reconciliations.
