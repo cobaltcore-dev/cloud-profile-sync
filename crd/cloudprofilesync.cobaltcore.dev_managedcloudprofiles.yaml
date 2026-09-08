@@ -696,10 +696,6 @@ spec:
                       description: ImageName is the name of the image to maintain
                         automatically
                       type: string
-                    paused:
-                      description: Paused disables automatic updates for this image
-                        and keeps the existing CloudProfile machine images.
-                      type: boolean
                     provider:
                       description: Provider contains configuration for a provider
                         for machine images.
@@ -870,6 +866,11 @@ spec:
                   - source
                   type: object
                 type: array
+              paused:
+                description: |-
+                  Paused disables all automatic machine image updates and keeps the existing
+                  CloudProfile machine images and provider config unchanged.
+                type: boolean
             required:
             - cloudProfile
             type: object

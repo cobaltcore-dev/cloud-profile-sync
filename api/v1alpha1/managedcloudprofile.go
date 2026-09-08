@@ -13,6 +13,11 @@ type ManagedCloudProfileSpec struct {
 	// CloudProfile contains the base spec of the CloudProfile.
 	CloudProfile CloudProfileSpec `json:"cloudProfile"`
 
+	// Paused disables all automatic machine image updates and keeps the existing
+	// CloudProfile machine images and provider config unchanged.
+	// +optional
+	Paused bool `json:"paused,omitempty"`
+
 	// MachineImageUpdates contains the source and provider information to automate machine images.
 	// +optional
 	MachineImageUpdates []MachineImageUpdate `json:"machineImageUpdates,omitempty"`
@@ -100,9 +105,6 @@ type MachineImageUpdate struct {
 
 	// ImageName is the name of the image to maintain automatically
 	ImageName string `json:"imageName"`
-	// Paused disables automatic updates for this image and keeps the existing CloudProfile machine images.
-	// +optional
-	Paused bool `json:"paused,omitempty"`
 }
 
 // ImageFilter defines admission criteria for source images.
