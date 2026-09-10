@@ -6,13 +6,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"slices"
 
 	gardenerv1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
@@ -42,29 +42,39 @@ func (r *Reconciler) reconcileCloudProfile(ctx context.Context, log logr.Logger,
 		if err := controllerutil.SetControllerReference(mcp, &cloudProfile, r.Scheme()); err != nil {
 			return err
 		}
+		// When machine image updates are paused, preserve the existing machine
+		// images and provider config (which carries the runtime-discovered region
+		// image IDs) across the base-spec reset below. Other updates still apply.
+		machineImagesPaused := mcp.Spec.MachineImagesPaused
+		var storedMachineImages []gardenerv1beta1.MachineImage
+		var storedProviderConfig *runtime.RawExtension
+		if machineImagesPaused {
+			storedMachineImages = cloudProfile.Spec.MachineImages
+			storedProviderConfig = cloudProfile.Spec.ProviderConfig
+		}
 		storedExpirations := collectExpirationDates(cloudProfile.Spec.MachineImages)
-		storedImages := collectMachineImages(cloudProfile.Spec.MachineImages)
 		cloudProfile.Spec = CloudProfileSpecToGardener(&mcp.Spec.CloudProfile)
 		errs := make([]error, 0)
-		for _, updates := range mcp.Spec.MachineImageUpdates {
-			if updates.Paused {
-				log.V(1).Info("machine image update paused, keeping existing images", "cloudProfile", cloudProfile.Name, "imageName", updates.ImageName)
-				if img, ok := storedImages[updates.ImageName]; ok {
-					// Replace any entry the MCP spec contributed for this image so the
-					// stored (previously reconciled) versions are kept without duplicating.
-					cloudProfile.Spec.MachineImages = slices.DeleteFunc(cloudProfile.Spec.MachineImages, func(m gardenerv1beta1.MachineImage) bool {
-						return m.Name == updates.ImageName
-					})
-					cloudProfile.Spec.MachineImages = append(cloudProfile.Spec.MachineImages, img)
+		if machineImagesPaused {
+			log.V(1).Info("machine image updates paused, keeping existing machine images and provider config", "cloudProfile", cloudProfile.Name)
+			// Restore the previously synced machine images and provider config so the
+			// paused reconcile does not wipe them. On first creation nothing is stored
+			// yet, so fall back to the base-spec values instead of clearing them.
+			if len(storedMachineImages) > 0 {
+				cloudProfile.Spec.MachineImages = storedMachineImages
+			}
+			if storedProviderConfig != nil {
+				cloudProfile.Spec.ProviderConfig = storedProviderConfig
+			}
+		} else {
+			for _, updates := range mcp.Spec.MachineImageUpdates {
+				log.V(1).Info("updating machine images", "cloudProfile", cloudProfile.Name)
+				if updateErr := r.updateMachineImages(ctx, log, updates, &cloudProfile.Spec); updateErr != nil {
+					errs = append(errs, updateErr)
 				}
-				continue
 			}
-			log.V(1).Info("updating machine images", "cloudProfile", cloudProfile.Name)
-			if updateErr := r.updateMachineImages(ctx, log, updates, &cloudProfile.Spec); updateErr != nil {
-				errs = append(errs, updateErr)
-			}
+			applyExpirationDates(cloudProfile.Spec.MachineImages, storedExpirations)
 		}
-		applyExpirationDates(cloudProfile.Spec.MachineImages, storedExpirations)
 		if mcp.Spec.KubernetesUpdate != nil {
 			log.V(1).Info("updating kubernetes versions", "cloudProfile", cloudProfile.Name)
 			if updateErr := r.updateKubernetesVersions(ctx, *mcp.Spec.KubernetesUpdate, &cloudProfile.Spec); updateErr != nil {
@@ -245,14 +255,6 @@ const maxConditionMessageLen = 32768
 
 func expirationDateKey(imageName, version string) string {
 	return imageName + "/" + version
-}
-
-func collectMachineImages(images []gardenerv1beta1.MachineImage) map[string]gardenerv1beta1.MachineImage {
-	out := make(map[string]gardenerv1beta1.MachineImage, len(images))
-	for _, img := range images {
-		out[img.Name] = *img.DeepCopy()
-	}
-	return out
 }
 
 func collectExpirationDates(images []gardenerv1beta1.MachineImage) map[string]*metav1.Time {

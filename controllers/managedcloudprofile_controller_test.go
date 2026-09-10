@@ -328,11 +328,44 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 		Expect(k8sClient.Delete(ctx, cloudProfile)).To(Succeed())
 	})
 
-	It("keeps existing images when the update is paused", func(ctx SpecContext) {
+	It("keeps existing images when machine image updates are paused", func(ctx SpecContext) {
 		keptVersion := "4242.0.0"
+
+		// Simulate a previously reconciled CloudProfile whose ProviderConfig already
+		// carries the runtime-discovered image mappings. These live only in the
+		// CloudProfile (not the MCP), so a paused reconcile must preserve them.
+		var cloudProfile gardenerv1beta1.CloudProfile
+		cloudProfile.Name = "test-paused"
+		cloudProfile.Spec.Regions = []gardenerv1beta1.Region{{Name: "foo"}}
+		cloudProfile.Spec.MachineTypes = []gardenerv1beta1.MachineType{{Name: "baz"}}
+		cloudProfile.Spec.MachineImages = []gardenerv1beta1.MachineImage{
+			{
+				Name: "the-image",
+				Versions: []gardenerv1beta1.MachineImageVersion{
+					{Version: keptVersion, Architectures: []string{"amd64"}},
+				},
+			},
+		}
+		var storedCfg providercfg.CloudProfileConfig
+		storedCfg.MachineImages = []providercfg.MachineImages{
+			{
+				Name: "the-image",
+				Versions: []providercfg.MachineImageVersion{
+					{Image: "repo/the-image:" + keptVersion},
+				},
+			},
+		}
+		storedRaw, err := json.Marshal(storedCfg)
+		Expect(err).To(Succeed())
+		cloudProfile.Spec.ProviderConfig = &runtime.RawExtension{Raw: storedRaw}
+		Expect(k8sClient.Create(ctx, &cloudProfile)).To(Succeed())
 
 		var mcp v1alpha1.ManagedCloudProfile
 		mcp.Name = "test-paused"
+		mcp.Spec.MachineImagesPaused = true
+		// The MCP itself carries no provider machineImages (mirrors production): the
+		// mappings are discovered at runtime, so if pause did not restore the stored
+		// ProviderConfig it would be wiped to an empty list.
 		mcp.Spec.CloudProfile = baseCloudProfileSpec(
 			gardenerv1beta1.MachineImage{
 				Name: "the-image",
@@ -357,7 +390,6 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 					},
 				},
 				ImageName: "the-image",
-				Paused:    true,
 			},
 		}
 		Expect(k8sClient.Create(ctx, &mcp)).To(Succeed())
@@ -365,18 +397,89 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 		expectReconcileStatus(ctx, &mcp, v1alpha1.SucceededReconcileStatus)
 		expectAppliedCondition(&mcp, metav1.ConditionTrue)
 
-		cloudProfile := getCloudProfile(ctx, mcp.Name)
-		mi := cloudProfile.Spec.MachineImages
+		updated := getCloudProfile(ctx, mcp.Name)
+		mi := updated.Spec.MachineImages
 		Expect(mi).To(HaveLen(1))
 		Expect(mi[0].Name).To(Equal("the-image"))
-		// The updater was skipped, so the pre-existing version is kept and the OCI
-		// source versions (1.0.0, 1.0.1+abc) were never fetched.
+		// The updater was skipped, so the base version is kept and the OCI source
+		// versions (1.0.0, 1.0.1+abc) were never fetched.
 		vers := mi[0].Versions
 		Expect(vers).To(HaveLen(1))
 		Expect(vers[0].Version).To(Equal(keptVersion))
 
+		// The stored ProviderConfig mappings must survive the paused reconcile rather
+		// than being wiped to an empty list.
+		Expect(updated.Spec.ProviderConfig).ToNot(BeNil())
+		var gotCfg providercfg.CloudProfileConfig
+		Expect(json.Unmarshal(updated.Spec.ProviderConfig.Raw, &gotCfg)).To(Succeed())
+		Expect(gotCfg.MachineImages).To(HaveLen(1))
+		Expect(gotCfg.MachineImages[0].Name).To(Equal("the-image"))
+		Expect(gotCfg.MachineImages[0].Versions).To(HaveLen(1))
+		Expect(gotCfg.MachineImages[0].Versions[0].Image).To(Equal("repo/the-image:" + keptVersion))
+
 		Expect(k8sClient.Delete(ctx, &mcp)).To(Succeed())
-		Expect(k8sClient.Delete(ctx, cloudProfile)).To(Succeed())
+		Expect(k8sClient.Delete(ctx, updated)).To(Succeed())
+	})
+
+	It("preserves images and provider config but still applies base-spec changes when paused", func(ctx SpecContext) {
+		var mcp v1alpha1.ManagedCloudProfile
+		mcp.Name = "test-paused-preserve"
+		mcp.Spec.CloudProfile = baseCloudProfileSpec()
+		mcp.Spec.MachineImageUpdates = []v1alpha1.MachineImageUpdate{
+			{
+				Source: v1alpha1.MachineImageUpdateSource{
+					OCI: &v1alpha1.OCI{
+						Registry:   registryAddr,
+						Repository: orasRepoName("repo"),
+						Insecure:   true,
+					},
+				},
+				Provider: v1alpha1.MachineImageUpdateProvider{
+					IroncoreMetal: &v1alpha1.MachineImagesUpdateProviderIroncoreMetal{
+						Registry:   registryAddr,
+						Repository: orasRepoName("repo"),
+					},
+				},
+				ImageName: "the-image",
+			},
+		}
+		Expect(k8sClient.Create(ctx, &mcp)).To(Succeed())
+		expectReconcileStatus(ctx, &mcp, v1alpha1.SucceededReconcileStatus)
+
+		// Snapshot what the first (unpaused) reconcile produced.
+		before := getCloudProfile(ctx, mcp.Name)
+		wantImages := before.Spec.MachineImages
+		wantProviderConfig := before.Spec.ProviderConfig
+
+		// Pause image updates, remove the update source, and also change a base-spec
+		// field (add a machine type). The paused reconcile must keep the machine
+		// images and provider config untouched while still applying the base-spec change.
+		Eventually(func(g Gomega) {
+			var latest v1alpha1.ManagedCloudProfile
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(&mcp), &latest)).To(Succeed())
+			latest.Spec.MachineImagesPaused = true
+			latest.Spec.MachineImageUpdates = nil
+			usable := true
+			latest.Spec.CloudProfile.MachineTypes = append(latest.Spec.CloudProfile.MachineTypes, gardenerv1beta1.MachineType{
+				Name:         "extra",
+				Architecture: &amd64,
+				Usable:       &usable,
+			})
+			g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+		}).Should(Succeed())
+
+		// Wait until the base-spec change lands, then assert images/provider config are preserved.
+		Eventually(func(g Gomega) {
+			after := getCloudProfile(ctx, mcp.Name)
+			g.Expect(after.Spec.MachineTypes).To(ContainElement(HaveField("Name", "extra")))
+		}).Should(Succeed())
+
+		after := getCloudProfile(ctx, mcp.Name)
+		Expect(after.Spec.MachineImages).To(Equal(wantImages))
+		Expect(after.Spec.ProviderConfig).To(Equal(wantProviderConfig))
+
+		Expect(k8sClient.Delete(ctx, &mcp)).To(Succeed())
+		Expect(k8sClient.Delete(ctx, after)).To(Succeed())
 	})
 
 	It("fetches a secret for the OCI source", func(ctx SpecContext) {
@@ -521,6 +624,75 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 			return versions
 		}, 10*time.Second, 200*time.Millisecond).
 			Should(ConsistOf(newVersion))
+	})
+
+	It("skips garbage collection when machine image updates are paused", func(ctx SpecContext) {
+		var mcp v1alpha1.ManagedCloudProfile
+		mcp.Name = "gc-paused-mcp"
+
+		oldVersion := "0.1.0"
+		newVersion := "1.0.0"
+
+		mcp.Spec.MachineImagesPaused = true
+		mcp.Spec.CloudProfile = baseCloudProfileSpec(
+			gardenerv1beta1.MachineImage{
+				Name: "gc-image",
+				Versions: []gardenerv1beta1.MachineImageVersion{
+					{Version: oldVersion, Architectures: []string{"amd64"}},
+					{Version: newVersion, Architectures: []string{"amd64"}},
+				},
+			},
+		)
+		mcp.Spec.MachineImageUpdates = []v1alpha1.MachineImageUpdate{
+			{
+				ImageName: "gc-image",
+				Source: v1alpha1.MachineImageUpdateSource{
+					OCI: &v1alpha1.OCI{
+						Registry:   "keppel-fake",
+						Repository: "account/repo",
+						Insecure:   true,
+					},
+				},
+				Provider: v1alpha1.MachineImageUpdateProvider{
+					IroncoreMetal: &v1alpha1.MachineImagesUpdateProviderIroncoreMetal{
+						Registry:   "keppel-fake",
+						Repository: "account/repo",
+					},
+				},
+			},
+		}
+		mcp.Spec.GarbageCollection = &v1alpha1.GarbageCollectionConfig{
+			Enabled: true,
+			MaxAge:  metav1.Duration{Duration: 24 * time.Hour},
+		}
+		Expect(k8sClient.Create(ctx, &mcp)).To(Succeed())
+
+		reconciler := &controllers.Reconciler{
+			Client:           k8sClient,
+			OCISourceFactory: &fakeFactory{},
+			RegistryProviderFunc: func(registry string) (controllers.RegistryClient, error) {
+				return &fakeRegistryClient{}, nil
+			},
+		}
+
+		_, err := reconciler.Reconcile(ctx, ctrl.Request{Name: mcp.Name})
+		Expect(err).ToNot(HaveOccurred())
+
+		// Wait for the CloudProfile to exist with both versions, then confirm GC
+		// never removes the unreferenced, stale oldVersion while paused.
+		Eventually(func(g Gomega) []string {
+			var cp gardenerv1beta1.CloudProfile
+			g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: mcp.Name}, &cp)).To(Succeed())
+			return versionsByMachineImage(&cp, "gc-image")
+		}, 10*time.Second, 200*time.Millisecond).
+			Should(ConsistOf(oldVersion, newVersion))
+
+		Consistently(func(g Gomega) []string {
+			var cp gardenerv1beta1.CloudProfile
+			g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: mcp.Name}, &cp)).To(Succeed())
+			return versionsByMachineImage(&cp, "gc-image")
+		}, 2*time.Second, 200*time.Millisecond).
+			Should(ConsistOf(oldVersion, newVersion))
 	})
 
 	It("preserves old machine image versions referenced by Shoot worker pools", func(ctx SpecContext) {
