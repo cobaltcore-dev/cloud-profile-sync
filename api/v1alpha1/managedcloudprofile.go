@@ -13,10 +13,11 @@ type ManagedCloudProfileSpec struct {
 	// CloudProfile contains the base spec of the CloudProfile.
 	CloudProfile CloudProfileSpec `json:"cloudProfile"`
 
-	// Paused disables all automatic machine image updates and keeps the existing
-	// CloudProfile machine images and provider config unchanged.
+	// MachineImagesPaused disables automatic machine image updates and keeps the
+	// existing CloudProfile machine images and provider config unchanged. Other
+	// updates (e.g. Kubernetes versions and base spec fields) still apply.
 	// +optional
-	Paused bool `json:"paused,omitempty"`
+	MachineImagesPaused bool `json:"machineImagesPaused,omitempty"`
 
 	// MachineImageUpdates contains the source and provider information to automate machine images.
 	// +optional

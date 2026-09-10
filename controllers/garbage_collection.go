@@ -59,6 +59,11 @@ func (r *Reconciler) reconcileGarbageCollection(ctx context.Context, mcp *v1alph
 	if mcp.Spec.GarbageCollection == nil || !mcp.Spec.GarbageCollection.Enabled {
 		return nil
 	}
+	// Garbage collection only ever deletes machine image versions and rewrites the
+	// provider config mappings, so honor the machine image pause here too.
+	if mcp.Spec.MachineImagesPaused {
+		return nil
+	}
 	if mcp.Spec.GarbageCollection.MaxAge.Duration < 0 {
 		return r.failWithStatusUpdate(ctx, mcp, fmt.Errorf("invalid garbage collection maxAge: %s", mcp.Spec.GarbageCollection.MaxAge.String()))
 	}

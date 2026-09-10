@@ -866,10 +866,11 @@ spec:
                   - source
                   type: object
                 type: array
-              paused:
+              machineImagesPaused:
                 description: |-
-                  Paused disables all automatic machine image updates and keeps the existing
-                  CloudProfile machine images and provider config unchanged.
+                  MachineImagesPaused disables automatic machine image updates and keeps the
+                  existing CloudProfile machine images and provider config unchanged. Other
+                  updates (e.g. Kubernetes versions and base spec fields) still apply.
                 type: boolean
             required:
             - cloudProfile
