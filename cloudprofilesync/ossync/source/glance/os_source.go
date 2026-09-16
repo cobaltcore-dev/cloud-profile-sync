@@ -55,9 +55,9 @@ type GlanceParams struct {
 	KeepLatest int
 
 	// Parallel bounds how many regions are queried concurrently.
-	Parallel      int64
-	VersionOffset int
-	SkipVersions  []string
+	Parallel         int64
+	VersionOffset    int
+	ExcludedSuffixes []string
 
 	// ProjectName / ProjectDomainName scope the token.
 	ProjectName       string
@@ -314,11 +314,9 @@ func compareSemverDesc(a, b string) int {
 
 // parseVersion extracts the semver version from a matching image name.
 func (g *Glance) parseVersion(name string) (string, bool) {
-	if len(g.params.SkipVersions) > 0 {
-		for _, skip := range g.params.SkipVersions {
-			if strings.Contains(name, skip) {
-				return "", false
-			}
+	for _, skip := range g.params.ExcludedSuffixes {
+		if strings.Contains(name, skip) {
+			return "", false
 		}
 	}
 
