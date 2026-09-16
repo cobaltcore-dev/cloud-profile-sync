@@ -110,6 +110,11 @@ func (in *GlanceSource) DeepCopyInto(out *GlanceSource) {
 		*out = make([]string, len(*in))
 		copy(*out, *in)
 	}
+	if in.SkipVersions != nil {
+		in, out := &in.SkipVersions, &out.SkipVersions
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
 	out.PasswordSecret = in.PasswordSecret
 }
 

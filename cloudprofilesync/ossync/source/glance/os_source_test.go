@@ -40,13 +40,61 @@ func TestParseVersionSkipsUsiVariant(t *testing.T) {
 			wantKeep: true,
 		},
 		{
-			name:     "usi variant is skipped",
+			name:     "usi variant passes without SkipVersions configured",
+			imgName:  usiImage,
+			wantKeep: false, // prefix mismatch: _usi prefix differs from defaultGlanceNamePrefix
+		},
+		{
+			name:     "unrelated image is skipped",
+			imgName:  "some-other-image-1.2.3-deadbeef",
+			wantKeep: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, keep := g.parseVersion(tc.imgName)
+			if keep != tc.wantKeep {
+				t.Fatalf("parseVersion(%q) keep = %v, want %v", tc.imgName, keep, tc.wantKeep)
+			}
+			if keep && got != tc.wantVer {
+				t.Errorf("parseVersion(%q) = %q, want %q", tc.imgName, got, tc.wantVer)
+			}
+		})
+	}
+}
+
+func TestParseVersionSkipVersions(t *testing.T) {
+	g := newTestGlance(t, GlanceParams{
+		Regions:      []string{testRegion},
+		SkipVersions: []string{"_usi", "-test"},
+	}, nil)
+
+	tests := []struct {
+		name     string
+		imgName  string
+		wantVer  string
+		wantKeep bool
+	}{
+		{
+			name:     "standard image is parsed",
+			imgName:  stdImage,
+			wantVer:  testVersion,
+			wantKeep: true,
+		},
+		{
+			name:     "usi variant is skipped via SkipVersions",
 			imgName:  usiImage,
 			wantKeep: false,
 		},
 		{
 			name:     "usi variant with two-part version is skipped",
 			imgName:  "gardenlinux-openstack-gardener_prod_usi-amd64-1877.13-81e502e7",
+			wantKeep: false,
+		},
+		{
+			name:     "test variant is skipped via SkipVersions",
+			imgName:  "gardenlinux-openstack-gardener_prod-test-amd64-1877.13-81e502e7",
 			wantKeep: false,
 		},
 		{
@@ -75,7 +123,7 @@ func TestGetVersionsUsiDoesNotCollide(t *testing.T) {
 		{ID: "standard-uuid", Name: stdImage},
 		{ID: "usi-uuid", Name: usiImage},
 	}
-	g := newTestGlance(t, GlanceParams{Regions: []string{testRegion}}, map[string][]images.Image{testRegion: imgs})
+	g := newTestGlance(t, GlanceParams{Regions: []string{testRegion}, SkipVersions: []string{"_usi"}}, map[string][]images.Image{testRegion: imgs})
 
 	versions, err := g.GetVersions(context.Background())
 	if err != nil {

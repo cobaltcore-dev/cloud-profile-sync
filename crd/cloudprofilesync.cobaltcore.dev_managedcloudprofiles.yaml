@@ -777,6 +777,12 @@ spec:
                               items:
                                 type: string
                               type: array
+                            skipVersions:
+                              description: SkipVersions is the list of version suffixes
+                                to skip when selecting images
+                              items:
+                                type: string
+                              type: array
                             userDomainName:
                               description: UserDomainName is the domain of the authenticating
                                 user.

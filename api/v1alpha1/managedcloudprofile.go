@@ -171,6 +171,9 @@ type GlanceSource struct {
 	// VersionOffset controls how many newest GardenLinux versions to skip before applying KeepLatest.
 	// +optional
 	VersionOffset int `json:"versionOffset,omitempty"`
+	// SkipVersions is the list of version suffixes to skip when selecting images
+	// +optional
+	SkipVersions []string `json:"skipVersions,omitempty"`
 	// Parallel bounds how many regions are queried concurrently.
 	// +optional
 	Parallel int64 `json:"parallel,omitempty"`

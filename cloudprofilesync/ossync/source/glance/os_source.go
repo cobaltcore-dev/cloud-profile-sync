@@ -33,7 +33,6 @@ const (
 	// is not set.
 	defaultGlanceParallel      = 8
 	defaultGlanceVersionOffset = 0
-	usiVariantMarker           = "_usi"
 )
 
 type Result[T any] struct {
@@ -58,6 +57,7 @@ type GlanceParams struct {
 	// Parallel bounds how many regions are queried concurrently.
 	Parallel      int64
 	VersionOffset int
+	SkipVersions  []string
 
 	// ProjectName / ProjectDomainName scope the token.
 	ProjectName       string
@@ -314,8 +314,12 @@ func compareSemverDesc(a, b string) int {
 
 // parseVersion extracts the semver version from a matching image name.
 func (g *Glance) parseVersion(name string) (string, bool) {
-	if strings.Contains(name, usiVariantMarker) {
-		return "", false
+	if len(g.params.SkipVersions) > 0 {
+		for _, skip := range g.params.SkipVersions {
+			if strings.Contains(name, skip) {
+				return "", false
+			}
+		}
 	}
 
 	rest, ok := strings.CutPrefix(name, g.namePrefix)
