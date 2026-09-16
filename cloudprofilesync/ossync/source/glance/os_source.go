@@ -316,7 +316,7 @@ func compareSemverDesc(a, b string) int {
 func (g *Glance) parseVersion(name string) (string, bool) {
 	if len(g.params.SkipVersions) > 0 {
 		for _, skip := range g.params.SkipVersions {
-if skip != "" && strings.Contains(name, skip) {
+			if skip != "" && strings.Contains(name, skip) {
 				return "", false
 			}
 		}
