@@ -66,8 +66,8 @@ func TestParseVersionSkipsUsiVariant(t *testing.T) {
 
 func TestParseVersionSkipVersions(t *testing.T) {
 	g := newTestGlance(t, GlanceParams{
-		Regions:      []string{testRegion},
-		SkipVersions: []string{"_usi", "-test"},
+		Regions:          []string{testRegion},
+		ExcludedSuffixes: []string{"_usi", "-test"},
 	}, nil)
 
 	tests := []struct {
@@ -123,7 +123,7 @@ func TestGetVersionsUsiDoesNotCollide(t *testing.T) {
 		{ID: "standard-uuid", Name: stdImage},
 		{ID: "usi-uuid", Name: usiImage},
 	}
-	g := newTestGlance(t, GlanceParams{Regions: []string{testRegion}, SkipVersions: []string{"_usi"}}, map[string][]images.Image{testRegion: imgs})
+	g := newTestGlance(t, GlanceParams{Regions: []string{testRegion}, ExcludedSuffixes: []string{"_usi"}}, map[string][]images.Image{testRegion: imgs})
 
 	versions, err := g.GetVersions(context.Background())
 	if err != nil {
