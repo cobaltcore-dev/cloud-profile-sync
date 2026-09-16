@@ -33,7 +33,10 @@ const (
 	// is not set.
 	defaultGlanceParallel      = 8
 	defaultGlanceVersionOffset = 0
-	usiVariantMarker           = "_usi"
+)
+
+var (
+	skipVersionList = []string{"_usi", "-test"}
 )
 
 type Result[T any] struct {
@@ -314,8 +317,10 @@ func compareSemverDesc(a, b string) int {
 
 // parseVersion extracts the semver version from a matching image name.
 func (g *Glance) parseVersion(name string) (string, bool) {
-	if strings.Contains(name, usiVariantMarker) {
-		return "", false
+	for _, skip := range skipVersionList {
+		if strings.Contains(name, skip) {
+			return "", false
+		}
 	}
 
 	rest, ok := strings.CutPrefix(name, g.namePrefix)
