@@ -174,7 +174,8 @@ func (r *Reconciler) updateMachineImages(ctx context.Context, log logr.Logger, u
 		}
 	case update.Provider.OpenStack != nil:
 		provider = &osprovider.OpenStackProvider{
-			ImageName: update.ImageName,
+			ImageName:          update.ImageName,
+			EnableCapabilities: r.EnableCapabilities,
 		}
 	default:
 		return errors.New("no known provider configured")
