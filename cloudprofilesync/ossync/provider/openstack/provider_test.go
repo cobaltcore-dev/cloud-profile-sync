@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	openstackv1alpha1 "github.com/gardener/gardener-extension-provider-openstack/pkg/apis/openstack/v1alpha1"
-	gardencorev1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
 	"k8s.io/apimachinery/pkg/runtime"
 
 	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/ossync"
@@ -26,7 +25,7 @@ func TestConfigureCreatesEntryFromEmpty(t *testing.T) {
 	p := &OpenStackProvider{ImageName: imageName}
 	spec := specWithConfig(t, nil)
 
-	err := p.Configure(spec, []ossync.SourceImage{
+	pc, err := p.Configure(spec, []ossync.SourceImage{
 		{
 			Version: testVersion,
 			Regions: []ossync.RegionImage{
@@ -39,7 +38,7 @@ func TestConfigureCreatesEntryFromEmpty(t *testing.T) {
 		t.Fatalf("Configure: %v", err)
 	}
 
-	cfg := parseConfig(t, spec)
+	cfg := parseConfig(t, pc)
 	img := findImage(cfg, imageName)
 	if img == nil {
 		t.Fatalf("machineImages entry %q not created: %+v", imageName, cfg.MachineImages)
@@ -70,14 +69,14 @@ func TestConfigureMergesIntoExistingImage(t *testing.T) {
 		},
 	})
 
-	err := p.Configure(spec, []ossync.SourceImage{
+	pc, err := p.Configure(spec, []ossync.SourceImage{
 		{Version: testVersion, Regions: []ossync.RegionImage{{Region: regionDE, ID: "new-uuid"}}},
 	})
 	if err != nil {
 		t.Fatalf("Configure: %v", err)
 	}
 
-	cfg := parseConfig(t, spec)
+	cfg := parseConfig(t, pc)
 	if len(cfg.MachineImages) != 1 {
 		t.Fatalf("got %d machineImages, want 1 (no duplicate entry): %+v", len(cfg.MachineImages), cfg.MachineImages)
 	}
@@ -109,7 +108,7 @@ func TestConfigureUpdatesExistingRegionID(t *testing.T) {
 	})
 
 	// Re-apply the same region (with a new ID) plus a new one.
-	err := p.Configure(spec, []ossync.SourceImage{
+	pc, err := p.Configure(spec, []ossync.SourceImage{
 		{
 			Version: testVersion,
 			Regions: []ossync.RegionImage{
@@ -122,7 +121,7 @@ func TestConfigureUpdatesExistingRegionID(t *testing.T) {
 		t.Fatalf("Configure: %v", err)
 	}
 
-	cfg := parseConfig(t, spec)
+	cfg := parseConfig(t, pc)
 	v := findVersion(findImage(cfg, imageName), testVersion)
 	if v == nil {
 		t.Fatalf("version %s missing", testVersion)
@@ -149,14 +148,14 @@ func TestConfigureLeavesOtherImagesUntouched(t *testing.T) {
 		},
 	})
 
-	err := p.Configure(spec, []ossync.SourceImage{
+	pc, err := p.Configure(spec, []ossync.SourceImage{
 		{Version: testVersion, Regions: []ossync.RegionImage{{Region: regionDE, ID: "uuid"}}},
 	})
 	if err != nil {
 		t.Fatalf("Configure: %v", err)
 	}
 
-	cfg := parseConfig(t, spec)
+	cfg := parseConfig(t, pc)
 	if len(cfg.MachineImages) != 2 {
 		t.Fatalf("got %d machineImages, want 2 (coreos + gardenlinux): %+v", len(cfg.MachineImages), cfg.MachineImages)
 	}
@@ -169,38 +168,34 @@ func TestConfigureLeavesOtherImagesUntouched(t *testing.T) {
 // Configure returns an error for a malformed ProviderConfig.
 func TestConfigureReturnsErrorOnInvalidConfig(t *testing.T) {
 	p := &OpenStackProvider{ImageName: imageName}
-	spec := &gardencorev1beta1.CloudProfileSpec{
-		ProviderConfig: &runtime.RawExtension{Raw: []byte("{not json")},
-	}
+	pc := &runtime.RawExtension{Raw: []byte("{not json")}
 
-	if err := p.Configure(spec, nil); err == nil {
+	if _, err := p.Configure(pc, nil); err == nil {
 		t.Fatal("Configure returned nil error for malformed ProviderConfig, want an error")
 	}
 }
 
 // specWithConfig builds a CloudProfileSpec from cfg (nil yields no ProviderConfig).
-func specWithConfig(t *testing.T, cfg *openstackv1alpha1.CloudProfileConfig) *gardencorev1beta1.CloudProfileSpec {
+func specWithConfig(t *testing.T, cfg *openstackv1alpha1.CloudProfileConfig) *runtime.RawExtension {
 	t.Helper()
-	spec := &gardencorev1beta1.CloudProfileSpec{}
 	if cfg == nil {
-		return spec
+		return nil
 	}
 	raw, err := json.Marshal(cfg)
 	if err != nil {
 		t.Fatalf("marshal config: %v", err)
 	}
-	spec.ProviderConfig = &runtime.RawExtension{Raw: raw}
-	return spec
+	return &runtime.RawExtension{Raw: raw}
 }
 
-// parseConfig unmarshals the ProviderConfig written back onto the spec.
-func parseConfig(t *testing.T, spec *gardencorev1beta1.CloudProfileSpec) openstackv1alpha1.CloudProfileConfig {
+// parseConfig unmarshals the ProviderConfig returned by Configure.
+func parseConfig(t *testing.T, pc *runtime.RawExtension) openstackv1alpha1.CloudProfileConfig {
 	t.Helper()
-	if spec.ProviderConfig == nil {
+	if pc == nil {
 		t.Fatal("ProviderConfig is nil, want it to be set")
 	}
 	var cfg openstackv1alpha1.CloudProfileConfig
-	if err := json.Unmarshal(spec.ProviderConfig.Raw, &cfg); err != nil {
+	if err := json.Unmarshal(pc.Raw, &cfg); err != nil {
 		t.Fatalf("unmarshal config: %v", err)
 	}
 	return cfg

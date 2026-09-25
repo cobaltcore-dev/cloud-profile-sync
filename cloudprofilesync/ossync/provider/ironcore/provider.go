@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"slices"
 
-	gardencorev1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
 	"github.com/ironcore-dev/gardener-extension-provider-ironcore-metal/pkg/apis/metal/v1alpha1"
 	"k8s.io/apimachinery/pkg/runtime"
 
@@ -21,11 +20,11 @@ type IroncoreProvider struct {
 	EnableCapabilities bool
 }
 
-func (p *IroncoreProvider) Configure(cpSpec *gardencorev1beta1.CloudProfileSpec, versions []ossync.SourceImage) error {
+func (p *IroncoreProvider) Configure(pc *runtime.RawExtension, versions []ossync.SourceImage) (*runtime.RawExtension, error) {
 	var cfg v1alpha1.CloudProfileConfig
-	if cpSpec.ProviderConfig != nil {
-		if err := json.Unmarshal(cpSpec.ProviderConfig.Raw, &cfg); err != nil {
-			return err
+	if pc != nil {
+		if err := json.Unmarshal(pc.Raw, &cfg); err != nil {
+			return nil, err
 		}
 	}
 	imageIndex := slices.IndexFunc(cfg.MachineImages, func(m v1alpha1.MachineImages) bool {
@@ -91,8 +90,7 @@ func (p *IroncoreProvider) Configure(cpSpec *gardencorev1beta1.CloudProfileSpec,
 
 	raw, err := json.Marshal(cfg)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	cpSpec.ProviderConfig = &runtime.RawExtension{Raw: raw}
-	return nil
+	return &runtime.RawExtension{Raw: raw}, nil
 }

@@ -9,92 +9,81 @@ import (
 
 	gardenerv1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
 	"github.com/go-logr/logr"
-	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	"github.com/cobaltcore-dev/cloud-profile-sync/api/v1alpha1"
 	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/k8ssync"
-	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/k8ssync/source/landscape"
-	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/ocirepo"
 	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/ossync"
-	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/ossync/provider/ironcore"
-	osprovider "github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/ossync/provider/openstack"
-	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/ossync/source/glance"
-	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/ossync/source/oci"
 )
-
-// DefaultOCISourceFactory is the default implementation of OCISourceFactory.
-type DefaultOCISourceFactory struct{}
-
-func (f *DefaultOCISourceFactory) Create(params ocirepo.Params, parallel int64, log logr.Logger, featureToCapabilityMap map[string]string, imageFilter *v1alpha1.ImageFilter) (ossync.Source, error) {
-	return oci.NewOCI(params, parallel, log, featureToCapabilityMap, imageFilter)
-}
 
 func (r *Reconciler) reconcileCloudProfile(ctx context.Context, log logr.Logger, mcp *v1alpha1.ManagedCloudProfile) error {
 	var cloudProfile gardenerv1beta1.CloudProfile
 	cloudProfile.Name = mcp.Name
 
+	base := &mcp.Spec.CloudProfile
+
+	var imgs []gardenerv1beta1.MachineImage
+	var providerConfig *runtime.RawExtension
+	if !mcp.Spec.MachineImagesPaused {
+		imgs = base.MachineImages
+		providerConfig = base.ProviderConfig
+		for _, update := range mcp.Spec.MachineImageUpdates {
+			log.V(1).Info("updating machine images", "cloudProfile", cloudProfile.Name)
+			nextImgs, nextPC, err := r.prepareMachineImageUpdate(ctx, log, base.MachineCapabilities, imgs, providerConfig, update)
+			if err != nil {
+				if statusErr := r.markReconcileFailed(ctx, mcp, err); statusErr != nil {
+					return statusErr
+				}
+				return err
+			}
+			imgs, providerConfig = nextImgs, nextPC
+		}
+	}
+	var versions []gardenerv1beta1.ExpirableVersion
+	if mcp.Spec.KubernetesUpdate != nil {
+		log.V(1).Info("updating kubernetes versions", "cloudProfile", cloudProfile.Name)
+		v, err := r.prepareKubernetesUpdate(ctx, *mcp.Spec.KubernetesUpdate)
+		if err != nil {
+			if statusErr := r.markReconcileFailed(ctx, mcp, err); statusErr != nil {
+				return statusErr
+			}
+			return err
+		}
+		versions = v
+	}
+
 	op, err := controllerutil.CreateOrPatch(ctx, r.Client, &cloudProfile, func() error {
 		if err := controllerutil.SetControllerReference(mcp, &cloudProfile, r.Scheme()); err != nil {
 			return err
 		}
-		// When machine image updates are paused, preserve the existing machine
-		// images and provider config (which carries the runtime-discovered region
-		// image IDs) across the base-spec reset below. Other updates still apply.
-		machineImagesPaused := mcp.Spec.MachineImagesPaused
-		var storedMachineImages []gardenerv1beta1.MachineImage
-		var storedProviderConfig *runtime.RawExtension
-		if machineImagesPaused {
-			storedMachineImages = cloudProfile.Spec.MachineImages
-			storedProviderConfig = cloudProfile.Spec.ProviderConfig
-		}
-		storedExpirations := collectExpirationDates(cloudProfile.Spec.MachineImages)
-		cloudProfile.Spec = CloudProfileSpecToGardener(&mcp.Spec.CloudProfile)
-		errs := make([]error, 0)
-		if machineImagesPaused {
-			log.V(1).Info("machine image updates paused, keeping existing machine images and provider config", "cloudProfile", cloudProfile.Name)
-			// Restore the previously synced machine images and provider config so the
-			// paused reconcile does not wipe them. On first creation nothing is stored
-			// yet, so fall back to the base-spec values instead of clearing them.
-			if len(storedMachineImages) > 0 {
-				cloudProfile.Spec.MachineImages = storedMachineImages
+		copyStaticSpecFields(&cloudProfile.Spec, base)
+
+		if mcp.Spec.MachineImagesPaused {
+			if len(cloudProfile.Spec.MachineImages) == 0 {
+				cloudProfile.Spec.MachineImages = deepCopyMachineImages(base.MachineImages)
 			}
-			if storedProviderConfig != nil {
-				cloudProfile.Spec.ProviderConfig = storedProviderConfig
+			if cloudProfile.Spec.ProviderConfig == nil {
+				cloudProfile.Spec.ProviderConfig = base.ProviderConfig.DeepCopy()
 			}
 		} else {
-			for _, updates := range mcp.Spec.MachineImageUpdates {
-				log.V(1).Info("updating machine images", "cloudProfile", cloudProfile.Name)
-				if updateErr := r.updateMachineImages(ctx, log, updates, &cloudProfile.Spec); updateErr != nil {
-					errs = append(errs, updateErr)
-				}
-			}
-			applyExpirationDates(cloudProfile.Spec.MachineImages, storedExpirations)
+			outImages := deepCopyMachineImages(imgs)
+			carryExpirationDates(cloudProfile.Spec.MachineImages, outImages)
+			cloudProfile.Spec.MachineImages = outImages
+			cloudProfile.Spec.ProviderConfig = providerConfig
 		}
 		if mcp.Spec.KubernetesUpdate != nil {
-			log.V(1).Info("updating kubernetes versions", "cloudProfile", cloudProfile.Name)
-			if updateErr := r.updateKubernetesVersions(ctx, *mcp.Spec.KubernetesUpdate, &cloudProfile.Spec); updateErr != nil {
-				errs = append(errs, updateErr)
-			}
+			cloudProfile.Spec.Kubernetes.Versions = versions
 		}
 		gardenerv1beta1.SetObjectDefaults_CloudProfile(&cloudProfile)
-		return errors.Join(errs...)
+		return nil
 	})
 	log.V(1).Info("CloudProfile patch operation", "operation", op)
 	if err != nil {
-		statusErr := r.patchStatusAndCondition(ctx, mcp, v1alpha1.FailedReconcileStatus, metav1.Condition{
-			Type:               CloudProfileAppliedConditionType,
-			Status:             metav1.ConditionFalse,
-			ObservedGeneration: mcp.Generation,
-			Reason:             "ApplyFailed",
-			Message:            truncateConditionMessage(fmt.Sprintf("Failed to apply CloudProfile: %s", err)),
-		})
-		if statusErr != nil {
-			return fmt.Errorf("failed to patch ManagedCloudProfile status: %w", statusErr)
+		if statusErr := r.markReconcileFailed(ctx, mcp, err); statusErr != nil {
+			return statusErr
 		}
 		if apierrors.IsInvalid(err) {
 			log.Error(err, "CloudProfile is invalid, skipping retry")
@@ -115,180 +104,126 @@ func (r *Reconciler) reconcileCloudProfile(ctx context.Context, log logr.Logger,
 	return nil
 }
 
-func (r *Reconciler) updateMachineImages(ctx context.Context, log logr.Logger, update v1alpha1.MachineImageUpdate, cpSpec *gardenerv1beta1.CloudProfileSpec) error {
-	var source ossync.Source
-	switch {
-	case update.Source.OCI != nil:
-		password, err := r.getCredential(ctx, update.Source.OCI.Password)
-		if err != nil {
-			return err
-		}
-		src, err := r.OCISourceFactory.Create(ocirepo.Params{
-			Registry:   update.Source.OCI.Registry,
-			Repository: update.Source.OCI.Repository,
-			Username:   update.Source.OCI.Username,
-			Password:   string(password),
-			Insecure:   update.Source.OCI.Insecure,
-		}, 1, log, update.Source.OCI.FeatureToCapabilityMap, update.Source.OCI.ImageFilter)
-		if err != nil {
-			return fmt.Errorf("failed to initialize OCI source: %w", err)
-		}
-		source = src
+func copyStaticSpecFields(dst *gardenerv1beta1.CloudProfileSpec, src *v1alpha1.CloudProfileSpec) {
+	cpu := src.DeepCopy()
+	dst.CABundle = cpu.CABundle
+	dst.Kubernetes = cpu.Kubernetes
+	dst.MachineTypes = cpu.MachineTypes
+	dst.Regions = cpu.Regions
+	dst.SeedSelector = cpu.SeedSelector
+	dst.Type = cpu.Type
+	dst.VolumeTypes = cpu.VolumeTypes
+	dst.Bastion = cpu.Bastion
+	dst.Limits = cpu.Limits
+	dst.MachineCapabilities = cpu.MachineCapabilities
+}
 
-	case update.Source.Glance != nil:
-		password, err := r.getCredential(ctx, update.Source.Glance.PasswordSecret)
-		if err != nil {
-			return err
-		}
-		src, err := glance.NewGlance(glance.GlanceParams{
-			AuthURLFormat:     update.Source.Glance.AuthURLFormat,
-			Regions:           update.Source.Glance.Regions,
-			NamePrefix:        update.Source.Glance.NamePrefix,
-			KeepLatest:        update.Source.Glance.KeepLatest,
-			VersionOffset:     update.Source.Glance.VersionOffset,
-			ExcludedSuffixes:  update.Source.Glance.ExcludedSuffixes,
-			Parallel:          update.Source.Glance.Parallel,
-			ProjectName:       update.Source.Glance.ProjectName,
-			ProjectDomainName: update.Source.Glance.ProjectDomainName,
-			Username:          update.Source.Glance.Username,
-			UserDomainName:    update.Source.Glance.UserDomainName,
-			Password:          string(password),
-		}, log)
-		if err != nil {
-			return fmt.Errorf("failed to initialize Glance source: %w", err)
-		}
-		source = src
-
-	default:
-		return errors.New("no machine images source configured")
+// deepCopyMachineImages returns a deep copy of the given machine images so
+// in-place edits (e.g. carrying expiration dates) never mutate the shared
+// pre-fetched slice across CreateOrPatch retries.
+func deepCopyMachineImages(images []gardenerv1beta1.MachineImage) []gardenerv1beta1.MachineImage {
+	if images == nil {
+		return nil
 	}
-
-	var provider ossync.Provider
-	switch {
-	case update.Provider.IroncoreMetal != nil:
-		provider = &ironcore.IroncoreProvider{
-			Registry:           update.Provider.IroncoreMetal.Registry,
-			Repository:         update.Provider.IroncoreMetal.Repository,
-			ImageName:          update.ImageName,
-			EnableCapabilities: r.EnableCapabilities,
-		}
-	case update.Provider.OpenStack != nil:
-		provider = &osprovider.OpenStackProvider{
-			ImageName: update.ImageName,
-		}
-	default:
-		return errors.New("no known provider configured")
+	out := make([]gardenerv1beta1.MachineImage, len(images))
+	for i := range images {
+		images[i].DeepCopyInto(&out[i])
 	}
-	imageUpdater := ossync.ImageUpdater{
+	return out
+}
+
+func (r *Reconciler) markReconcileFailed(ctx context.Context, mcp *v1alpha1.ManagedCloudProfile, err error) error {
+	statusErr := r.patchStatusAndCondition(ctx, mcp, v1alpha1.FailedReconcileStatus, metav1.Condition{
+		Type:               CloudProfileAppliedConditionType,
+		Status:             metav1.ConditionFalse,
+		ObservedGeneration: mcp.Generation,
+		Reason:             "ApplyFailed",
+		Message:            truncateConditionMessage(fmt.Sprintf("Failed to apply CloudProfile: %s", err)),
+	})
+	if statusErr != nil {
+		return fmt.Errorf("failed to patch ManagedCloudProfile status: %w", statusErr)
+	}
+	return nil
+}
+
+func (r *Reconciler) prepareMachineImageUpdate(
+	ctx context.Context,
+	log logr.Logger,
+	capabilities []gardenerv1beta1.CapabilityDefinition,
+	baseImages []gardenerv1beta1.MachineImage,
+	baseProviderConfig *runtime.RawExtension,
+	update v1alpha1.MachineImageUpdate,
+) ([]gardenerv1beta1.MachineImage, *runtime.RawExtension, error) {
+	source, err := r.selectSource(ctx, log, update.Source)
+	if err != nil {
+		return nil, nil, err
+	}
+	provider, err := selectProvider(update, r.EnableCapabilities)
+	if err != nil {
+		return nil, nil, err
+	}
+	updater := ossync.ImageUpdater{
 		Log:                log,
 		Source:             source,
 		Provider:           provider,
 		ImageName:          update.ImageName,
 		EnableCapabilities: r.EnableCapabilities,
 	}
-	if err := imageUpdater.Update(ctx, cpSpec); err != nil {
-		return fmt.Errorf("updating machine images failed: %w", err)
+	sourceImages, err := updater.Fetch(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("fetching machine images failed: %w", err)
 	}
-	return nil
+	images, providerConfig, err := updater.Apply(capabilities, baseImages, baseProviderConfig, sourceImages)
+	if err != nil {
+		return nil, nil, fmt.Errorf("applying machine images failed: %w", err)
+	}
+	return images, providerConfig, nil
 }
 
-func (r *Reconciler) getCredential(ctx context.Context, ref v1alpha1.SecretReference) ([]byte, error) {
-	if ref.Name == "" {
-		return nil, nil
-	}
-	var secret corev1.Secret
-	if err := r.Get(ctx, types.NamespacedName{Name: ref.Name, Namespace: ref.Namespace}, &secret); err != nil {
-		return nil, fmt.Errorf("failed to get secret: %w", err)
-	}
-	data, ok := secret.Data[ref.Key]
-	if !ok {
-		return nil, fmt.Errorf("secret %s/%s does not have key %s", ref.Namespace, ref.Name, ref.Key)
-	}
-	return data, nil
-}
-
-type KubernetesImageUpdater interface {
-	Update(ctx context.Context, cpSpec *gardenerv1beta1.CloudProfileSpec) error
-}
-
-func (r *Reconciler) updateKubernetesVersions(ctx context.Context, cfg v1alpha1.KubernetesVersionUpdateConfig, cpSpec *gardenerv1beta1.CloudProfileSpec) error {
+func (r *Reconciler) prepareKubernetesUpdate(ctx context.Context, cfg v1alpha1.KubernetesVersionUpdateConfig) ([]gardenerv1beta1.ExpirableVersion, error) {
 	var source k8ssync.KubernetesVersionSource
 	var err error
 	switch {
 	case cfg.LandscapeSetup != nil:
 		source, err = r.landscapeSetupSource(ctx, *cfg.LandscapeSetup)
 		if err != nil {
-			return fmt.Errorf("getting landscape setup source: %w", err)
+			return nil, fmt.Errorf("getting landscape setup source: %w", err)
 		}
 	default:
-		return errors.New("no kubernetes version source configured")
+		return nil, errors.New("no kubernetes version source configured")
 	}
 
-	kubernetesUpdater := k8ssync.NewKubernetesVersionUpdater(source, cfg.ExpirationThreshold.Duration)
-
-	if err := kubernetesUpdater.Update(ctx, cpSpec); err != nil {
-		return fmt.Errorf("updating kubernetes versions failed: %w", err)
-	}
-
-	return nil
-}
-
-func (r *Reconciler) landscapeSetupSource(ctx context.Context, ls v1alpha1.LandscapeSetup) (k8ssync.KubernetesVersionSource, error) {
-	ociPassword, err := r.getCredential(ctx, ls.OCI.Password)
+	updater := k8ssync.NewKubernetesVersionUpdater(source, cfg.ExpirationThreshold.Duration)
+	fetched, err := updater.Fetch(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("getting oci password: %w", err)
+		return nil, fmt.Errorf("fetching kubernetes versions failed: %w", err)
 	}
-	ociParams := ocirepo.Params{
-		Registry:   ls.OCI.Registry,
-		Repository: ls.OCI.Repository,
-		Username:   ls.OCI.Username,
-		Password:   string(ociPassword),
-		Insecure:   ls.OCI.Insecure,
-	}
-	landscapeSource, err := landscape.NewLandscapeKubernetesSource(ociParams, ls.Provider)
+	versions, err := updater.Apply(fetched)
 	if err != nil {
-		return nil, fmt.Errorf("initializing landscape source: %w", err)
+		return nil, fmt.Errorf("applying kubernetes versions failed: %w", err)
 	}
-	return landscapeSource, nil
+	return versions, nil
 }
 
-const maxConditionMessageLen = 32768
-
-func expirationDateKey(imageName, version string) string {
-	return imageName + "/" + version
-}
-
-func collectExpirationDates(images []gardenerv1beta1.MachineImage) map[string]*metav1.Time {
-	out := make(map[string]*metav1.Time)
-	for _, img := range images {
+func carryExpirationDates(existing, next []gardenerv1beta1.MachineImage) {
+	stored := make(map[string]*metav1.Time)
+	for _, img := range existing {
 		for _, v := range img.Versions {
 			if v.ExpirationDate != nil { //nolint:staticcheck // legacy fields; Lifecycle needs the VersionClassificationLifecycle feature gate
-				out[expirationDateKey(img.Name, v.Version)] = v.ExpirationDate //nolint:staticcheck // legacy fields; Lifecycle needs the VersionClassificationLifecycle feature gate
+				stored[expirationDateKey(img.Name, v.Version)] = v.ExpirationDate //nolint:staticcheck // legacy fields; Lifecycle needs the VersionClassificationLifecycle feature gate
 			}
 		}
 	}
-	return out
-}
-
-func applyExpirationDates(images []gardenerv1beta1.MachineImage, stored map[string]*metav1.Time) {
-	for i := range images {
-		for j := range images[i].Versions {
-			v := &images[i].Versions[j]
+	for i := range next {
+		for j := range next[i].Versions {
+			v := &next[i].Versions[j]
 			isDeprecated := v.Classification != nil && *v.Classification == gardenerv1beta1.ClassificationDeprecated //nolint:staticcheck // legacy fields; Lifecycle needs the VersionClassificationLifecycle feature gate
 			if !isDeprecated {
 				continue
 			}
-			if exp, ok := stored[expirationDateKey(images[i].Name, v.Version)]; ok {
+			if exp, ok := stored[expirationDateKey(next[i].Name, v.Version)]; ok {
 				v.ExpirationDate = exp //nolint:staticcheck // legacy fields; Lifecycle needs the VersionClassificationLifecycle feature gate
 			}
 		}
 	}
-}
-
-func truncateConditionMessage(msg string) string {
-	if len(msg) <= maxConditionMessageLen {
-		return msg
-	}
-	const suffix = "...[truncated]"
-	return msg[:maxConditionMessageLen-len(suffix)] + suffix
 }

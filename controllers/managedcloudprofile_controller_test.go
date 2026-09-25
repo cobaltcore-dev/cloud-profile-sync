@@ -970,7 +970,7 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 		expectReconcileStatus(ctx, &mcp, v1alpha1.FailedReconcileStatus)
 		expectAppliedCondition(&mcp, metav1.ConditionFalse,
 			HaveField("Reason", "ApplyFailed"),
-			HaveField("Message", ContainSubstring("Failed to apply CloudProfile: updating machine images failed: failed to retrieve image versions from OCI registry: simulated list error")),
+			HaveField("Message", ContainSubstring("Failed to apply CloudProfile: fetching machine images failed: failed to retrieve image versions from OCI registry: simulated list error")),
 		)
 
 		Expect(k8sClient.Delete(ctx, &mcp)).To(Succeed())

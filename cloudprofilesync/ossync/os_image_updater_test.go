@@ -16,6 +16,24 @@ import (
 	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/ossync"
 )
 
+// runUpdate fetches the source images and applies them onto cpSpec, mirroring
+// the old single-shot Update in one call for the tests. It writes the returned
+// machine images and provider config back into cpSpec so existing assertions
+// that inspect cpSpec keep working.
+func runUpdate(ctx SpecContext, updater ossync.ImageUpdater, cpSpec *gardencorev1beta1.CloudProfileSpec) error {
+	images, err := updater.Fetch(ctx)
+	if err != nil {
+		return err
+	}
+	imgs, pc, err := updater.Apply(cpSpec.MachineCapabilities, cpSpec.MachineImages, cpSpec.ProviderConfig, images)
+	if err != nil {
+		return err
+	}
+	cpSpec.MachineImages = imgs
+	cpSpec.ProviderConfig = pc
+	return nil
+}
+
 var _ = Describe("filterImages", func() {
 	// helper: run Update and return the versions written to spec.machineImages
 	versions := func(ctx SpecContext, images []ossync.SourceImage) []gardencorev1beta1.MachineImageVersion {
@@ -27,7 +45,7 @@ var _ = Describe("filterImages", func() {
 			EnableCapabilities: true,
 		}
 		var cpSpec gardencorev1beta1.CloudProfileSpec
-		Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
+		Expect(runUpdate(ctx, updater, &cpSpec)).To(Succeed())
 		if len(cpSpec.MachineImages) == 0 {
 			return nil
 		}
@@ -127,7 +145,7 @@ var _ = Describe("ImageUpdater", func() {
 				ImageName: "test",
 			}
 			var cpSpec gardencorev1beta1.CloudProfileSpec
-			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
+			Expect(runUpdate(ctx, updater, &cpSpec)).To(Succeed())
 			Expect(cpSpec.MachineImages[0].Versions).To(HaveLen(1))
 			Expect(cpSpec.MachineImages[0].Versions[0].Version).To(Equal("1.0.0"))
 		})
@@ -143,7 +161,7 @@ var _ = Describe("ImageUpdater", func() {
 				ImageName: "test",
 			}
 			var cpSpec gardencorev1beta1.CloudProfileSpec
-			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
+			Expect(runUpdate(ctx, updater, &cpSpec)).To(Succeed())
 			Expect(cpSpec.MachineImages[0].Versions).To(ConsistOf([]gardencorev1beta1.MachineImageVersion{
 				{Version: "1.0.0", Architectures: []string{"amd64"}},
 				{Version: "2.0.0", Architectures: []string{"arm64", "amd64"}},
@@ -160,7 +178,7 @@ var _ = Describe("ImageUpdater", func() {
 			}
 			mockSource.images = []ossync.SourceImage{{Version: "2.0.0", Architectures: []string{"arm64"}}}
 			updater := ossync.ImageUpdater{Log: GinkgoLogr, Source: &mockSource, ImageName: "test"}
-			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
+			Expect(runUpdate(ctx, updater, &cpSpec)).To(Succeed())
 			Expect(cpSpec.MachineImages[0].Versions).To(HaveLen(2))
 			Expect(cpSpec.MachineImages[0].Versions[0].Version).To(Equal("1.0.0"))
 			Expect(cpSpec.MachineImages[0].Versions[1].Version).To(Equal("2.0.0"))
@@ -179,7 +197,7 @@ var _ = Describe("ImageUpdater", func() {
 			}
 			mockSource.images = []ossync.SourceImage{{Version: "1.1.0", Architectures: []string{"arm64"}}}
 			updater := ossync.ImageUpdater{Log: GinkgoLogr, Source: &mockSource, ImageName: "test"}
-			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
+			Expect(runUpdate(ctx, updater, &cpSpec)).To(Succeed())
 			Expect(cpSpec.MachineImages).To(ConsistOf([]gardencorev1beta1.MachineImage{
 				{Name: "test", Versions: []gardencorev1beta1.MachineImageVersion{
 					{Version: "1.0.0", Architectures: []string{"amd64"}},
@@ -207,7 +225,7 @@ var _ = Describe("ImageUpdater", func() {
 				EnableCapabilities: false,
 			}
 			var cpSpec gardencorev1beta1.CloudProfileSpec
-			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
+			Expect(runUpdate(ctx, updater, &cpSpec)).To(Succeed())
 			Expect(cpSpec.MachineImages[0].Versions).To(HaveLen(1))
 			Expect(cpSpec.MachineImages[0].Versions[0].Version).To(Equal("2254.0.0-baremetal-sci-usi-amd64"))
 		})
@@ -221,7 +239,7 @@ var _ = Describe("ImageUpdater", func() {
 				Provider:  &MockProvider{},
 			}
 			var cpSpec gardencorev1beta1.CloudProfileSpec
-			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
+			Expect(runUpdate(ctx, updater, &cpSpec)).To(Succeed())
 			var fromProvider []ossync.SourceImage
 			Expect(json.Unmarshal(cpSpec.ProviderConfig.Raw, &fromProvider)).To(Succeed())
 			Expect(fromProvider).To(Equal(mockSource.images))
@@ -239,7 +257,7 @@ var _ = Describe("ImageUpdater", func() {
 				ImageName: "test",
 			}
 			var cpSpec gardencorev1beta1.CloudProfileSpec
-			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
+			Expect(runUpdate(ctx, updater, &cpSpec)).To(Succeed())
 			Expect(cpSpec.MachineImages[0].Versions).To(HaveLen(1))
 			Expect(cpSpec.MachineImages[0].Versions[0].Version).To(Equal("1.0.0"))
 			Expect(cpSpec.MachineImages[0].Versions[0].InPlaceUpdates.Supported).To(BeTrue())
@@ -276,7 +294,7 @@ var _ = Describe("ImageUpdater", func() {
 				EnableCapabilities: true,
 			}
 			cpSpec := cpSpecWithCaps()
-			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
+			Expect(runUpdate(ctx, updater, &cpSpec)).To(Succeed())
 
 			Expect(cpSpec.MachineImages[0].Versions).To(HaveLen(1))
 			v := cpSpec.MachineImages[0].Versions[0]
@@ -303,7 +321,7 @@ var _ = Describe("ImageUpdater", func() {
 				EnableCapabilities: true,
 			}
 			cpSpec := cpSpecWithCaps()
-			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
+			Expect(runUpdate(ctx, updater, &cpSpec)).To(Succeed())
 
 			versions := cpSpec.MachineImages[0].Versions
 			var cleanEntry *gardencorev1beta1.MachineImageVersion
@@ -342,7 +360,7 @@ var _ = Describe("ImageUpdater", func() {
 				EnableCapabilities: true,
 			}
 			cpSpec := cpSpecWithCaps()
-			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
+			Expect(runUpdate(ctx, updater, &cpSpec)).To(Succeed())
 
 			versions := cpSpec.MachineImages[0].Versions
 			var cleanEntry *gardencorev1beta1.MachineImageVersion
@@ -380,8 +398,8 @@ var _ = Describe("ImageUpdater", func() {
 				EnableCapabilities: true,
 			}
 			cpSpec := cpSpecWithCaps()
-			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
-			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
+			Expect(runUpdate(ctx, updater, &cpSpec)).To(Succeed())
+			Expect(runUpdate(ctx, updater, &cpSpec)).To(Succeed())
 
 			versions := cpSpec.MachineImages[0].Versions
 			var cleanEntry *gardencorev1beta1.MachineImageVersion
@@ -410,7 +428,7 @@ var _ = Describe("ImageUpdater", func() {
 				EnableCapabilities: true,
 			}
 			var cpSpec gardencorev1beta1.CloudProfileSpec
-			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
+			Expect(runUpdate(ctx, updater, &cpSpec)).To(Succeed())
 
 			versions := cpSpec.MachineImages[0].Versions
 			var cleanEntry *gardencorev1beta1.MachineImageVersion
@@ -441,7 +459,7 @@ var _ = Describe("ImageUpdater", func() {
 				EnableCapabilities: true,
 			}
 			var cpSpec gardencorev1beta1.CloudProfileSpec
-			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
+			Expect(runUpdate(ctx, updater, &cpSpec)).To(Succeed())
 			Expect(cpSpec.MachineImages[0].Versions).To(HaveLen(2))
 
 			versions := cpSpec.MachineImages[0].Versions
@@ -466,8 +484,8 @@ var _ = Describe("ImageUpdater", func() {
 				EnableCapabilities: true,
 			}
 			var cpSpec gardencorev1beta1.CloudProfileSpec
-			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
-			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
+			Expect(runUpdate(ctx, updater, &cpSpec)).To(Succeed())
+			Expect(runUpdate(ctx, updater, &cpSpec)).To(Succeed())
 			Expect(cpSpec.MachineImages[0].Versions).To(HaveLen(2))
 		})
 
@@ -488,7 +506,7 @@ var _ = Describe("ImageUpdater", func() {
 				Provider:           &MockProvider{},
 			}
 			var cpSpec gardencorev1beta1.CloudProfileSpec
-			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
+			Expect(runUpdate(ctx, updater, &cpSpec)).To(Succeed())
 
 			// Non-semver raw tag must not appear in spec.machineImages — Gardener would reject it.
 			// Only the clean version entry should be written.
@@ -513,7 +531,7 @@ var _ = Describe("ImageUpdater", func() {
 				EnableCapabilities: true,
 			}
 			var cpSpec gardencorev1beta1.CloudProfileSpec
-			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
+			Expect(runUpdate(ctx, updater, &cpSpec)).To(Succeed())
 			Expect(cpSpec.MachineImages[0].Versions).To(HaveLen(1))
 			Expect(cpSpec.MachineImages[0].Versions[0].Version).To(Equal("1877.0.0"))
 		})
@@ -532,7 +550,7 @@ var _ = Describe("ImageUpdater", func() {
 				EnableCapabilities: true,
 			}
 			var cpSpec gardencorev1beta1.CloudProfileSpec
-			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
+			Expect(runUpdate(ctx, updater, &cpSpec)).To(Succeed())
 			Expect(cpSpec.MachineImages[0].Versions).To(HaveLen(2))
 			Expect(cpSpec.MachineImages[0].Versions[0].Version).To(Equal("1.0.0"))
 			Expect(cpSpec.MachineImages[0].Versions[0].InPlaceUpdates).NotTo(BeNil())
@@ -562,7 +580,7 @@ var _ = Describe("ImageUpdater", func() {
 				EnableCapabilities: true,
 			}
 			var cpSpec gardencorev1beta1.CloudProfileSpec
-			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
+			Expect(runUpdate(ctx, updater, &cpSpec)).To(Succeed())
 			v := cpSpec.MachineImages[0].Versions[0]
 			Expect(v.CapabilityFlavors).To(BeEmpty())
 		})
@@ -589,7 +607,7 @@ var _ = Describe("ImageUpdater", func() {
 					{Name: "feature_set", Values: []string{"sci", "usi"}},
 				},
 			}
-			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
+			Expect(runUpdate(ctx, updater, &cpSpec)).To(Succeed())
 			v := cpSpec.MachineImages[0].Versions[0]
 			Expect(v.CapabilityFlavors).To(HaveLen(1))
 			Expect(v.CapabilityFlavors[0].Capabilities).To(Equal(gardencorev1beta1.Capabilities{
@@ -622,7 +640,7 @@ var _ = Describe("ImageUpdater", func() {
 					{Name: "hypervisor", Values: []string{"kvm", "xen"}},
 				},
 			}
-			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
+			Expect(runUpdate(ctx, updater, &cpSpec)).To(Succeed())
 			v := cpSpec.MachineImages[0].Versions[0]
 			Expect(v.CapabilityFlavors).To(HaveLen(1))
 			Expect(v.CapabilityFlavors[0].Capabilities).To(Equal(gardencorev1beta1.Capabilities{
@@ -656,7 +674,7 @@ var _ = Describe("ImageUpdater", func() {
 					// hypervisor not declared → key dropped entirely
 				},
 			}
-			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
+			Expect(runUpdate(ctx, updater, &cpSpec)).To(Succeed())
 			v := cpSpec.MachineImages[0].Versions[0]
 			Expect(v.CapabilityFlavors).To(HaveLen(1))
 			Expect(v.CapabilityFlavors[0].Capabilities).To(Equal(gardencorev1beta1.Capabilities{
@@ -691,7 +709,7 @@ var _ = Describe("ImageUpdater", func() {
 				{Version: "1.0.0", Architectures: []string{"amd64"}, Classification: &deprecated},
 			}
 			updater := newUpdater()
-			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
+			Expect(runUpdate(ctx, updater, &cpSpec)).To(Succeed())
 			Expect(cpSpec.MachineImages[0].Versions).To(HaveLen(1))
 			Expect(cpSpec.MachineImages[0].Versions[0].ExpirationDate).To(Equal(&existing)) //nolint:staticcheck // legacy field; Lifecycle needs the VersionClassificationLifecycle feature gate
 		})
@@ -703,7 +721,7 @@ var _ = Describe("ImageUpdater", func() {
 			}
 			updater := newUpdater()
 			var cpSpec gardencorev1beta1.CloudProfileSpec
-			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
+			Expect(runUpdate(ctx, updater, &cpSpec)).To(Succeed())
 			Expect(cpSpec.MachineImages[0].Versions).To(HaveLen(1))
 			Expect(cpSpec.MachineImages[0].Versions[0].ExpirationDate).To(Equal(&fromSource)) //nolint:staticcheck // legacy field; Lifecycle needs the VersionClassificationLifecycle feature gate
 		})
@@ -714,7 +732,7 @@ var _ = Describe("ImageUpdater", func() {
 			}
 			updater := newUpdater()
 			var cpSpec gardencorev1beta1.CloudProfileSpec
-			Expect(updater.Update(ctx, &cpSpec)).To(Succeed())
+			Expect(runUpdate(ctx, updater, &cpSpec)).To(Succeed())
 			Expect(cpSpec.MachineImages[0].Versions).To(HaveLen(1))
 			Expect(cpSpec.MachineImages[0].Versions[0].ExpirationDate).To(BeNil()) //nolint:staticcheck // legacy field; Lifecycle needs the VersionClassificationLifecycle feature gate
 		})
