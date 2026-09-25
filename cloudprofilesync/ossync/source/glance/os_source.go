@@ -195,7 +195,9 @@ func (g *Glance) GetVersions(ctx context.Context) ([]ossync.SourceImage, error) 
 			if !exists {
 				entry = &ossync.SourceImage{
 					Version:       img.Version,
+					CleanVersion:  img.CleanVersion,
 					Architectures: img.Architectures,
+					Capabilities:  img.Capabilities,
 				}
 				imagesByVersion[img.Version] = entry
 			}
@@ -277,7 +279,10 @@ func (g *Glance) discoverRegion(ctx context.Context, region string) ([]ossync.So
 	for version, img := range canonical {
 		found = append(found, ossync.SourceImage{
 			Version:       version,
+			CleanVersion:  version,
 			Architectures: []string{"amd64"},
+			// TODO: derive architecture from namePrefix when arm64 Glance images are added.
+			Capabilities:  gardenerv1beta1.Capabilities{ossync.ArchitectureCapability: []string{"amd64"}},
 			Regions:       []ossync.RegionImage{{Region: region, ID: img.ID}},
 		})
 	}

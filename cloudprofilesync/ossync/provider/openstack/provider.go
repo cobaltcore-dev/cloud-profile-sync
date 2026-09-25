@@ -15,7 +15,18 @@ import (
 )
 
 type OpenStackProvider struct {
-	ImageName string
+	ImageName          string
+	EnableCapabilities bool
+}
+
+func upsertRegion(regions []openstackv1alpha1.RegionIDMapping, name, id string) []openstackv1alpha1.RegionIDMapping {
+	for i := range regions {
+		if regions[i].Name == name {
+			regions[i].ID = id
+			return regions
+		}
+	}
+	return append(regions, openstackv1alpha1.RegionIDMapping{Name: name, ID: id})
 }
 
 func (p *OpenStackProvider) Configure(cpSpec *gardencorev1beta1.CloudProfileSpec, versions []ossync.SourceImage) error {
@@ -55,18 +66,7 @@ func (p *OpenStackProvider) Configure(cpSpec *gardencorev1beta1.CloudProfileSpec
 		entry := &image.Versions[idx]
 
 		for _, r := range src.Regions {
-			existing := slices.IndexFunc(entry.Regions, func(m openstackv1alpha1.RegionIDMapping) bool {
-				return m.Name == r.Region
-			})
-			if existing == -1 {
-				entry.Regions = append(entry.Regions, openstackv1alpha1.RegionIDMapping{
-					Name: r.Region,
-					ID:   r.ID,
-				})
-				continue
-			}
-			// Update in place: a rebuilt image keeps the version but gets a new UUID.
-			entry.Regions[existing].ID = r.ID
+			entry.Regions = upsertRegion(entry.Regions, r.Region, r.ID)
 		}
 		// Sort regions by name so the marshaled ProviderConfig is stable across
 		// reconciles; the source does not guarantee a consistent region order,
@@ -77,6 +77,30 @@ func (p *OpenStackProvider) Configure(cpSpec *gardencorev1beta1.CloudProfileSpec
 			}
 			return cmp.Compare(a.ID, b.ID)
 		})
+
+		if p.EnableCapabilities && src.Capabilities != nil {
+			flavorIdx := slices.IndexFunc(entry.CapabilityFlavors, func(f openstackv1alpha1.MachineImageFlavor) bool {
+				return ossync.CapabilitiesEqual(f.Capabilities, src.Capabilities)
+			})
+			if flavorIdx == -1 {
+				flavorIdx = len(entry.CapabilityFlavors)
+				entry.CapabilityFlavors = append(entry.CapabilityFlavors, openstackv1alpha1.MachineImageFlavor{
+					Capabilities: src.Capabilities,
+				})
+			}
+			flavor := &entry.CapabilityFlavors[flavorIdx]
+			for _, r := range src.Regions {
+				flavor.Regions = upsertRegion(flavor.Regions, r.Region, r.ID)
+			}
+			// Sort once after all of this src's regions are upserted; only the
+			// touched flavor's regions were modified.
+			slices.SortFunc(flavor.Regions, func(a, b openstackv1alpha1.RegionIDMapping) int {
+				if c := cmp.Compare(a.Name, b.Name); c != 0 {
+					return c
+				}
+				return cmp.Compare(a.ID, b.ID)
+			})
+		}
 	}
 
 	raw, err := json.Marshal(cfg)
