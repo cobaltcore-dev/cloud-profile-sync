@@ -96,7 +96,8 @@ func selectProvider(update v1alpha1.MachineImageUpdate, enableCapabilities bool)
 		}, nil
 	case update.Provider.OpenStack != nil:
 		return &osprovider.OpenStackProvider{
-			ImageName: update.ImageName,
+			ImageName:          update.ImageName,
+			EnableCapabilities: enableCapabilities,
 		}, nil
 	default:
 		return nil, errors.New("no known provider configured")
