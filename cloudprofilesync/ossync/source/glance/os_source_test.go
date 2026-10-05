@@ -343,3 +343,87 @@ func newTestGlance(t *testing.T, params GlanceParams, imgsByRegion map[string][]
 	}
 	return g
 }
+
+// GetVersions must set CleanVersion equal to Version for every returned image.
+// For Glance, the parsed name already produces a clean semver — no separate annotation exists.
+func TestGetVersionsSetsCleanVersion(t *testing.T) {
+	imgs := []images.Image{
+		{ID: "uuid-1", Name: imageName(testVersion)},
+	}
+	g := newTestGlance(t, GlanceParams{Regions: []string{testRegion}}, map[string][]images.Image{testRegion: imgs})
+
+	versions, err := g.GetVersions(context.Background())
+	if err != nil {
+		t.Fatalf("GetVersions: %v", err)
+	}
+	if len(versions) != 1 {
+		t.Fatalf("got %d versions, want 1", len(versions))
+	}
+	v := versions[0]
+	if v.CleanVersion != v.Version {
+		t.Errorf("CleanVersion = %q, want it to equal Version %q", v.CleanVersion, v.Version)
+	}
+	if v.CleanVersion != testVersion {
+		t.Errorf("CleanVersion = %q, want %q", v.CleanVersion, testVersion)
+	}
+}
+
+// GetVersions must populate Capabilities with architecture=amd64 for every returned image.
+// The namePrefix already encodes the architecture, so no additional parsing is needed.
+func TestGetVersionsSetsArchitectureCapability(t *testing.T) {
+	imgs := []images.Image{
+		{ID: "uuid-1", Name: imageName(testVersion)},
+	}
+	g := newTestGlance(t, GlanceParams{Regions: []string{testRegion}}, map[string][]images.Image{testRegion: imgs})
+
+	versions, err := g.GetVersions(context.Background())
+	if err != nil {
+		t.Fatalf("GetVersions: %v", err)
+	}
+	if len(versions) != 1 {
+		t.Fatalf("got %d versions, want 1", len(versions))
+	}
+	v := versions[0]
+	if v.Capabilities == nil {
+		t.Fatal("Capabilities is nil, want {architecture: [amd64]}")
+	}
+	arch, ok := v.Capabilities["architecture"]
+	if !ok {
+		t.Fatal("Capabilities missing key \"architecture\"")
+	}
+	if len(arch) != 1 || arch[0] != "amd64" {
+		t.Errorf("Capabilities[architecture] = %v, want [amd64]", arch)
+	}
+}
+
+// When the same version is discovered in multiple regions, CleanVersion and Capabilities
+// must be preserved on the aggregated entry (not lost during the cross-region merge).
+func TestGetVersionsMultiRegionPropagatesCapabilities(t *testing.T) {
+	const (
+		region1 = "region1"
+		region2 = "region2"
+	)
+	imgsByRegion := map[string][]images.Image{
+		region1: {{ID: "uuid-de", Name: imageName(testVersion)}},
+		region2: {{ID: "uuid-nl", Name: imageName(testVersion)}},
+	}
+	g := newTestGlance(t, GlanceParams{Regions: []string{region1, region2}}, imgsByRegion)
+
+	versions, err := g.GetVersions(context.Background())
+	if err != nil {
+		t.Fatalf("GetVersions: %v", err)
+	}
+	if len(versions) != 1 {
+		t.Fatalf("got %d versions, want 1 (same version across two regions must aggregate)", len(versions))
+	}
+	v := versions[0]
+	if v.CleanVersion != testVersion {
+		t.Errorf("CleanVersion = %q, want %q after multi-region aggregation", v.CleanVersion, testVersion)
+	}
+	if v.Capabilities == nil {
+		t.Fatal("Capabilities is nil after multi-region aggregation, want {architecture: [amd64]}")
+	}
+	if len(v.Regions) != 2 {
+		t.Errorf("got %d regions, want 2", len(v.Regions))
+	}
+}
