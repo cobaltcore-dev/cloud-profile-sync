@@ -207,6 +207,26 @@ func TestConfigureReturnsErrorOnInvalidConfig(t *testing.T) {
 	}
 }
 
+// Configure with an empty versions slice must write back the config unchanged and not error.
+func TestConfigureEmptyVersions(t *testing.T) {
+	p := &OpenStackProvider{ImageName: imageName}
+	existing := &openstackv1alpha1.CloudProfileConfig{
+		MachineImages: []openstackv1alpha1.MachineImages{
+			{Name: imageName, Versions: []openstackv1alpha1.MachineImageVersion{{Version: testVersion}}},
+		},
+	}
+	spec := specWithConfig(t, existing)
+
+	if err := p.Configure(spec, []ossync.SourceImage{}); err != nil {
+		t.Fatalf("Configure: %v", err)
+	}
+
+	cfg := parseConfig(t, spec)
+	if len(cfg.MachineImages) != 1 || findVersion(findImage(cfg, imageName), testVersion) == nil {
+		t.Error("existing config was modified by empty versions slice")
+	}
+}
+
 // specWithConfig builds a CloudProfileSpec from cfg (nil yields no ProviderConfig).
 func specWithConfig(t *testing.T, cfg *openstackv1alpha1.CloudProfileConfig) *gardencorev1beta1.CloudProfileSpec {
 	t.Helper()
@@ -266,12 +286,6 @@ func TestUpsertRegion(t *testing.T) {
 		{
 			name:   "append to nil slice",
 			region: region1, id: "uuid-1",
-			want: []openstackv1alpha1.RegionIDMapping{{Name: region1, ID: "uuid-1"}},
-		},
-		{
-			name:    "append to empty slice",
-			regions: []openstackv1alpha1.RegionIDMapping{},
-			region:  region1, id: "uuid-1",
 			want: []openstackv1alpha1.RegionIDMapping{{Name: region1, ID: "uuid-1"}},
 		},
 		{
@@ -345,78 +359,149 @@ func TestUpsertRegion(t *testing.T) {
 	}
 }
 
-// EnableCapabilities=false: Capabilities on the source image must be ignored — no CapabilityFlavors written.
-func TestConfigureCapabilitiesFlagOff(t *testing.T) {
-	p := &OpenStackProvider{ImageName: imageName, EnableCapabilities: false}
-	spec := specWithConfig(t, nil)
-
-	err := p.Configure(spec, []ossync.SourceImage{
+func TestSortRegions(t *testing.T) {
+	tests := []struct {
+		name  string
+		input []openstackv1alpha1.RegionIDMapping
+		want  []openstackv1alpha1.RegionIDMapping
+	}{
 		{
-			Version:      testVersion,
-			CleanVersion: testVersion,
-			Capabilities: gardencorev1beta1.Capabilities{"architecture": {"amd64"}},
-			Regions:      []ossync.RegionImage{{Region: region1, ID: "uuid-r1"}},
+			name:  "nil slice",
+			input: nil,
+			want:  nil,
 		},
-	})
-	if err != nil {
-		t.Fatalf("Configure: %v", err)
+		{
+			name:  "empty slice",
+			input: []openstackv1alpha1.RegionIDMapping{},
+			want:  []openstackv1alpha1.RegionIDMapping{},
+		},
+		{
+			name: "already sorted",
+			input: []openstackv1alpha1.RegionIDMapping{
+				{Name: region1, ID: "uuid-1"},
+				{Name: region2, ID: "uuid-2"},
+			},
+			want: []openstackv1alpha1.RegionIDMapping{
+				{Name: region1, ID: "uuid-1"},
+				{Name: region2, ID: "uuid-2"},
+			},
+		},
+		{
+			name: "reverse order",
+			input: []openstackv1alpha1.RegionIDMapping{
+				{Name: region2, ID: "uuid-2"},
+				{Name: region1, ID: "uuid-1"},
+			},
+			want: []openstackv1alpha1.RegionIDMapping{
+				{Name: region1, ID: "uuid-1"},
+				{Name: region2, ID: "uuid-2"},
+			},
+		},
+		{
+			name: "same name tie-break by ID",
+			input: []openstackv1alpha1.RegionIDMapping{
+				{Name: region1, ID: "uuid-b"},
+				{Name: region1, ID: "uuid-a"},
+			},
+			want: []openstackv1alpha1.RegionIDMapping{
+				{Name: region1, ID: "uuid-a"},
+				{Name: region1, ID: "uuid-b"},
+			},
+		},
+		{
+			name: "three regions out of order",
+			input: []openstackv1alpha1.RegionIDMapping{
+				{Name: "region3", ID: "uuid-3"},
+				{Name: region1, ID: "uuid-1"},
+				{Name: region2, ID: "uuid-2"},
+			},
+			want: []openstackv1alpha1.RegionIDMapping{
+				{Name: region1, ID: "uuid-1"},
+				{Name: region2, ID: "uuid-2"},
+				{Name: "region3", ID: "uuid-3"},
+			},
+		},
 	}
 
-	cfg := parseConfig(t, spec)
-	v := findVersion(findImage(cfg, imageName), testVersion)
-	if v == nil {
-		t.Fatalf("version %s not found", testVersion)
-	}
-	if len(v.Regions) != 1 {
-		t.Errorf("got %d legacy regions, want 1", len(v.Regions))
-	}
-	if len(v.CapabilityFlavors) != 0 {
-		t.Errorf("got %d capabilityFlavors, want 0 (EnableCapabilities is false)", len(v.CapabilityFlavors))
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			sortRegions(tc.input)
+			if len(tc.input) != len(tc.want) {
+				t.Fatalf("got %d regions, want %d", len(tc.input), len(tc.want))
+			}
+			for i, r := range tc.input {
+				if r.Name != tc.want[i].Name || r.ID != tc.want[i].ID {
+					t.Errorf("regions[%d] = {%s, %s}, want {%s, %s}",
+						i, r.Name, r.ID, tc.want[i].Name, tc.want[i].ID)
+				}
+			}
+		})
 	}
 }
 
-// EnableCapabilities=true: must write both the legacy Regions list and a CapabilityFlavors entry
-// on the same version entry, with all source regions present in the flavor.
-func TestConfigureCapabilitiesFlagOn(t *testing.T) {
-	p := &OpenStackProvider{ImageName: imageName, EnableCapabilities: true}
-	spec := specWithConfig(t, nil)
+// EnableCapabilities flag and nil Capabilities control whether legacy regions or
+// capabilityFlavors are written. validator.admission-openstack.extensions.gardener.cloud
+// forbids both fields on the same version entry.
+func TestConfigureCapabilitiesFlag(t *testing.T) {
 	caps := gardencorev1beta1.Capabilities{"architecture": {"amd64"}}
-
-	err := p.Configure(spec, []ossync.SourceImage{
+	tests := []struct {
+		name               string
+		enableCapabilities bool
+		capabilities       gardencorev1beta1.Capabilities
+		wantRegionCount    int
+		wantFlavorCount    int
+	}{
 		{
-			Version:      testVersion,
-			CleanVersion: testVersion,
-			Capabilities: caps,
-			Regions: []ossync.RegionImage{
-				{Region: region1, ID: "uuid-r1"},
-				{Region: region2, ID: "uuid-r2"},
-			},
+			name:               "flag off ignores capabilities",
+			enableCapabilities: false,
+			capabilities:       caps,
+			wantRegionCount:    1,
+			wantFlavorCount:    0,
 		},
-	})
-	if err != nil {
-		t.Fatalf("Configure: %v", err)
+		{
+			name:               "flag on writes flavors only",
+			enableCapabilities: true,
+			capabilities:       caps,
+			wantRegionCount:    0,
+			wantFlavorCount:    1,
+		},
+		{
+			name:               "flag on nil capabilities falls through to legacy",
+			enableCapabilities: true,
+			capabilities:       nil, // image predates capability annotations
+			wantRegionCount:    1,
+			wantFlavorCount:    0,
+		},
 	}
 
-	cfg := parseConfig(t, spec)
-	v := findVersion(findImage(cfg, imageName), testVersion)
-	if v == nil {
-		t.Fatalf("version %s not found", testVersion)
-	}
-	// Legacy Regions must still be present for backwards compatibility.
-	if len(v.Regions) != 2 {
-		t.Errorf("got %d legacy regions, want 2", len(v.Regions))
-	}
-	if len(v.CapabilityFlavors) != 1 {
-		t.Fatalf("got %d capabilityFlavors, want 1: %+v", len(v.CapabilityFlavors), v.CapabilityFlavors)
-	}
-	flavor := v.CapabilityFlavors[0]
-	arch := flavor.Capabilities["architecture"]
-	if len(arch) != 1 || arch[0] != "amd64" {
-		t.Errorf("flavor Capabilities[architecture] = %v, want [amd64]", arch)
-	}
-	// The flavor must carry both regions, not just the first.
-	if len(flavor.Regions) != 2 {
-		t.Errorf("got %d flavor regions, want 2: %+v", len(flavor.Regions), flavor.Regions)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			p := &OpenStackProvider{ImageName: imageName, EnableCapabilities: tc.enableCapabilities}
+			spec := specWithConfig(t, nil)
+
+			if err := p.Configure(spec, []ossync.SourceImage{
+				{
+					Version:      testVersion,
+					CleanVersion: testVersion,
+					Capabilities: tc.capabilities,
+					Regions:      []ossync.RegionImage{{Region: region1, ID: "uuid-r1"}},
+				},
+			}); err != nil {
+				t.Fatalf("Configure: %v", err)
+			}
+
+			cfg := parseConfig(t, spec)
+			v := findVersion(findImage(cfg, imageName), testVersion)
+			if v == nil {
+				t.Fatalf("version %s not found", testVersion)
+			}
+			if len(v.Regions) != tc.wantRegionCount {
+				t.Errorf("got %d legacy regions, want %d", len(v.Regions), tc.wantRegionCount)
+			}
+			if len(v.CapabilityFlavors) != tc.wantFlavorCount {
+				t.Errorf("got %d capabilityFlavors, want %d", len(v.CapabilityFlavors), tc.wantFlavorCount)
+			}
+		})
 	}
 }
 
@@ -480,8 +565,8 @@ func TestConfigureCapabilitiesIdempotent(t *testing.T) {
 	if v == nil {
 		t.Fatalf("version %s not found", testVersion)
 	}
-	if len(v.Regions) != 1 {
-		t.Errorf("got %d legacy regions after re-reconcile, want 1 (must not duplicate)", len(v.Regions))
+	if len(v.Regions) != 0 {
+		t.Errorf("got %d legacy regions after re-reconcile, want 0 (capabilities enabled)", len(v.Regions))
 	}
 	if len(v.CapabilityFlavors) != 1 {
 		t.Errorf("got %d capabilityFlavors after re-reconcile, want 1 (must not duplicate)", len(v.CapabilityFlavors))
@@ -521,32 +606,6 @@ func TestConfigureCapabilitiesUpdatesFlavorRegionUUID(t *testing.T) {
 	}
 }
 
-// Source image with nil Capabilities must not write any flavor even when the flag is on.
-func TestConfigureCapabilitiesNilCapabilitiesSkipsFlavor(t *testing.T) {
-	p := &OpenStackProvider{ImageName: imageName, EnableCapabilities: true}
-	spec := specWithConfig(t, nil)
-
-	err := p.Configure(spec, []ossync.SourceImage{
-		{
-			Version: testVersion,
-			Regions: []ossync.RegionImage{{Region: region1, ID: "uuid-r1"}},
-			// Capabilities deliberately nil — image predates capability annotations.
-		},
-	})
-	if err != nil {
-		t.Fatalf("Configure: %v", err)
-	}
-
-	cfg := parseConfig(t, spec)
-	v := findVersion(findImage(cfg, imageName), testVersion)
-	if v == nil {
-		t.Fatalf("version %s not found", testVersion)
-	}
-	if len(v.CapabilityFlavors) != 0 {
-		t.Errorf("got %d capabilityFlavors, want 0 (nil Capabilities must not produce a flavor)", len(v.CapabilityFlavors))
-	}
-}
-
 // Two source images with different capability sets on the same version must produce
 // two separate CapabilityFlavors entries. This verifies that ossync.CapabilitiesEqual
 // is wired correctly as the dedup key — a bug there would silently collapse both
@@ -581,6 +640,9 @@ func TestConfigureCapabilitiesMultipleFlavorsOnSameVersion(t *testing.T) {
 	if len(v.CapabilityFlavors) != 2 {
 		t.Fatalf("got %d capabilityFlavors, want 2 (one per architecture): %+v",
 			len(v.CapabilityFlavors), v.CapabilityFlavors)
+	}
+	if len(v.Regions) != 0 {
+		t.Errorf("got %d legacy regions, want 0 (must not coexist with capabilityFlavors)", len(v.Regions))
 	}
 
 	for _, wantArch := range []string{"amd64", "arm64"} {
@@ -644,8 +706,59 @@ func TestConfigureCapabilitiesMultipleVersionsWithFlavors(t *testing.T) {
 				tc.version, len(v.CapabilityFlavors))
 			continue
 		}
+		if len(v.Regions) != 0 {
+			t.Errorf("version %s: got %d legacy regions, want 0 (must not coexist with capabilityFlavors)", tc.version, len(v.Regions))
+		}
 		if id := v.CapabilityFlavors[0].Regions[0].ID; id != tc.wantID {
 			t.Errorf("version %s: region ID = %q, want %q", tc.version, id, tc.wantID)
 		}
+	}
+}
+
+// A version that already carries legacy regions (written before capabilities were enabled)
+// must have those regions cleared when capabilities are enabled on the next reconcile.
+func TestConfigureCapabilitiesClearsLegacyRegionsOnMigration(t *testing.T) {
+	p := &OpenStackProvider{ImageName: imageName, EnableCapabilities: true}
+	spec := specWithConfig(t, &openstackv1alpha1.CloudProfileConfig{
+		MachineImages: []openstackv1alpha1.MachineImages{
+			{
+				Name: imageName,
+				Versions: []openstackv1alpha1.MachineImageVersion{
+					{
+						Version: testVersion,
+						Regions: []openstackv1alpha1.RegionIDMapping{
+							{Name: region1, ID: "legacy-uuid"},
+						},
+					},
+				},
+			},
+		},
+	})
+
+	err := p.Configure(spec, []ossync.SourceImage{
+		{
+			Version:      testVersion,
+			CleanVersion: testVersion,
+			Capabilities: gardencorev1beta1.Capabilities{"architecture": {"amd64"}},
+			Regions:      []ossync.RegionImage{{Region: region1, ID: "capability-uuid"}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Configure: %v", err)
+	}
+
+	cfg := parseConfig(t, spec)
+	v := findVersion(findImage(cfg, imageName), testVersion)
+	if v == nil {
+		t.Fatalf("version %s not found", testVersion)
+	}
+	if len(v.Regions) != 0 {
+		t.Errorf("got %d legacy regions, want 0 (must be cleared on migration to capability flavors)", len(v.Regions))
+	}
+	if len(v.CapabilityFlavors) != 1 {
+		t.Fatalf("got %d capabilityFlavors, want 1", len(v.CapabilityFlavors))
+	}
+	if id := v.CapabilityFlavors[0].Regions[0].ID; id != "capability-uuid" {
+		t.Errorf("flavor region ID = %q, want capability-uuid", id)
 	}
 }
