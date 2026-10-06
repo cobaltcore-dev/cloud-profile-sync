@@ -171,7 +171,7 @@ func TestConfigureRegionsSortedAlphabetically(t *testing.T) {
 	p := &OpenStackProvider{ImageName: imageName}
 	spec := specWithConfig(t, nil)
 
-	_, err := p.Configure(spec, []ossync.SourceImage{
+	pc, err := p.Configure(spec, []ossync.SourceImage{
 		{
 			Version: testVersion,
 			Regions: []ossync.RegionImage{
@@ -184,7 +184,7 @@ func TestConfigureRegionsSortedAlphabetically(t *testing.T) {
 		t.Fatalf("Configure: %v", err)
 	}
 
-	cfg := parseConfig(t, spec)
+	cfg := parseConfig(t, pc)
 	v := findVersion(findImage(cfg, imageName), testVersion)
 	if len(v.Regions) != 2 {
 		t.Fatalf("got %d regions, want 2", len(v.Regions))
@@ -346,7 +346,7 @@ func TestConfigureCapabilitiesFlagOff(t *testing.T) {
 	p := &OpenStackProvider{ImageName: imageName, EnableCapabilities: false}
 	spec := specWithConfig(t, nil)
 
-	_, err := p.Configure(spec, []ossync.SourceImage{
+	pc, err := p.Configure(spec, []ossync.SourceImage{
 		{
 			Version:      testVersion,
 			CleanVersion: testVersion,
@@ -358,7 +358,7 @@ func TestConfigureCapabilitiesFlagOff(t *testing.T) {
 		t.Fatalf("Configure: %v", err)
 	}
 
-	cfg := parseConfig(t, spec)
+	cfg := parseConfig(t, pc)
 	v := findVersion(findImage(cfg, imageName), testVersion)
 	if v == nil {
 		t.Fatalf("version %s not found", testVersion)
@@ -378,7 +378,7 @@ func TestConfigureCapabilitiesFlagOn(t *testing.T) {
 	spec := specWithConfig(t, nil)
 	caps := gardencorev1beta1.Capabilities{"architecture": {"amd64"}}
 
-	_, err := p.Configure(spec, []ossync.SourceImage{
+	pc, err := p.Configure(spec, []ossync.SourceImage{
 		{
 			Version:      testVersion,
 			CleanVersion: testVersion,
@@ -393,7 +393,7 @@ func TestConfigureCapabilitiesFlagOn(t *testing.T) {
 		t.Fatalf("Configure: %v", err)
 	}
 
-	cfg := parseConfig(t, spec)
+	cfg := parseConfig(t, pc)
 	v := findVersion(findImage(cfg, imageName), testVersion)
 	if v == nil {
 		t.Fatalf("version %s not found", testVersion)
@@ -421,7 +421,7 @@ func TestConfigureCapabilitiesFlavorRegionsSortedAlphabetically(t *testing.T) {
 	p := &OpenStackProvider{ImageName: imageName, EnableCapabilities: true}
 	spec := specWithConfig(t, nil)
 
-	_, err := p.Configure(spec, []ossync.SourceImage{
+	pc, err := p.Configure(spec, []ossync.SourceImage{
 		{
 			Version:      testVersion,
 			CleanVersion: testVersion,
@@ -436,7 +436,7 @@ func TestConfigureCapabilitiesFlavorRegionsSortedAlphabetically(t *testing.T) {
 		t.Fatalf("Configure: %v", err)
 	}
 
-	cfg := parseConfig(t, spec)
+	cfg := parseConfig(t, pc)
 	v := findVersion(findImage(cfg, imageName), testVersion)
 	if len(v.CapabilityFlavors) != 1 {
 		t.Fatalf("got %d flavors, want 1", len(v.CapabilityFlavors))
@@ -464,14 +464,16 @@ func TestConfigureCapabilitiesIdempotent(t *testing.T) {
 		},
 	}
 
-	if _, err := p.Configure(spec, versions); err != nil {
+	pc, err := p.Configure(spec, versions)
+	if err != nil {
 		t.Fatalf("first Configure: %v", err)
 	}
-	if _, err := p.Configure(spec, versions); err != nil {
+	pc, err = p.Configure(pc, versions)
+	if err != nil {
 		t.Fatalf("second Configure: %v", err)
 	}
 
-	cfg := parseConfig(t, spec)
+	cfg := parseConfig(t, pc)
 	v := findVersion(findImage(cfg, imageName), testVersion)
 	if v == nil {
 		t.Fatalf("version %s not found", testVersion)
@@ -491,20 +493,22 @@ func TestConfigureCapabilitiesUpdatesFlavorRegionUUID(t *testing.T) {
 	spec := specWithConfig(t, nil)
 	caps := gardencorev1beta1.Capabilities{"architecture": {"amd64"}}
 
-	if _, err := p.Configure(spec, []ossync.SourceImage{
+	pc, err := p.Configure(spec, []ossync.SourceImage{
 		{Version: testVersion, CleanVersion: testVersion, Capabilities: caps,
 			Regions: []ossync.RegionImage{{Region: region1, ID: "original-uuid"}}},
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("first Configure: %v", err)
 	}
-	if _, err := p.Configure(spec, []ossync.SourceImage{
+	pc, err = p.Configure(pc, []ossync.SourceImage{
 		{Version: testVersion, CleanVersion: testVersion, Capabilities: caps,
 			Regions: []ossync.RegionImage{{Region: region1, ID: "rebuilt-uuid"}}},
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("second Configure: %v", err)
 	}
 
-	cfg := parseConfig(t, spec)
+	cfg := parseConfig(t, pc)
 	v := findVersion(findImage(cfg, imageName), testVersion)
 	if v == nil {
 		t.Fatalf("version %s not found", testVersion)
@@ -522,7 +526,7 @@ func TestConfigureCapabilitiesNilCapabilitiesSkipsFlavor(t *testing.T) {
 	p := &OpenStackProvider{ImageName: imageName, EnableCapabilities: true}
 	spec := specWithConfig(t, nil)
 
-	_, err := p.Configure(spec, []ossync.SourceImage{
+	pc, err := p.Configure(spec, []ossync.SourceImage{
 		{
 			Version: testVersion,
 			Regions: []ossync.RegionImage{{Region: region1, ID: "uuid-r1"}},
@@ -533,7 +537,7 @@ func TestConfigureCapabilitiesNilCapabilitiesSkipsFlavor(t *testing.T) {
 		t.Fatalf("Configure: %v", err)
 	}
 
-	cfg := parseConfig(t, spec)
+	cfg := parseConfig(t, pc)
 	v := findVersion(findImage(cfg, imageName), testVersion)
 	if v == nil {
 		t.Fatalf("version %s not found", testVersion)
@@ -551,7 +555,7 @@ func TestConfigureCapabilitiesMultipleFlavorsOnSameVersion(t *testing.T) {
 	p := &OpenStackProvider{ImageName: imageName, EnableCapabilities: true}
 	spec := specWithConfig(t, nil)
 
-	_, err := p.Configure(spec, []ossync.SourceImage{
+	pc, err := p.Configure(spec, []ossync.SourceImage{
 		{
 			Version:      testVersion,
 			CleanVersion: testVersion,
@@ -569,7 +573,7 @@ func TestConfigureCapabilitiesMultipleFlavorsOnSameVersion(t *testing.T) {
 		t.Fatalf("Configure: %v", err)
 	}
 
-	cfg := parseConfig(t, spec)
+	cfg := parseConfig(t, pc)
 	v := findVersion(findImage(cfg, imageName), testVersion)
 	if v == nil {
 		t.Fatalf("version %s not found", testVersion)
@@ -606,7 +610,7 @@ func TestConfigureCapabilitiesMultipleVersionsWithFlavors(t *testing.T) {
 	p := &OpenStackProvider{ImageName: imageName, EnableCapabilities: true}
 	spec := specWithConfig(t, nil)
 
-	_, err := p.Configure(spec, []ossync.SourceImage{
+	pc, err := p.Configure(spec, []ossync.SourceImage{
 		{
 			Version:      "2254.0.0",
 			CleanVersion: "2254.0.0",
@@ -624,7 +628,7 @@ func TestConfigureCapabilitiesMultipleVersionsWithFlavors(t *testing.T) {
 		t.Fatalf("Configure: %v", err)
 	}
 
-	cfg := parseConfig(t, spec)
+	cfg := parseConfig(t, pc)
 	img := findImage(cfg, imageName)
 
 	for _, tc := range []struct{ version, wantID string }{

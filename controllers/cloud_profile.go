@@ -32,7 +32,7 @@ func (r *Reconciler) reconcileCloudProfile(ctx context.Context, log logr.Logger,
 		providerConfig = base.ProviderConfig
 		for _, update := range mcp.Spec.MachineImageUpdates {
 			log.V(1).Info("updating machine images", "cloudProfile", cloudProfile.Name)
-			nextImgs, nextPC, err := r.prepareMachineImageUpdate(ctx, log, base.MachineCapabilities, imgs, providerConfig, update)
+			nextImgs, nextPC, err := r.prepareMachineImageUpdate(ctx, log, mcp, imgs, providerConfig, update)
 			if err != nil {
 				if statusErr := r.markReconcileFailed(ctx, mcp, err); statusErr != nil {
 					return statusErr
@@ -149,7 +149,7 @@ func (r *Reconciler) markReconcileFailed(ctx context.Context, mcp *v1alpha1.Mana
 func (r *Reconciler) prepareMachineImageUpdate(
 	ctx context.Context,
 	log logr.Logger,
-	capabilities []gardenerv1beta1.CapabilityDefinition,
+	mcp *v1alpha1.ManagedCloudProfile,
 	baseImages []gardenerv1beta1.MachineImage,
 	baseProviderConfig *runtime.RawExtension,
 	update v1alpha1.MachineImageUpdate,
@@ -162,21 +162,35 @@ func (r *Reconciler) prepareMachineImageUpdate(
 	if err != nil {
 		return nil, nil, err
 	}
+
+	filter, err := r.buildGCFilter(ctx, mcp, update)
+	if err != nil {
+		log.Error(err, "skipping garbage collection for machine image", "image", update.ImageName)
+	}
+
 	updater := ossync.ImageUpdater{
 		Log:                log,
 		Source:             source,
 		Provider:           provider,
 		ImageName:          update.ImageName,
 		EnableCapabilities: r.EnableCapabilities,
+		Filter:             filter,
 	}
 	sourceImages, err := updater.Fetch(ctx)
 	if err != nil {
 		return nil, nil, fmt.Errorf("fetching machine images failed: %w", err)
 	}
-	images, providerConfig, err := updater.Apply(capabilities, baseImages, baseProviderConfig, sourceImages)
+	images, providerConfig, err := updater.Apply(mcp.Spec.CloudProfile.MachineCapabilities, baseImages, baseProviderConfig, sourceImages)
 	if err != nil {
 		return nil, nil, fmt.Errorf("applying machine images failed: %w", err)
 	}
+	versionCount := 0
+	for _, img := range images {
+		if img.Name == update.ImageName {
+			versionCount = len(img.Versions)
+		}
+	}
+	log.Info("prepared machine image update", "image", update.ImageName, "sourceImages", len(sourceImages), "versions", versionCount)
 	return images, providerConfig, nil
 }
 

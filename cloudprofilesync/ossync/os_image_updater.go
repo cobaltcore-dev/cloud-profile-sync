@@ -67,6 +67,13 @@ type Provider interface {
 	Configure(providerConfig *runtime.RawExtension, versions []SourceImage) (*runtime.RawExtension, error)
 }
 
+// VersionFilter removes source images that should not be written into the
+// CloudProfile (e.g. garbage-collected stale versions). It is pure: it performs
+// no I/O and is applied inside Fetch after the versions are validated and sorted.
+type VersionFilter interface {
+	Filter(images []SourceImage) []SourceImage
+}
+
 func validateImageVersions(log logr.Logger, versions []SourceImage) []SourceImage {
 	filtered := make([]SourceImage, 0, len(versions))
 	for _, version := range versions {
@@ -108,6 +115,9 @@ type ImageUpdater struct {
 	Provider           Provider
 	ImageName          string
 	EnableCapabilities bool
+	// Filter, when set, removes source images (e.g. garbage-collected stale
+	// versions) after they are fetched. Nil means no filtering.
+	Filter VersionFilter
 }
 
 func (iu *ImageUpdater) resolveExpiration(src SourceImage, existing *metav1.Time) *metav1.Time {
@@ -136,6 +146,9 @@ func (iu *ImageUpdater) Fetch(ctx context.Context) ([]SourceImage, error) {
 		}
 		return cmp.Compare(a.Version, b.Version)
 	})
+	if iu.Filter != nil {
+		sourceImages = iu.Filter.Filter(sourceImages)
+	}
 	return sourceImages, nil
 }
 

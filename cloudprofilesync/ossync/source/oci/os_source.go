@@ -96,6 +96,7 @@ func (o *OCI) GetVersions(ctx context.Context) ([]ossync.SourceImage, error) {
 	if err != nil {
 		return nil, err
 	}
+	o.log.Info("listed OCI tags, fetching manifests", "registry", o.repo.Reference.Registry, "repository", o.repo.Reference.Repository, "tags", len(tags))
 
 	out := make(chan Result[collectedImage])
 	for _, tag := range tags {
@@ -159,7 +160,7 @@ func (o *OCI) GetVersions(ctx context.Context) ([]ossync.SourceImage, error) {
 	var items []collectedImage
 	var skipped []error
 	var errs []error
-	for range tags {
+	for i := range tags {
 		result := <-out
 		if result.err != nil {
 			if errors.Is(result.err, context.Canceled) || errors.Is(result.err, context.DeadlineExceeded) {
@@ -167,14 +168,19 @@ func (o *OCI) GetVersions(ctx context.Context) ([]ossync.SourceImage, error) {
 			} else {
 				skipped = append(skipped, result.err)
 			}
-			continue
+		} else {
+			items = append(items, result.value)
 		}
-		items = append(items, result.value)
+		// Periodic progress so a slow registry doesn't look like a hang.
+		if n := i + 1; n%50 == 0 || n == len(tags) {
+			o.log.Info("fetching OCI manifests", "progress", n, "total", len(tags))
+		}
 	}
 	if len(skipped) > 0 {
 		o.log.V(1).Info("skipped tags with errors", "count", len(skipped), "errors", errors.Join(skipped...))
 	}
 	images := applyImageFilter(o.log, items, o.imageFilter)
+	o.log.Info("collected OCI images", "fetched", len(items), "skipped", len(skipped), "afterFilter", len(images))
 	if len(errs) == 0 && len(images) == 0 && len(skipped) == len(tags) {
 		return nil, fmt.Errorf("all %d tags were skipped; possible registry issue", len(tags))
 	}
