@@ -28,6 +28,15 @@ func upsertRegion(regions []openstackv1alpha1.RegionIDMapping, name, id string) 
 	return append(regions, openstackv1alpha1.RegionIDMapping{Name: name, ID: id})
 }
 
+func sortRegions(regions []openstackv1alpha1.RegionIDMapping) {
+	slices.SortFunc(regions, func(a, b openstackv1alpha1.RegionIDMapping) int {
+		if c := cmp.Compare(a.Name, b.Name); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.ID, b.ID)
+	})
+}
+
 func (p *OpenStackProvider) Configure(pc *runtime.RawExtension, versions []ossync.SourceImage) (*runtime.RawExtension, error) {
 	var cfg openstackv1alpha1.CloudProfileConfig
 	if pc != nil {
@@ -64,20 +73,11 @@ func (p *OpenStackProvider) Configure(pc *runtime.RawExtension, versions []ossyn
 		}
 		entry := &image.Versions[idx]
 
-		for _, r := range src.Regions {
-			entry.Regions = upsertRegion(entry.Regions, r.Region, r.ID)
-		}
-		// Sort regions by name so the marshaled ProviderConfig is stable across
-		// reconciles; the source does not guarantee a consistent region order,
-		// which would otherwise churn the CloudProfile and cause a reconcile loop.
-		slices.SortFunc(entry.Regions, func(a, b openstackv1alpha1.RegionIDMapping) int {
-			if c := cmp.Compare(a.Name, b.Name); c != 0 {
-				return c
-			}
-			return cmp.Compare(a.ID, b.ID)
-		})
-
 		if p.EnableCapabilities && src.Capabilities != nil {
+			// validator.admission-openstack.extensions.gardener.cloud forbids both
+			// regions and capabilityFlavors on the same version entry.
+			entry.Regions = nil
+
 			flavorIdx := slices.IndexFunc(entry.CapabilityFlavors, func(f openstackv1alpha1.MachineImageFlavor) bool {
 				return ossync.CapabilitiesEqual(f.Capabilities, src.Capabilities)
 			})
@@ -91,14 +91,12 @@ func (p *OpenStackProvider) Configure(pc *runtime.RawExtension, versions []ossyn
 			for _, r := range src.Regions {
 				flavor.Regions = upsertRegion(flavor.Regions, r.Region, r.ID)
 			}
-			// Sort once after all of this src's regions are upserted; only the
-			// touched flavor's regions were modified.
-			slices.SortFunc(flavor.Regions, func(a, b openstackv1alpha1.RegionIDMapping) int {
-				if c := cmp.Compare(a.Name, b.Name); c != 0 {
-					return c
-				}
-				return cmp.Compare(a.ID, b.ID)
-			})
+			sortRegions(flavor.Regions)
+		} else {
+			for _, r := range src.Regions {
+				entry.Regions = upsertRegion(entry.Regions, r.Region, r.ID)
+			}
+			sortRegions(entry.Regions)
 		}
 	}
 
