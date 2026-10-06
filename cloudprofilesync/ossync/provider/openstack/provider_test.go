@@ -215,11 +215,12 @@ func TestConfigureEmptyVersions(t *testing.T) {
 	}
 	spec := specWithConfig(t, existing)
 
-	if err := p.Configure(spec, []ossync.SourceImage{}); err != nil {
+	pc, err := p.Configure(spec, []ossync.SourceImage{})
+	if err != nil {
 		t.Fatalf("Configure: %v", err)
 	}
 
-	cfg := parseConfig(t, spec)
+	cfg := parseConfig(t, pc)
 	if len(cfg.MachineImages) != 1 || findVersion(findImage(cfg, imageName), testVersion) == nil {
 		t.Error("existing config was modified by empty versions slice")
 	}
@@ -475,33 +476,36 @@ func TestConfigureCapabilitiesFlag(t *testing.T) {
 			p := &OpenStackProvider{ImageName: imageName, EnableCapabilities: tc.enableCapabilities}
 			spec := specWithConfig(t, nil)
 
-	pc, err := p.Configure(spec, []ossync.SourceImage{
-		{
-			Version:      testVersion,
-			CleanVersion: testVersion,
-			Capabilities: gardencorev1beta1.Capabilities{"architecture": {"amd64"}},
-			Regions:      []ossync.RegionImage{{Region: region1, ID: "uuid-r1"}},
-		},
-	})
-	if err != nil {
-		t.Fatalf("Configure: %v", err)
-	}
+			pc, err := p.Configure(spec, []ossync.SourceImage{
+				{
+					Version:      testVersion,
+					CleanVersion: testVersion,
+					Capabilities: tc.capabilities,
+					Regions:      []ossync.RegionImage{{Region: region1, ID: "uuid-r1"}},
+				},
+			})
+			if err != nil {
+				t.Fatalf("Configure: %v", err)
+			}
 
-	cfg := parseConfig(t, pc)
-	v := findVersion(findImage(cfg, imageName), testVersion)
-	if v == nil {
-		t.Fatalf("version %s not found", testVersion)
-	}
-	if len(v.Regions) != 1 {
-		t.Errorf("got %d legacy regions, want 1", len(v.Regions))
-	}
-	if len(v.CapabilityFlavors) != 0 {
-		t.Errorf("got %d capabilityFlavors, want 0 (EnableCapabilities is false)", len(v.CapabilityFlavors))
+			cfg := parseConfig(t, pc)
+			v := findVersion(findImage(cfg, imageName), testVersion)
+			if v == nil {
+				t.Fatalf("version %s not found", testVersion)
+			}
+			if len(v.Regions) != tc.wantRegionCount {
+				t.Errorf("got %d legacy regions, want %d", len(v.Regions), tc.wantRegionCount)
+			}
+			if len(v.CapabilityFlavors) != tc.wantFlavorCount {
+				t.Errorf("got %d capabilityFlavors, want %d", len(v.CapabilityFlavors), tc.wantFlavorCount)
+			}
+		})
 	}
 }
 
-// EnableCapabilities=true: must write both the legacy Regions list and a CapabilityFlavors entry
-// on the same version entry, with all source regions present in the flavor.
+// EnableCapabilities=true: writes a CapabilityFlavors entry carrying all source
+// regions, and clears the legacy Regions list (the admission validator forbids
+// both regions and capabilityFlavors on the same version entry).
 func TestConfigureCapabilitiesFlagOn(t *testing.T) {
 	p := &OpenStackProvider{ImageName: imageName, EnableCapabilities: true}
 	spec := specWithConfig(t, nil)
@@ -527,9 +531,9 @@ func TestConfigureCapabilitiesFlagOn(t *testing.T) {
 	if v == nil {
 		t.Fatalf("version %s not found", testVersion)
 	}
-	// Legacy Regions must still be present for backwards compatibility.
-	if len(v.Regions) != 2 {
-		t.Errorf("got %d legacy regions, want 2", len(v.Regions))
+	// Legacy Regions must be cleared — the validator forbids regions alongside flavors.
+	if len(v.Regions) != 0 {
+		t.Errorf("got %d legacy regions, want 0 (must be cleared when flavors are written)", len(v.Regions))
 	}
 	if len(v.CapabilityFlavors) != 1 {
 		t.Fatalf("got %d capabilityFlavors, want 1: %+v", len(v.CapabilityFlavors), v.CapabilityFlavors)
@@ -805,7 +809,7 @@ func TestConfigureCapabilitiesClearsLegacyRegionsOnMigration(t *testing.T) {
 		},
 	})
 
-	err := p.Configure(spec, []ossync.SourceImage{
+	pc, err := p.Configure(spec, []ossync.SourceImage{
 		{
 			Version:      testVersion,
 			CleanVersion: testVersion,
@@ -817,7 +821,7 @@ func TestConfigureCapabilitiesClearsLegacyRegionsOnMigration(t *testing.T) {
 		t.Fatalf("Configure: %v", err)
 	}
 
-	cfg := parseConfig(t, spec)
+	cfg := parseConfig(t, pc)
 	v := findVersion(findImage(cfg, imageName), testVersion)
 	if v == nil {
 		t.Fatalf("version %s not found", testVersion)
