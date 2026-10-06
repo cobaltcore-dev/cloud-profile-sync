@@ -55,9 +55,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{}, err
 	}
 
-	if err := r.reconcileGarbageCollection(ctx, &mcp); err != nil {
-		return ctrl.Result{}, err
-	}
 	log.Info("reconciled ManagedCloudProfile")
 	return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
 }

@@ -10,18 +10,16 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"slices"
 	"strings"
 	"time"
 
 	gardenerv1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
-	providercfg "github.com/ironcore-dev/gardener-extension-provider-ironcore-metal/pkg/apis/metal/v1alpha1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/cobaltcore-dev/cloud-profile-sync/api/v1alpha1"
+	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/ossync"
+	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/ossync/gc"
 )
 
 type KeppelClient struct{}
@@ -55,222 +53,88 @@ type KeppelManifestsResponse struct {
 	Manifests []KeppelManifest `json:"manifests"`
 }
 
-func (r *Reconciler) reconcileGarbageCollection(ctx context.Context, mcp *v1alpha1.ManagedCloudProfile) error {
+// normalizeTag applies the same tag normalization the OCI source does when
+// building SourceImage.Version (helm convention: "_" -> "+"), so registry tags
+// and Shoot-referenced versions are compared in SourceImage.Version space.
+func normalizeTag(tag string) string {
+	return strings.ReplaceAll(tag, "_", "+")
+}
+
+// buildGCFilter constructs the garbage-collection filter for a single machine
+// image update, or returns a nil filter when garbage collection does not apply
+// (GC disabled, machine images paused, non-OCI source). It performs all the
+// cluster/registry I/O here — listing Shoots and querying the registry for push
+// timestamps — and hands the result to the pure ossync/gc filter, which drops
+// stale, unreferenced source images.
+func (r *Reconciler) buildGCFilter(ctx context.Context, mcp *v1alpha1.ManagedCloudProfile, update v1alpha1.MachineImageUpdate) (ossync.VersionFilter, error) {
 	if mcp.Spec.GarbageCollection == nil || !mcp.Spec.GarbageCollection.Enabled {
-		return nil
+		return nil, nil
 	}
-	// Garbage collection only ever deletes machine image versions and rewrites the
-	// provider config mappings, so honor the machine image pause here too.
+	// Garbage collection only removes machine image versions, so honor the
+	// machine image pause here too.
 	if mcp.Spec.MachineImagesPaused {
-		return nil
+		return nil, nil
+	}
+	// Garbage collection is only supported for OCI-sourced images.
+	if update.Source.OCI == nil {
+		return nil, nil
 	}
 	if mcp.Spec.GarbageCollection.MaxAge.Duration < 0 {
-		return r.failWithStatusUpdate(ctx, mcp, fmt.Errorf("invalid garbage collection maxAge: %s", mcp.Spec.GarbageCollection.MaxAge.String()))
+		return nil, fmt.Errorf("invalid garbage collection maxAge: %s", mcp.Spec.GarbageCollection.MaxAge.String())
 	}
 
-	cutoff := time.Now().Add(-mcp.Spec.GarbageCollection.MaxAge.Duration)
+	registryClient, err := r.RegistryProviderFunc(update.Source.OCI.Registry)
+	if err != nil {
+		return nil, fmt.Errorf("no registry provider found for registry %q: %w", update.Source.OCI.Registry, err)
+	}
+	rawTags, err := registryClient.GetTags(ctx, update.Source.OCI.Registry, update.Source.OCI.Repository)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch tags: %w", err)
+	}
+	// Normalize registry tags into SourceImage.Version space.
+	tags := make(map[string]time.Time, len(rawTags))
+	for tag, pushedAt := range rawTags {
+		tags[normalizeTag(tag)] = pushedAt
+	}
 
+	protected, err := r.referencedVersions(ctx, mcp.Name, update.ImageName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to determine referenced versions for garbage collection: %w", err)
+	}
+
+	return &gc.Filter{
+		Tags:      tags,
+		Protected: protected,
+		Cutoff:    time.Now().Add(-mcp.Spec.GarbageCollection.MaxAge.Duration),
+	}, nil
+}
+
+// referencedVersions returns the set of image versions (full tags and/or clean
+// versions) that are in use by any Shoot worker pool targeting the given
+// CloudProfile and image. These must never be garbage-collected. The gc.Filter
+// expands clean-version protection to the backing tags itself (it keeps any
+// SourceImage whose CleanVersion is protected), so no provider config parsing
+// is needed here.
+func (r *Reconciler) referencedVersions(ctx context.Context, cloudProfileName, imageName string) (map[string]struct{}, error) {
 	shootList := &gardenerv1beta1.ShootList{}
 	if err := r.List(ctx, shootList, client.InNamespace(metav1.NamespaceAll)); err != nil {
-		return r.failWithStatusUpdate(ctx, mcp, fmt.Errorf("failed to list Shoots: %w", err))
-	}
-	var cp gardenerv1beta1.CloudProfile
-	if err := r.Get(ctx, types.NamespacedName{Name: mcp.Name}, &cp); err != nil {
-		return r.failWithStatusUpdate(ctx, mcp, fmt.Errorf("failed to get CloudProfile: %w", err))
+		return nil, fmt.Errorf("failed to list Shoots: %w", err)
 	}
 
-	for _, updates := range mcp.Spec.MachineImageUpdates {
-		if updates.Source.OCI == nil {
-			continue
-		}
-
-		registryClient, err := r.RegistryProviderFunc(updates.Source.OCI.Registry)
-		if err != nil {
-			return r.failWithStatusUpdate(ctx, mcp,
-				fmt.Errorf("no registry provider found for registry %q: %w", updates.Source.OCI.Registry, err))
-		}
-		tags, err := registryClient.GetTags(
-			ctx,
-			updates.Source.OCI.Registry,
-			updates.Source.OCI.Repository,
-		)
-		if err != nil {
-			return r.failWithStatusUpdate(ctx, mcp,
-				fmt.Errorf("failed to fetch tags: %w", err))
-		}
-
-		referencedVersions, err := r.getReferencedVersions(shootList, &cp, updates.ImageName)
-		if err != nil {
-			return r.failWithStatusUpdate(ctx, mcp, fmt.Errorf("failed to determine referenced versions for garbage collection: %w", err))
-		}
-
-		versionsToDelete := make(map[string]struct{})
-		for tag, pushedAt := range tags {
-			if _, isReferenced := referencedVersions[tag]; isReferenced {
-				continue
-			}
-			if pushedAt.Before(cutoff) {
-				versionsToDelete[tag] = struct{}{}
-			}
-		}
-
-		if err := r.deleteVersions(ctx, mcp.Name, updates.ImageName, versionsToDelete); err != nil {
-			if apierrors.IsInvalid(err) {
-				continue
-			}
-			return r.failWithStatusUpdate(ctx, mcp, fmt.Errorf("failed to delete image versions: %w", err))
-		}
-	}
-
-	return nil
-}
-
-func (r *Reconciler) deleteVersions(ctx context.Context, cloudProfileName, imageName string, versionsToDelete map[string]struct{}) error {
-	var cp gardenerv1beta1.CloudProfile
-	if err := r.Get(ctx, types.NamespacedName{Name: cloudProfileName}, &cp); err != nil {
-		return err
-	}
-
-	// Track surviving capability flavors per clean version so the spec.machineImages
-	// entry can be kept in sync. Nil value means the version was not a clean version entry.
-	// Non-nil (possibly empty) slice means it was, and holds the remaining capabilities.
-	survivingFlavors := make(map[string][]gardenerv1beta1.Capabilities)
-
-	if cp.Spec.ProviderConfig != nil {
-		var cfg providercfg.CloudProfileConfig
-		if err := json.Unmarshal(cp.Spec.ProviderConfig.Raw, &cfg); err != nil {
-			return fmt.Errorf("failed to unmarshal ProviderConfig: %w", err)
-		}
-		for i := range cfg.MachineImages {
-			if cfg.MachineImages[i].Name != imageName {
-				continue
-			}
-			for j := range cfg.MachineImages[i].Versions {
-				v := &cfg.MachineImages[i].Versions[j]
-				if v.Image != "" {
-					// Legacy flat entry — not a clean version, skip.
-					continue
-				}
-				// Prune stale flavors.
-				v.CapabilityFlavors = slices.DeleteFunc(v.CapabilityFlavors, func(f providercfg.MachineImageFlavor) bool {
-					idx := strings.LastIndex(f.Image, ":")
-					if idx == -1 {
-						return false
-					}
-					_, exists := versionsToDelete[f.Image[idx+1:]]
-					return exists
-				})
-				// Record surviving capabilities for this clean version.
-				caps := make([]gardenerv1beta1.Capabilities, 0, len(v.CapabilityFlavors))
-				for _, f := range v.CapabilityFlavors {
-					caps = append(caps, f.Capabilities)
-				}
-				survivingFlavors[v.Version] = caps
-			}
-			// Remove version entries that have no legacy image ref and no remaining flavors.
-			cfg.MachineImages[i].Versions = slices.DeleteFunc(cfg.MachineImages[i].Versions, func(mv providercfg.MachineImageVersion) bool {
-				if mv.Image != "" {
-					// Legacy flat entry — delete if its tag is in versionsToDelete.
-					idx := strings.LastIndex(mv.Image, ":")
-					if idx == -1 {
-						return false
-					}
-					_, exists := versionsToDelete[mv.Image[idx+1:]]
-					return exists
-				}
-				// Clean version entry — delete if all flavors were removed.
-				return len(survivingFlavors[mv.Version]) == 0
-			})
-		}
-		raw, err := json.Marshal(cfg)
-		if err != nil {
-			return fmt.Errorf("failed to marshal ProviderConfig: %w", err)
-		}
-		cp.Spec.ProviderConfig.Raw = raw
-	}
-
-	for i := range cp.Spec.MachineImages {
-		if cp.Spec.MachineImages[i].Name != imageName {
-			continue
-		}
-		cp.Spec.MachineImages[i].Versions = slices.DeleteFunc(cp.Spec.MachineImages[i].Versions, func(mv gardenerv1beta1.MachineImageVersion) bool {
-			if _, exists := versionsToDelete[mv.Version]; exists {
-				return true
-			}
-			// Cascade-delete clean version entry if all its capability flavors were removed.
-			// Only entries tracked as clean versions (present in the map) are eligible.
-			remaining, isCleanVersion := survivingFlavors[mv.Version]
-			return isCleanVersion && len(remaining) == 0
-		})
-		// Rebuild CapabilityFlavors on surviving clean version entries to match
-		// what remains in providerConfig after pruning.
-		for j := range cp.Spec.MachineImages[i].Versions {
-			mv := &cp.Spec.MachineImages[i].Versions[j]
-			remaining, isCleanVersion := survivingFlavors[mv.Version]
-			if !isCleanVersion {
-				continue
-			}
-			flavors := make([]gardenerv1beta1.MachineImageFlavor, 0, len(remaining))
-			for _, caps := range remaining {
-				flavors = append(flavors, gardenerv1beta1.MachineImageFlavor{Capabilities: caps})
-			}
-			mv.CapabilityFlavors = flavors
-		}
-	}
-
-	if err := r.Update(ctx, &cp); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (r *Reconciler) getReferencedVersions(shootList *gardenerv1beta1.ShootList, cp *gardenerv1beta1.CloudProfile, imageName string) (map[string]struct{}, error) {
 	referenced := make(map[string]struct{})
-
 	for _, shoot := range shootList.Items {
-		if shoot.Spec.CloudProfile == nil || shoot.Spec.CloudProfile.Name != cp.Name {
+		if shoot.Spec.CloudProfile == nil || shoot.Spec.CloudProfile.Name != cloudProfileName {
 			continue
 		}
-
 		for _, worker := range shoot.Spec.Provider.Workers {
 			if worker.Machine.Image == nil || worker.Machine.Image.Name != imageName {
 				continue
 			}
 			if worker.Machine.Image.Version != nil {
-				referenced[*worker.Machine.Image.Version] = struct{}{}
+				referenced[normalizeTag(*worker.Machine.Image.Version)] = struct{}{}
 			}
 		}
 	}
-
-	// For any clean version referenced by a Shoot, also protect the raw OCI tags
-	// that back it via capabilityFlavors — otherwise GC would delete the images
-	// that the clean version depends on.
-	if len(referenced) > 0 {
-		if cp.Spec.ProviderConfig != nil {
-			var cfg providercfg.CloudProfileConfig
-			if err := json.Unmarshal(cp.Spec.ProviderConfig.Raw, &cfg); err != nil {
-				return nil, fmt.Errorf("failed to unmarshal ProviderConfig: %w", err)
-			}
-			for _, img := range cfg.MachineImages {
-				if img.Name != imageName {
-					continue
-				}
-				for _, v := range img.Versions {
-					if _, isReferenced := referenced[v.Version]; !isReferenced {
-						continue
-					}
-					for _, flavor := range v.CapabilityFlavors {
-						idx := strings.LastIndex(flavor.Image, ":")
-						if idx == -1 {
-							continue
-						}
-						referenced[flavor.Image[idx+1:]] = struct{}{}
-					}
-				}
-			}
-		}
-	}
-
 	return referenced, nil
 }
 
@@ -374,17 +238,4 @@ func splitKeppelRepository(repository string) (account, repo string, err error) 
 	repo = parts[1]
 
 	return account, repo, nil
-}
-
-func (r *Reconciler) failWithStatusUpdate(ctx context.Context, mcp *v1alpha1.ManagedCloudProfile, returnErr error) error {
-	if patchErr := r.patchStatusAndCondition(ctx, mcp, v1alpha1.FailedReconcileStatus, metav1.Condition{
-		Type:               CloudProfileAppliedConditionType,
-		Status:             metav1.ConditionFalse,
-		ObservedGeneration: mcp.Generation,
-		Reason:             "GarbageCollectionFailed",
-		Message:            returnErr.Error(),
-	}); patchErr != nil {
-		return fmt.Errorf("failed to patch ManagedCloudProfile status: %w (original error: %w)", patchErr, returnErr)
-	}
-	return returnErr
 }
