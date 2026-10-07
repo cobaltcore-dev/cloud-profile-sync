@@ -680,19 +680,10 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 		}
 		Expect(k8sClient.Create(ctx, &mcp)).To(Succeed())
 
-		reconciler := &controllers.Reconciler{
-			Client:           k8sClient,
-			OCISourceFactory: &fakeFactory{},
-			RegistryProviderFunc: func(registry string) (controllers.RegistryClient, error) {
-				return &fakeRegistryClient{}, nil
-			},
-		}
-
-		_, err := reconciler.Reconcile(ctx, ctrl.Request{Name: mcp.Name})
-		Expect(err).ToNot(HaveOccurred())
-
-		// Wait for the CloudProfile to exist with both versions, then confirm GC
-		// never removes the unreferenced, stale oldVersion while paused.
+		// The background manager reconciles the MCP (driving a manual Reconcile here
+		// too would race it on CloudProfile creation). Wait for the CloudProfile to
+		// exist with both versions, then confirm GC never removes the unreferenced,
+		// stale oldVersion while paused.
 		Eventually(func(g Gomega) []string {
 			var cp gardenerv1beta1.CloudProfile
 			g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: mcp.Name}, &cp)).To(Succeed())
