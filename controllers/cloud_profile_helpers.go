@@ -41,18 +41,18 @@ func (r *Reconciler) selectSource(ctx context.Context, log logr.Logger, src v1al
 	}
 }
 
-func (r *Reconciler) newOCISource(ctx context.Context, log logr.Logger, oci *v1alpha1.OCI) (ossync.Source, error) {
-	password, err := r.getCredential(ctx, oci.Password)
+func (r *Reconciler) newOCISource(ctx context.Context, log logr.Logger, src *v1alpha1.OCI) (ossync.Source, error) {
+	password, err := r.getCredential(ctx, src.Password)
 	if err != nil {
 		return nil, err
 	}
 	source, err := r.OCISourceFactory.Create(ocirepo.Params{
-		Registry:   oci.Registry,
-		Repository: oci.Repository,
-		Username:   oci.Username,
+		Registry:   src.Registry,
+		Repository: src.Repository,
+		Username:   src.Username,
 		Password:   string(password),
-		Insecure:   oci.Insecure,
-	}, 1, log, oci.FeatureToCapabilityMap, oci.ImageFilter)
+		Insecure:   src.Insecure,
+	}, 1, log, src.FeatureToCapabilityMap, src.ImageFilter)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize OCI source: %w", err)
 	}

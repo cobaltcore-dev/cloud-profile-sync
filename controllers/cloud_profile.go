@@ -154,6 +154,7 @@ func (r *Reconciler) prepareMachineImageUpdate(
 	baseProviderConfig *runtime.RawExtension,
 	update v1alpha1.MachineImageUpdate,
 ) ([]gardenerv1beta1.MachineImage, *runtime.RawExtension, error) {
+
 	source, err := r.selectSource(ctx, log, update.Source)
 	if err != nil {
 		return nil, nil, err

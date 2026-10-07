@@ -186,6 +186,9 @@ func TestConfigureRegionsSortedAlphabetically(t *testing.T) {
 
 	cfg := parseConfig(t, pc)
 	v := findVersion(findImage(cfg, imageName), testVersion)
+	if v == nil {
+		t.Fatalf("version %s not found", testVersion)
+	}
 	if len(v.Regions) != 2 {
 		t.Fatalf("got %d regions, want 2", len(v.Regions))
 	}
@@ -571,6 +574,9 @@ func TestConfigureCapabilitiesFlavorRegionsSortedAlphabetically(t *testing.T) {
 
 	cfg := parseConfig(t, pc)
 	v := findVersion(findImage(cfg, imageName), testVersion)
+	if v == nil {
+		t.Fatalf("version %s not found", testVersion)
+	}
 	if len(v.CapabilityFlavors) != 1 {
 		t.Fatalf("got %d flavors, want 1", len(v.CapabilityFlavors))
 	}
