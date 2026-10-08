@@ -106,6 +106,12 @@ type MachineImageUpdate struct {
 
 	// ImageName is the name of the image to maintain automatically
 	ImageName string `json:"imageName"`
+
+	// MinVersionForUpdate specifies the minimum image version from which an
+	// in-place update to this version can be performed. When set, Gardener
+	// admission permits in-place OS updates on existing worker pools.
+	// +optional
+	MinVersionForUpdate *string `json:"minVersionForUpdate,omitempty"`
 }
 
 // ImageFilter defines admission criteria for source images.

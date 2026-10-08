@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/blang/semver/v4"
 	gardenerv1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
@@ -115,7 +116,19 @@ func (r *Reconciler) reconcileCloudProfile(ctx context.Context, log logr.Logger,
 	return nil
 }
 
+func ValidateMinVersionForUpdate(v string) error {
+	if _, err := semver.Parse(v); err != nil {
+		return fmt.Errorf("minVersionForUpdate %q is not valid semver: %w", v, err)
+	}
+	return nil
+}
+
 func (r *Reconciler) updateMachineImages(ctx context.Context, log logr.Logger, update v1alpha1.MachineImageUpdate, cpSpec *gardenerv1beta1.CloudProfileSpec) error {
+	if update.MinVersionForUpdate != nil {
+		if err := ValidateMinVersionForUpdate(*update.MinVersionForUpdate); err != nil {
+			return err
+		}
+	}
 	var source ossync.Source
 	switch {
 	case update.Source.OCI != nil:
@@ -181,11 +194,12 @@ func (r *Reconciler) updateMachineImages(ctx context.Context, log logr.Logger, u
 		return errors.New("no known provider configured")
 	}
 	imageUpdater := ossync.ImageUpdater{
-		Log:                log,
-		Source:             source,
-		Provider:           provider,
-		ImageName:          update.ImageName,
-		EnableCapabilities: r.EnableCapabilities,
+		Log:                 log,
+		Source:              source,
+		Provider:            provider,
+		ImageName:           update.ImageName,
+		EnableCapabilities:  r.EnableCapabilities,
+		MinVersionForUpdate: update.MinVersionForUpdate,
 	}
 	if err := imageUpdater.Update(ctx, cpSpec); err != nil {
 		return fmt.Errorf("updating machine images failed: %w", err)
