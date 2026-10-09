@@ -9,13 +9,10 @@ import (
 	"strings"
 	"time"
 
-	gardenerv1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-
 	"github.com/cobaltcore-dev/cloud-profile-sync/api/v1alpha1"
 	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/ossync"
 	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/ossync/gc"
+	gardenerv1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
 )
 
 type KeppelClient struct{}
@@ -81,7 +78,7 @@ func (f *Filter) keep(img ossync.SourceImage) bool {
 	return !pushedAt.Before(f.Cutoff)
 }
 
-func (r *Reconciler) buildGCFilter(ctx context.Context, mcp *v1alpha1.ManagedCloudProfile, update v1alpha1.MachineImageUpdate) (ossync.VersionFilter, error) {
+func (r *Reconciler) buildGCFilter(ctx context.Context, mcp *v1alpha1.ManagedCloudProfile, shoots *gardenerv1beta1.ShootList, update v1alpha1.MachineImageUpdate) (ossync.VersionFilter, error) {
 	if mcp.Spec.GarbageCollection == nil || !mcp.Spec.GarbageCollection.Enabled {
 		return nil, nil
 	}
@@ -112,10 +109,7 @@ func (r *Reconciler) buildGCFilter(ctx context.Context, mcp *v1alpha1.ManagedClo
 		tags[gc.NormalizeTag(tag)] = pushedAt
 	}
 
-	protected, err := r.referencedVersions(ctx, mcp.Name, update.ImageName)
-	if err != nil {
-		return nil, fmt.Errorf("failed to determine referenced versions for garbage collection: %w", err)
-	}
+	protected := referencedVersions(shoots, mcp.Name, update.ImageName)
 
 	return &Filter{
 		Tags:      tags,
@@ -124,14 +118,9 @@ func (r *Reconciler) buildGCFilter(ctx context.Context, mcp *v1alpha1.ManagedClo
 	}, nil
 }
 
-func (r *Reconciler) referencedVersions(ctx context.Context, cloudProfileName, imageName string) (map[string]struct{}, error) {
-	shootList := &gardenerv1beta1.ShootList{}
-	if err := r.List(ctx, shootList, client.InNamespace(metav1.NamespaceAll)); err != nil {
-		return nil, fmt.Errorf("failed to list Shoots: %w", err)
-	}
-
+func referencedVersions(shoots *gardenerv1beta1.ShootList, cloudProfileName, imageName string) map[string]struct{} {
 	referenced := make(map[string]struct{})
-	for _, shoot := range shootList.Items {
+	for _, shoot := range shoots.Items {
 		if shoot.Spec.CloudProfile == nil || shoot.Spec.CloudProfile.Name != cloudProfileName {
 			continue
 		}
@@ -144,5 +133,5 @@ func (r *Reconciler) referencedVersions(ctx context.Context, cloudProfileName, i
 			}
 		}
 	}
-	return referenced, nil
+	return referenced
 }

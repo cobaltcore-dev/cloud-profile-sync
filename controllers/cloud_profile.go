@@ -13,6 +13,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	"github.com/cobaltcore-dev/cloud-profile-sync/api/v1alpha1"
@@ -31,9 +32,18 @@ func (r *Reconciler) reconcileCloudProfile(ctx context.Context, log logr.Logger,
 	if !mcp.Spec.MachineImagesPaused {
 		imgs = base.MachineImages
 		providerConfig = base.ProviderConfig
+
+		var shoots *gardenerv1beta1.ShootList
+		if mcp.Spec.GarbageCollection != nil && mcp.Spec.GarbageCollection.Enabled {
+			shoots = &gardenerv1beta1.ShootList{}
+			if err := r.List(ctx, shoots, client.InNamespace(metav1.NamespaceAll)); err != nil {
+				return fmt.Errorf("failed to list Shoots: %w", err)
+			}
+		}
+
 		for _, update := range mcp.Spec.MachineImageUpdates {
 			log.V(1).Info("updating machine images", "cloudProfile", cloudProfile.Name)
-			nextImgs, nextPC, err := r.prepareMachineImageUpdate(ctx, log, mcp, imgs, providerConfig, update)
+			nextImgs, nextPC, err := r.prepareMachineImageUpdate(ctx, log, mcp, shoots, imgs, providerConfig, update)
 			if err != nil {
 				if statusErr := r.markReconcileFailed(ctx, mcp, err); statusErr != nil {
 					return statusErr
@@ -158,6 +168,7 @@ func (r *Reconciler) prepareMachineImageUpdate(
 	ctx context.Context,
 	log logr.Logger,
 	mcp *v1alpha1.ManagedCloudProfile,
+	shoots *gardenerv1beta1.ShootList,
 	baseImages []gardenerv1beta1.MachineImage,
 	baseProviderConfig *runtime.RawExtension,
 	update v1alpha1.MachineImageUpdate,
@@ -176,7 +187,7 @@ func (r *Reconciler) prepareMachineImageUpdate(
 		return nil, nil, err
 	}
 
-	filter, err := r.buildGCFilter(ctx, mcp, update)
+	filter, err := r.buildGCFilter(ctx, mcp, shoots, update)
 	if err != nil {
 		log.Error(err, "skipping garbage collection for machine image", "image", update.ImageName)
 	}
