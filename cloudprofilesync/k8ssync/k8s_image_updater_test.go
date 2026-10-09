@@ -24,6 +24,22 @@ func (f *fakeSource) FetchVersions(_ context.Context) ([]gardenerv1beta1.Expirab
 
 func expiry(t time.Time) *metav1.Time { return &metav1.Time{Time: t} }
 
+// runUpdate fetches versions and applies them onto spec, mirroring the old
+// single-shot Update. It surfaces either the fetch or the apply error and,
+// on success, writes the filtered versions back into spec.
+func runUpdate(ku *KubernetesVersionUpdater, spec *gardenerv1beta1.CloudProfileSpec) error {
+	fetched, err := ku.Fetch(context.Background())
+	if err != nil {
+		return err
+	}
+	versions, err := ku.Apply(fetched)
+	if err != nil {
+		return err
+	}
+	spec.Kubernetes.Versions = versions
+	return nil
+}
+
 func TestKubernetesImageUpdater_Update(t *testing.T) {
 	now := time.Now()
 
@@ -34,7 +50,7 @@ func TestKubernetesImageUpdater_Update(t *testing.T) {
 		}}
 		ku := NewKubernetesVersionUpdater(src, 0)
 		var spec gardenerv1beta1.CloudProfileSpec
-		if err := ku.Update(context.Background(), &spec); err != nil {
+		if err := runUpdate(ku, &spec); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		if len(spec.Kubernetes.Versions) != 2 {
@@ -48,7 +64,7 @@ func TestKubernetesImageUpdater_Update(t *testing.T) {
 		}}
 		ku := NewKubernetesVersionUpdater(src, 30*24*time.Hour)
 		var spec gardenerv1beta1.CloudProfileSpec
-		if err := ku.Update(context.Background(), &spec); err != nil {
+		if err := runUpdate(ku, &spec); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		if len(spec.Kubernetes.Versions) != 1 {
@@ -63,7 +79,7 @@ func TestKubernetesImageUpdater_Update(t *testing.T) {
 		ku := NewKubernetesVersionUpdater(src, 30*24*time.Hour)
 		var spec gardenerv1beta1.CloudProfileSpec
 		spec.Kubernetes.Versions = []gardenerv1beta1.ExpirableVersion{{Version: "existing"}}
-		err := ku.Update(context.Background(), &spec)
+		err := runUpdate(ku, &spec)
 		if err == nil {
 			t.Fatal("expected error when all versions filtered, got nil")
 		}
@@ -79,7 +95,7 @@ func TestKubernetesImageUpdater_Update(t *testing.T) {
 		}}
 		ku := NewKubernetesVersionUpdater(src, 30*24*time.Hour)
 		var spec gardenerv1beta1.CloudProfileSpec
-		if err := ku.Update(context.Background(), &spec); err != nil {
+		if err := runUpdate(ku, &spec); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		if len(spec.Kubernetes.Versions) != 1 {
@@ -95,7 +111,7 @@ func TestKubernetesImageUpdater_Update(t *testing.T) {
 		}}
 		ku := NewKubernetesVersionUpdater(src, 30*24*time.Hour)
 		var spec gardenerv1beta1.CloudProfileSpec
-		if err := ku.Update(context.Background(), &spec); err != nil {
+		if err := runUpdate(ku, &spec); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		if len(spec.Kubernetes.Versions) != 2 {
@@ -117,7 +133,7 @@ func TestKubernetesImageUpdater_Update(t *testing.T) {
 		src := &fakeSource{err: errors.New("upstream failure")}
 		ku := NewKubernetesVersionUpdater(src, 0)
 		var spec gardenerv1beta1.CloudProfileSpec
-		if err := ku.Update(context.Background(), &spec); err == nil {
+		if err := runUpdate(ku, &spec); err == nil {
 			t.Fatal("expected error from source, got nil")
 		}
 	})
@@ -130,7 +146,7 @@ func TestKubernetesImageUpdater_Update(t *testing.T) {
 		ku := NewKubernetesVersionUpdater(src, 30*24*time.Hour)
 		var spec gardenerv1beta1.CloudProfileSpec
 		spec.Kubernetes.Versions = []gardenerv1beta1.ExpirableVersion{{Version: "existing"}}
-		err := ku.Update(context.Background(), &spec)
+		err := runUpdate(ku, &spec)
 		if err == nil {
 			t.Fatal("expected error when all versions filtered")
 		}

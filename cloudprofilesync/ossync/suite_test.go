@@ -12,7 +12,7 @@ import (
 	"github.com/distribution/distribution/v3/configuration"
 	"github.com/distribution/distribution/v3/registry"
 	_ "github.com/distribution/distribution/v3/registry/storage/driver/inmemory"
-	gardenerv1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -35,13 +35,12 @@ func (m *MockSource) GetVersions(ctx context.Context) ([]ossync.SourceImage, err
 
 type MockProvider struct{}
 
-func (m *MockProvider) Configure(cpSpec *gardenerv1beta1.CloudProfileSpec, versions []ossync.SourceImage) error {
+func (m *MockProvider) Configure(_ *runtime.RawExtension, versions []ossync.SourceImage) (*runtime.RawExtension, error) {
 	data, err := json.Marshal(versions)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	cpSpec.ProviderConfig = &runtime.RawExtension{Raw: data}
-	return nil
+	return &runtime.RawExtension{Raw: data}, nil
 }
 
 const registryAddr = "127.0.0.1:48080"

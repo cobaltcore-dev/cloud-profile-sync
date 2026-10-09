@@ -10,10 +10,20 @@ import (
 	"github.com/ironcore-dev/gardener-extension-provider-ironcore-metal/pkg/apis/metal/v1alpha1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"k8s.io/apimachinery/pkg/runtime"
 
 	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/ossync"
 	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/ossync/provider/ironcore"
 )
+
+// configure runs Configure, asserts it succeeded, and returns the resulting
+// provider config so tests can thread it into a follow-up call.
+func configure(p ossync.Provider, pc *runtime.RawExtension, versions []ossync.SourceImage) *runtime.RawExtension {
+	GinkgoHelper()
+	out, err := p.Configure(pc, versions)
+	Expect(err).To(Succeed())
+	return out
+}
 
 var _ = Describe("IroncoreProvider", func() {
 
@@ -33,12 +43,12 @@ var _ = Describe("IroncoreProvider", func() {
 
 	Describe("flag OFF (legacy format only)", func() {
 		It("should add an image to the provider config", func() {
-			var cpSpec gardencorev1beta1.CloudProfileSpec
+			var pc *runtime.RawExtension
 			versions := []ossync.SourceImage{{Version: "v1.0.0", Architectures: []string{"amd64"}}}
-			Expect(legacyProvider.Configure(&cpSpec, versions)).To(Succeed())
+			pc = configure(legacyProvider, pc, versions)
 
 			var providerConfig v1alpha1.CloudProfileConfig
-			Expect(json.Unmarshal(cpSpec.ProviderConfig.Raw, &providerConfig)).To(Succeed())
+			Expect(json.Unmarshal(pc.Raw, &providerConfig)).To(Succeed())
 			Expect(providerConfig.MachineImages[0].Versions).To(HaveLen(1))
 			Expect(providerConfig.MachineImages[0].Versions[0].Version).To(Equal("v1.0.0"))
 			Expect(providerConfig.MachineImages[0].Versions[0].Image).To(Equal("registry.io/repo:v1.0.0"))
@@ -47,14 +57,14 @@ var _ = Describe("IroncoreProvider", func() {
 		})
 
 		It("should multiply out architectures", func() {
-			var cpSpec gardencorev1beta1.CloudProfileSpec
+			var pc *runtime.RawExtension
 			versions := []ossync.SourceImage{
 				{Version: "v1.0.0", Architectures: []string{"amd64", "arm64"}},
 			}
-			Expect(legacyProvider.Configure(&cpSpec, versions)).To(Succeed())
+			pc = configure(legacyProvider, pc, versions)
 
 			var providerConfig v1alpha1.CloudProfileConfig
-			Expect(json.Unmarshal(cpSpec.ProviderConfig.Raw, &providerConfig)).To(Succeed())
+			Expect(json.Unmarshal(pc.Raw, &providerConfig)).To(Succeed())
 
 			amd64 := "amd64"
 			arm64 := "arm64"
@@ -65,21 +75,21 @@ var _ = Describe("IroncoreProvider", func() {
 		})
 
 		It("should not add duplicate images", func() {
-			var cpSpec gardencorev1beta1.CloudProfileSpec
+			var pc *runtime.RawExtension
 			versions := []ossync.SourceImage{
 				{Version: "v1.0.0", Architectures: []string{"amd64"}},
 				{Version: "v1.0.0", Architectures: []string{"arm64"}},
 			}
-			Expect(legacyProvider.Configure(&cpSpec, versions)).To(Succeed())
-			Expect(legacyProvider.Configure(&cpSpec, versions)).To(Succeed())
+			pc = configure(legacyProvider, pc, versions)
+			pc = configure(legacyProvider, pc, versions)
 
 			var providerConfig v1alpha1.CloudProfileConfig
-			Expect(json.Unmarshal(cpSpec.ProviderConfig.Raw, &providerConfig)).To(Succeed())
+			Expect(json.Unmarshal(pc.Raw, &providerConfig)).To(Succeed())
 			Expect(providerConfig.MachineImages[0].Versions).To(HaveLen(2))
 		})
 
 		It("should ignore Capabilities and CleanVersion", func() {
-			var cpSpec gardencorev1beta1.CloudProfileSpec
+			var pc *runtime.RawExtension
 			versions := []ossync.SourceImage{
 				{
 					Version:       "2254.0.0-baremetal-sci-usi-amd64",
@@ -91,10 +101,10 @@ var _ = Describe("IroncoreProvider", func() {
 					},
 				},
 			}
-			Expect(legacyProvider.Configure(&cpSpec, versions)).To(Succeed())
+			pc = configure(legacyProvider, pc, versions)
 
 			var providerConfig v1alpha1.CloudProfileConfig
-			Expect(json.Unmarshal(cpSpec.ProviderConfig.Raw, &providerConfig)).To(Succeed())
+			Expect(json.Unmarshal(pc.Raw, &providerConfig)).To(Succeed())
 			// Only the legacy flat entry — no CapabilityFlavors entry.
 			Expect(providerConfig.MachineImages[0].Versions).To(HaveLen(1))
 			Expect(providerConfig.MachineImages[0].Versions[0].Version).To(Equal("2254.0.0-baremetal-sci-usi-amd64"))
@@ -109,7 +119,7 @@ var _ = Describe("IroncoreProvider", func() {
 		}
 
 		It("should write both legacy flat entry and CapabilityFlavors entry", func() {
-			var cpSpec gardencorev1beta1.CloudProfileSpec
+			var pc *runtime.RawExtension
 			versions := []ossync.SourceImage{
 				{
 					Version:       "2254.0.0-baremetal-sci-usi-amd64",
@@ -118,10 +128,10 @@ var _ = Describe("IroncoreProvider", func() {
 					Capabilities:  capabilities,
 				},
 			}
-			Expect(capProvider.Configure(&cpSpec, versions)).To(Succeed())
+			pc = configure(capProvider, pc, versions)
 
 			var providerConfig v1alpha1.CloudProfileConfig
-			Expect(json.Unmarshal(cpSpec.ProviderConfig.Raw, &providerConfig)).To(Succeed())
+			Expect(json.Unmarshal(pc.Raw, &providerConfig)).To(Succeed())
 			// Two entries: one legacy (full tag), one with CapabilityFlavors (clean version).
 			Expect(providerConfig.MachineImages[0].Versions).To(HaveLen(2))
 
@@ -141,7 +151,7 @@ var _ = Describe("IroncoreProvider", func() {
 		})
 
 		It("should group multiple flavors under one clean version entry", func() {
-			var cpSpec gardencorev1beta1.CloudProfileSpec
+			var pc *runtime.RawExtension
 			versions := []ossync.SourceImage{
 				{
 					Version:       "2254.0.0-baremetal-sci-usi-amd64",
@@ -162,10 +172,10 @@ var _ = Describe("IroncoreProvider", func() {
 					},
 				},
 			}
-			Expect(capProvider.Configure(&cpSpec, versions)).To(Succeed())
+			pc = configure(capProvider, pc, versions)
 
 			var providerConfig v1alpha1.CloudProfileConfig
-			Expect(json.Unmarshal(cpSpec.ProviderConfig.Raw, &providerConfig)).To(Succeed())
+			Expect(json.Unmarshal(pc.Raw, &providerConfig)).To(Succeed())
 			// Two legacy flat entries + one clean version entry with two flavors.
 			Expect(providerConfig.MachineImages[0].Versions).To(HaveLen(3))
 
@@ -180,7 +190,7 @@ var _ = Describe("IroncoreProvider", func() {
 		})
 
 		It("should not add duplicate capability flavors on re-reconcile", func() {
-			var cpSpec gardencorev1beta1.CloudProfileSpec
+			var pc *runtime.RawExtension
 			versions := []ossync.SourceImage{
 				{
 					Version:       "2254.0.0-baremetal-sci-usi-amd64",
@@ -189,11 +199,11 @@ var _ = Describe("IroncoreProvider", func() {
 					Capabilities:  capabilities,
 				},
 			}
-			Expect(capProvider.Configure(&cpSpec, versions)).To(Succeed())
-			Expect(capProvider.Configure(&cpSpec, versions)).To(Succeed())
+			pc = configure(capProvider, pc, versions)
+			pc = configure(capProvider, pc, versions)
 
 			var providerConfig v1alpha1.CloudProfileConfig
-			Expect(json.Unmarshal(cpSpec.ProviderConfig.Raw, &providerConfig)).To(Succeed())
+			Expect(json.Unmarshal(pc.Raw, &providerConfig)).To(Succeed())
 			Expect(providerConfig.MachineImages[0].Versions).To(HaveLen(2))
 
 			var cleanEntry *v1alpha1.MachineImageVersion
@@ -206,14 +216,14 @@ var _ = Describe("IroncoreProvider", func() {
 		})
 
 		It("should write only legacy entry for images without capabilities", func() {
-			var cpSpec gardencorev1beta1.CloudProfileSpec
+			var pc *runtime.RawExtension
 			versions := []ossync.SourceImage{
 				{Version: "1877.0.0", Architectures: []string{"amd64"}},
 			}
-			Expect(capProvider.Configure(&cpSpec, versions)).To(Succeed())
+			pc = configure(capProvider, pc, versions)
 
 			var providerConfig v1alpha1.CloudProfileConfig
-			Expect(json.Unmarshal(cpSpec.ProviderConfig.Raw, &providerConfig)).To(Succeed())
+			Expect(json.Unmarshal(pc.Raw, &providerConfig)).To(Succeed())
 			Expect(providerConfig.MachineImages[0].Versions).To(HaveLen(1))
 			Expect(providerConfig.MachineImages[0].Versions[0].Version).To(Equal("1877.0.0"))
 			Expect(providerConfig.MachineImages[0].Versions[0].CapabilityFlavors).To(BeEmpty())
