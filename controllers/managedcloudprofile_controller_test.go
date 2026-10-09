@@ -1745,3 +1745,21 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 	})
 
 })
+
+var _ = DescribeTable("ValidateMinVersionForUpdate",
+	func(input string, expectErr bool) {
+		err := controllers.ValidateMinVersionForUpdate(input)
+		if expectErr {
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("not valid semver"))
+		} else {
+			Expect(err).NotTo(HaveOccurred())
+		}
+	},
+	Entry("valid three-part semver", "1877.0.0", false),
+	Entry("valid minimal semver", "1.2.3", false),
+	Entry("pre-release semver", "1.0.0-rc.1", false),
+	Entry("missing patch component", "1877.0", true),
+	Entry("non-numeric string", "not-semver", true),
+	Entry("empty string", "", true),
+)

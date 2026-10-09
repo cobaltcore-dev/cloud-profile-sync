@@ -27,15 +27,21 @@ func TestSource(t *testing.T) {
 
 type MockSource struct {
 	images []ossync.SourceImage
+	err    error
 }
 
-func (m *MockSource) GetVersions(ctx context.Context) ([]ossync.SourceImage, error) {
-	return m.images, nil
+func (m *MockSource) GetVersions(_ context.Context) ([]ossync.SourceImage, error) {
+	return m.images, m.err
 }
 
-type MockProvider struct{}
+type MockProvider struct {
+	err error
+}
 
 func (m *MockProvider) Configure(cpSpec *gardenerv1beta1.CloudProfileSpec, versions []ossync.SourceImage) error {
+	if m.err != nil {
+		return m.err
+	}
 	data, err := json.Marshal(versions)
 	if err != nil {
 		return err
