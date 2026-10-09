@@ -37,10 +37,10 @@ func sortRegions(regions []openstackv1alpha1.RegionIDMapping) {
 	})
 }
 
-func (p *OpenStackProvider) Configure(pc *runtime.RawExtension, versions []ossync.SourceImage) (*runtime.RawExtension, error) {
+func (p *OpenStackProvider) Configure(providerConfig *runtime.RawExtension, versions []ossync.SourceImage) (*runtime.RawExtension, error) {
 	var cfg openstackv1alpha1.CloudProfileConfig
-	if pc != nil {
-		if err := json.Unmarshal(pc.Raw, &cfg); err != nil {
+	if providerConfig != nil {
+		if err := json.Unmarshal(providerConfig.Raw, &cfg); err != nil {
 			return nil, err
 		}
 	}

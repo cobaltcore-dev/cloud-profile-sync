@@ -4,12 +4,8 @@ package controllers
 
 import (
 	"context"
-	"crypto/tls"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
@@ -25,7 +21,7 @@ import (
 type KeppelClient struct{}
 
 func (k *KeppelClient) GetTags(ctx context.Context, registry, repository string) (map[string]time.Time, error) {
-	return fetchKeppelTags(ctx, registry, repository)
+	return gc.FetchKeppelTags(ctx, registry, repository)
 }
 
 func (r *Reconciler) getRegistryProvider(registry string) (RegistryClient, error) {
@@ -38,34 +34,53 @@ func (r *Reconciler) getRegistryProvider(registry string) (RegistryClient, error
 	return nil, errors.New("no registry provider found for registry")
 }
 
-type KeppelTag struct {
-	Name     string `json:"name"`
-	PushedAt int64  `json:"pushed_at"`
+// Filter holds the parameters for garbage-collection filtering. It is a pure,
+// I/O-free value: given a slice of SourceImages it returns the subset that
+// should remain, without mutating the input or performing any network calls.
+type Filter struct {
+	// Tags maps SourceImage.Version to the time the tag was pushed to the
+	// registry. Keys must be in SourceImage.Version space (normalized).
+	Tags map[string]time.Time
+	// Protected is the set of versions (full tags) and clean versions that are
+	// in use (e.g. referenced by a Shoot) and must never be collected. Keys must
+	// be in SourceImage.Version / CleanVersion space (normalized).
+	Protected map[string]struct{}
+	// Cutoff is the age boundary: images pushed before Cutoff are candidates for
+	// collection.
+	Cutoff time.Time
 }
 
-type KeppelManifest struct {
-	Digest   string      `json:"digest"`
-	PushedAt int64       `json:"pushed_at"`
-	Tags     []KeppelTag `json:"tags"`
+// Filter returns the subset of images that should remain. It never mutates its
+// input and preserves order.
+func (f *Filter) Filter(images []ossync.SourceImage) []ossync.SourceImage {
+	kept := make([]ossync.SourceImage, 0, len(images))
+	for _, img := range images {
+		if f.keep(img) {
+			kept = append(kept, img)
+		}
+	}
+	return kept
 }
 
-type KeppelManifestsResponse struct {
-	Manifests []KeppelManifest `json:"manifests"`
+func (f *Filter) keep(img ossync.SourceImage) bool {
+	// Referenced versions are always kept, by full tag or by clean version.
+	if _, ok := f.Protected[img.Version]; ok {
+		return true
+	}
+	if img.CleanVersion != "" {
+		if _, ok := f.Protected[img.CleanVersion]; ok {
+			return true
+		}
+	}
+	// Unknown push time → keep (cannot judge age).
+	pushedAt, ok := f.Tags[img.Version]
+	if !ok {
+		return true
+	}
+	// Keep unless strictly older than the cutoff.
+	return !pushedAt.Before(f.Cutoff)
 }
 
-// normalizeTag applies the same tag normalization the OCI source does when
-// building SourceImage.Version (helm convention: "_" -> "+"), so registry tags
-// and Shoot-referenced versions are compared in SourceImage.Version space.
-func normalizeTag(tag string) string {
-	return strings.ReplaceAll(tag, "_", "+")
-}
-
-// buildGCFilter constructs the garbage-collection filter for a single machine
-// image update, or returns a nil filter when garbage collection does not apply
-// (GC disabled, machine images paused, non-OCI source). It performs all the
-// cluster/registry I/O here — listing Shoots and querying the registry for push
-// timestamps — and hands the result to the pure ossync/gc filter, which drops
-// stale, unreferenced source images.
 func (r *Reconciler) buildGCFilter(ctx context.Context, mcp *v1alpha1.ManagedCloudProfile, update v1alpha1.MachineImageUpdate) (ossync.VersionFilter, error) {
 	if mcp.Spec.GarbageCollection == nil || !mcp.Spec.GarbageCollection.Enabled {
 		return nil, nil
@@ -94,7 +109,7 @@ func (r *Reconciler) buildGCFilter(ctx context.Context, mcp *v1alpha1.ManagedClo
 	// Normalize registry tags into SourceImage.Version space.
 	tags := make(map[string]time.Time, len(rawTags))
 	for tag, pushedAt := range rawTags {
-		tags[normalizeTag(tag)] = pushedAt
+		tags[gc.NormalizeTag(tag)] = pushedAt
 	}
 
 	protected, err := r.referencedVersions(ctx, mcp.Name, update.ImageName)
@@ -102,19 +117,13 @@ func (r *Reconciler) buildGCFilter(ctx context.Context, mcp *v1alpha1.ManagedClo
 		return nil, fmt.Errorf("failed to determine referenced versions for garbage collection: %w", err)
 	}
 
-	return &gc.Filter{
+	return &Filter{
 		Tags:      tags,
 		Protected: protected,
 		Cutoff:    time.Now().Add(-mcp.Spec.GarbageCollection.MaxAge.Duration),
 	}, nil
 }
 
-// referencedVersions returns the set of image versions (full tags and/or clean
-// versions) that are in use by any Shoot worker pool targeting the given
-// CloudProfile and image. These must never be garbage-collected. The gc.Filter
-// expands clean-version protection to the backing tags itself (it keeps any
-// SourceImage whose CleanVersion is protected), so no provider config parsing
-// is needed here.
 func (r *Reconciler) referencedVersions(ctx context.Context, cloudProfileName, imageName string) (map[string]struct{}, error) {
 	shootList := &gardenerv1beta1.ShootList{}
 	if err := r.List(ctx, shootList, client.InNamespace(metav1.NamespaceAll)); err != nil {
@@ -131,111 +140,9 @@ func (r *Reconciler) referencedVersions(ctx context.Context, cloudProfileName, i
 				continue
 			}
 			if worker.Machine.Image.Version != nil {
-				referenced[normalizeTag(*worker.Machine.Image.Version)] = struct{}{}
+				referenced[gc.NormalizeTag(*worker.Machine.Image.Version)] = struct{}{}
 			}
 		}
 	}
 	return referenced, nil
-}
-
-func fetchKeppelTags(ctx context.Context, registry, repository string) (map[string]time.Time, error) {
-	baseURL := registryBaseURL(registry, false)
-
-	keppelURL, err := keppelURL(baseURL, repository)
-	if err != nil {
-		return nil, fmt.Errorf("failed to build keppel URL: %w", err)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, keppelURL, http.NoBody)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create keppel request: %w", err)
-	}
-
-	tr := &http.Transport{
-		TLSHandshakeTimeout: 10 * time.Second,
-		TLSClientConfig: &tls.Config{
-			MinVersion: tls.VersionTLS12,
-		},
-	}
-
-	httpClient := &http.Client{
-		Timeout:   30 * time.Second,
-		Transport: tr,
-	}
-
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		err := fmt.Errorf("keppel API returned status %d", resp.StatusCode)
-		return nil, err
-	}
-
-	var result KeppelManifestsResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, err
-	}
-
-	tagMap := make(map[string]time.Time)
-
-	for _, m := range result.Manifests {
-		for _, t := range m.Tags {
-			if t.PushedAt == 0 {
-				continue
-			}
-			tagMap[t.Name] = time.Unix(t.PushedAt, 0)
-		}
-	}
-
-	return tagMap, nil
-}
-
-func keppelURL(baseURL, repository string) (string, error) {
-	account, repo, err := splitKeppelRepository(repository)
-	if err != nil {
-		return "", err
-	}
-
-	keppelURL := fmt.Sprintf(
-		"%s/keppel/v1/accounts/%s/repositories/%s/_manifests",
-		baseURL,
-		account,
-		repo,
-	)
-
-	return keppelURL, nil
-}
-
-func registryBaseURL(registryHost string, insecure bool) string {
-	scheme := "https"
-	if insecure {
-		scheme = "http"
-	}
-
-	u := &url.URL{
-		Scheme: scheme,
-		Host:   registryHost,
-	}
-
-	base := u.String()
-
-	return base
-}
-
-func splitKeppelRepository(repository string) (account, repo string, err error) {
-	parts := strings.SplitN(repository, "/", 2)
-
-	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-		err := fmt.Errorf("invalid repository format %q, must be <account>/<repository-path>", repository)
-
-		return "", "", err
-	}
-
-	account = parts[0]
-	repo = parts[1]
-
-	return account, repo, nil
 }
