@@ -270,7 +270,7 @@ var _ = Describe("ImageUpdater", func() {
 			cpSpec := gardencorev1beta1.CloudProfileSpec{
 				MachineImages: []gardencorev1beta1.MachineImage{
 					{Name: "test", Versions: []gardencorev1beta1.MachineImageVersion{
-						{ExpirableVersion: gardencorev1beta1.ExpirableVersion{Version: "1877.0.0"}, Architectures: []string{"amd64"}},
+						{Version: "1877.0.0", Architectures: []string{"amd64"}},
 					}},
 				},
 			}
@@ -295,9 +295,9 @@ var _ = Describe("ImageUpdater", func() {
 				MachineImages: []gardencorev1beta1.MachineImage{
 					{Name: "test", Versions: []gardencorev1beta1.MachineImageVersion{
 						{
-							ExpirableVersion: gardencorev1beta1.ExpirableVersion{Version: "1877.0.0"},
-							Architectures:    []string{"amd64"},
-							InPlaceUpdates:   &gardencorev1beta1.InPlaceUpdates{Supported: true},
+							Version:        "1877.0.0",
+							Architectures:  []string{"amd64"},
+							InPlaceUpdates: &gardencorev1beta1.InPlaceUpdates{Supported: true},
 						},
 					}},
 				},
@@ -320,7 +320,7 @@ var _ = Describe("ImageUpdater", func() {
 			cpSpec := gardencorev1beta1.CloudProfileSpec{
 				MachineImages: []gardencorev1beta1.MachineImage{
 					{Name: "test", Versions: []gardencorev1beta1.MachineImageVersion{
-						{ExpirableVersion: gardencorev1beta1.ExpirableVersion{Version: "1.0.0"}, Architectures: []string{"amd64"}},
+						{Version: "1.0.0", Architectures: []string{"amd64"}},
 					}},
 				},
 			}
@@ -710,7 +710,7 @@ var _ = Describe("ImageUpdater", func() {
 			cpSpec := gardencorev1beta1.CloudProfileSpec{
 				MachineImages: []gardencorev1beta1.MachineImage{
 					{Name: "test", Versions: []gardencorev1beta1.MachineImageVersion{
-						{ExpirableVersion: gardencorev1beta1.ExpirableVersion{Version: "1877.0.0"}, Architectures: []string{"amd64"}},
+						{Version: "1877.0.0", Architectures: []string{"amd64"}},
 					}},
 				},
 			}
@@ -737,9 +737,9 @@ var _ = Describe("ImageUpdater", func() {
 				MachineImages: []gardencorev1beta1.MachineImage{
 					{Name: "test", Versions: []gardencorev1beta1.MachineImageVersion{
 						{
-							ExpirableVersion: gardencorev1beta1.ExpirableVersion{Version: "1877.0.0"},
-							Architectures:    []string{"amd64"},
-							InPlaceUpdates:   &gardencorev1beta1.InPlaceUpdates{Supported: true},
+							Version:        "1877.0.0",
+							Architectures:  []string{"amd64"},
+							InPlaceUpdates: &gardencorev1beta1.InPlaceUpdates{Supported: true},
 						},
 					}},
 				},
@@ -1029,7 +1029,7 @@ var _ = Describe("ImageUpdater", func() {
 			cpSpec := gardencorev1beta1.CloudProfileSpec{
 				MachineImages: []gardencorev1beta1.MachineImage{
 					{Name: "test", Versions: []gardencorev1beta1.MachineImageVersion{
-						{ExpirableVersion: gardencorev1beta1.ExpirableVersion{Version: "1.0.0"}, Architectures: []string{"amd64"}},
+						{Version: "1.0.0", Architectures: []string{"amd64"}},
 					}},
 				},
 			}
@@ -1046,7 +1046,7 @@ var _ = Describe("ImageUpdater", func() {
 			cpSpec := gardencorev1beta1.CloudProfileSpec{
 				MachineImages: []gardencorev1beta1.MachineImage{
 					{Name: "test", Versions: []gardencorev1beta1.MachineImageVersion{
-						{ExpirableVersion: gardencorev1beta1.ExpirableVersion{Version: "1.0.0"}, Architectures: []string{"amd64"}},
+						{Version: "1.0.0", Architectures: []string{"amd64"}},
 					}},
 				},
 			}
