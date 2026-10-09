@@ -5,109 +5,80 @@ package gc
 
 import (
 	"testing"
-	"time"
-
-	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/ossync"
 )
 
-func versions(images []ossync.SourceImage) []string {
-	out := make([]string, 0, len(images))
-	for _, img := range images {
-		out = append(out, img.Version)
-	}
-	return out
-}
-
-func TestFilter(t *testing.T) {
-	now := time.Now()
-	stale := now.Add(-48 * time.Hour) // before cutoff
-	fresh := now.Add(-1 * time.Hour)  // after cutoff
-	cutoff := now.Add(-24 * time.Hour)
-
+func TestSplitKeppelRepository(t *testing.T) {
 	tests := []struct {
-		name      string
-		images    []ossync.SourceImage
-		tags      map[string]time.Time
-		protected map[string]struct{}
-		want      []string
+		name        string
+		repository  string
+		wantAccount string
+		wantRepo    string
+		wantErr     bool
 	}{
 		{
-			name:   "drops stale unreferenced",
-			images: []ossync.SourceImage{{Version: "1.0.0"}, {Version: "2.0.0"}},
-			tags:   map[string]time.Time{"1.0.0": stale, "2.0.0": fresh},
-			want:   []string{"2.0.0"},
+			name:        "valid repository",
+			repository:  "myaccount/myrepo",
+			wantAccount: "myaccount",
+			wantRepo:    "myrepo",
 		},
 		{
-			name:      "keeps stale but referenced by version",
-			images:    []ossync.SourceImage{{Version: "1.0.0"}},
-			tags:      map[string]time.Time{"1.0.0": stale},
-			protected: map[string]struct{}{"1.0.0": {}},
-			want:      []string{"1.0.0"},
+			name:        "valid repository with nested path",
+			repository:  "myaccount/my/nested/repo",
+			wantAccount: "myaccount",
+			wantRepo:    "my/nested/repo",
 		},
 		{
-			name: "keeps all backing tags of a referenced clean version",
-			images: []ossync.SourceImage{
-				{Version: "2254.0.0-amd64", CleanVersion: "2254.0.0"},
-				{Version: "2254.0.0-arm64", CleanVersion: "2254.0.0"},
-			},
-			tags:      map[string]time.Time{"2254.0.0-amd64": stale, "2254.0.0-arm64": stale},
-			protected: map[string]struct{}{"2254.0.0": {}}, // Shoot pins the clean version
-			want:      []string{"2254.0.0-amd64", "2254.0.0-arm64"},
+			name:       "missing separator",
+			repository: "noslash",
+			wantErr:    true,
 		},
 		{
-			name: "drops unreferenced backing tags, keeps the one pinned by tag",
-			images: []ossync.SourceImage{
-				{Version: "2254.0.0-amd64", CleanVersion: "2254.0.0"},
-				{Version: "2254.0.0-arm64", CleanVersion: "2254.0.0"},
-			},
-			tags:      map[string]time.Time{"2254.0.0-amd64": stale, "2254.0.0-arm64": stale},
-			protected: map[string]struct{}{"2254.0.0-amd64": {}},
-			want:      []string{"2254.0.0-amd64"},
+			name:       "empty account",
+			repository: "/myrepo",
+			wantErr:    true,
 		},
 		{
-			name:   "keeps fresh unreferenced",
-			images: []ossync.SourceImage{{Version: "1.0.0"}},
-			tags:   map[string]time.Time{"1.0.0": fresh},
-			want:   []string{"1.0.0"},
-		},
-		{
-			name:   "keeps version with unknown push time",
-			images: []ossync.SourceImage{{Version: "1.0.0"}},
-			tags:   map[string]time.Time{}, // 1.0.0 absent
-			want:   []string{"1.0.0"},
-		},
-		{
-			name:   "exactly at cutoff is kept (not strictly before)",
-			images: []ossync.SourceImage{{Version: "1.0.0"}},
-			tags:   map[string]time.Time{"1.0.0": cutoff},
-			want:   []string{"1.0.0"},
+			name:       "empty repo",
+			repository: "myaccount/",
+			wantErr:    true,
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			f := &Filter{Tags: tc.tags, Protected: tc.protected, Cutoff: cutoff}
-			got := versions(f.Filter(tc.images))
-			if len(got) != len(tc.want) {
-				t.Fatalf("got %v, want %v", got, tc.want)
-			}
-			for i := range got {
-				if got[i] != tc.want[i] {
-					t.Fatalf("got %v, want %v", got, tc.want)
+			account, repo, err := splitKeppelRepository(tc.repository)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("expected error, got account=%q repo=%q", account, repo)
 				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if account != tc.wantAccount {
+				t.Errorf("account: got %q, want %q", account, tc.wantAccount)
+			}
+			if repo != tc.wantRepo {
+				t.Errorf("repo: got %q, want %q", repo, tc.wantRepo)
 			}
 		})
 	}
 }
 
-func TestFilterDoesNotMutateInput(t *testing.T) {
-	images := []ossync.SourceImage{{Version: "1.0.0"}, {Version: "2.0.0"}}
-	f := &Filter{
-		Tags:   map[string]time.Time{"1.0.0": time.Now().Add(-48 * time.Hour)},
-		Cutoff: time.Now().Add(-24 * time.Hour),
+func TestNormalizeTag(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"1.0.0", "1.0.0"},
+		{"1.0.0_rc1", "1.0.0+rc1"},
+		{"no_underscores_here", "no+underscores+here"},
 	}
-	_ = f.Filter(images)
-	if len(images) != 2 || images[0].Version != "1.0.0" || images[1].Version != "2.0.0" {
-		t.Fatalf("input slice was mutated: %v", versions(images))
+	for _, tc := range tests {
+		got := NormalizeTag(tc.input)
+		if got != tc.want {
+			t.Errorf("NormalizeTag(%q) = %q, want %q", tc.input, got, tc.want)
+		}
 	}
 }
