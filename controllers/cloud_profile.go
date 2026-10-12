@@ -134,6 +134,7 @@ func copyStaticSpecFields(dst *gardenerv1beta1.CloudProfileSpec, src *v1alpha1.C
 	dst.Bastion = cpu.Bastion
 	dst.Limits = cpu.Limits
 	dst.MachineCapabilities = cpu.MachineCapabilities
+	dst.ControlPlane = cpu.ControlPlane
 }
 
 // deepCopyMachineImages returns a deep copy of the given machine images so
@@ -173,6 +174,7 @@ func (r *Reconciler) prepareMachineImageUpdate(
 	baseProviderConfig *runtime.RawExtension,
 	update v1alpha1.MachineImageUpdate,
 ) ([]gardenerv1beta1.MachineImage, *runtime.RawExtension, error) {
+
 	if update.MinVersionForUpdate != nil {
 		if err := ValidateMinVersionForUpdate(*update.MinVersionForUpdate); err != nil {
 			return nil, nil, err
@@ -193,14 +195,15 @@ func (r *Reconciler) prepareMachineImageUpdate(
 	}
 
 	updater := ossync.ImageUpdater{
-		Log:                log,
-		Source:             source,
-		Provider:           provider,
-		ImageName:          update.ImageName,
-		EnableCapabilities: r.EnableCapabilities,
+		Log:                 log,
+		Source:              source,
+		Provider:            provider,
+		ImageName:           update.ImageName,
+		EnableCapabilities:  r.EnableCapabilities,
 		MinVersionForUpdate: update.MinVersionForUpdate,
-		Filter:             filter,
+		Filter:              filter,
 	}
+
 	sourceImages, err := updater.Fetch(ctx)
 	if err != nil {
 		return nil, nil, fmt.Errorf("fetching machine images failed: %w", err)
@@ -254,13 +257,15 @@ func carryExpirationDates(existing, next []gardenerv1beta1.MachineImage) {
 		}
 	}
 	for i := range next {
-		for j := range next[i].Versions {
-			v := &next[i].Versions[j]
+		img := &next[i]
+		for j := range img.Versions {
+			v := &img.Versions[j]
 			isDeprecated := v.Classification != nil && *v.Classification == gardenerv1beta1.ClassificationDeprecated //nolint:staticcheck // legacy fields; Lifecycle needs the VersionClassificationLifecycle feature gate
 			if !isDeprecated {
 				continue
 			}
-			if exp, ok := stored[expirationDateKey(next[i].Name, v.Version)]; ok {
+			key := expirationDateKey(img.Name, v.Version)
+			if exp, ok := stored[key]; ok {
 				v.ExpirationDate = exp //nolint:staticcheck // legacy fields; Lifecycle needs the VersionClassificationLifecycle feature gate
 			}
 		}

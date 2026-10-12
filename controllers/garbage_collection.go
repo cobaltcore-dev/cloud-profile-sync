@@ -9,10 +9,11 @@ import (
 	"strings"
 	"time"
 
+	gardenerv1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
+
 	"github.com/cobaltcore-dev/cloud-profile-sync/api/v1alpha1"
 	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/ossync"
 	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/ossync/gc"
-	gardenerv1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
 )
 
 type KeppelClient struct{}

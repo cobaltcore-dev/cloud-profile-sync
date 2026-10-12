@@ -698,7 +698,6 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 		}
 		Expect(k8sClient.Create(ctx, &mcp)).To(Succeed())
 
-
 		reconciler := &controllers.Reconciler{
 			Client:           k8sClient,
 			OCISourceFactory: &fakeFactory{},
@@ -1619,7 +1618,7 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 		mcp.Spec.MachineImageUpdates = []v1alpha1.MachineImageUpdate{
 			{
 				ImageName:           "some-image",
-				MinVersionForUpdate: ptr.To("not-semver"),
+				MinVersionForUpdate: new("not-semver"),
 				Source: v1alpha1.MachineImageUpdateSource{
 					OCI: &v1alpha1.OCI{
 						Registry:   registryAddr,

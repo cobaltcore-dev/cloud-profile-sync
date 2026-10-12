@@ -110,11 +110,11 @@ func validateImageVersions(log logr.Logger, versions []SourceImage) []SourceImag
 }
 
 type ImageUpdater struct {
-	Log                logr.Logger
-	Source             Source
-	Provider           Provider
-	ImageName          string
-	EnableCapabilities bool
+	Log                 logr.Logger
+	Source              Source
+	Provider            Provider
+	ImageName           string
+	EnableCapabilities  bool
 	MinVersionForUpdate *string
 	// Filter, when set, removes source images (e.g. garbage-collected stale
 	// versions) after they are fetched. Nil means no filtering.
@@ -123,30 +123,6 @@ type ImageUpdater struct {
 
 func (iu *ImageUpdater) resolveExpiration(src SourceImage, existing *metav1.Time) *metav1.Time {
 	return cmp.Or(existing, src.ExpirationDate)
-}
-
-
-func capabilitiesEqual(a, b gardenerv1beta1.Capabilities) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for k, aVals := range a {
-		bVals, ok := b[k]
-		if !ok {
-			return false
-		}
-		if !slices.Equal(aVals, bVals) {
-			return false
-		}
-	}
-	return true
-}
-
-func inPlaceUpdates(supported bool) *gardenerv1beta1.InPlaceUpdates {
-	if !supported {
-		return nil
-	}
-	return &gardenerv1beta1.InPlaceUpdates{Supported: true}
 }
 
 func buildInPlaceUpdates(supported bool, minVersionForUpdate *string) *gardenerv1beta1.InPlaceUpdates {
@@ -241,7 +217,7 @@ func (iu *ImageUpdater) upsertLegacyVersion(image *gardenerv1beta1.MachineImage,
 	if idx, exists := existingVersions[src.Version]; exists {
 		v := &image.Versions[idx]
 		v.Architectures = src.Architectures
-		v.Classification = src.Classification                                      //nolint:staticcheck // legacy fields; Lifecycle needs the VersionClassificationLifecycle feature gate
+		v.Classification = src.Classification                          //nolint:staticcheck // legacy fields; Lifecycle needs the VersionClassificationLifecycle feature gate
 		v.ExpirationDate = iu.resolveExpiration(src, v.ExpirationDate) //nolint:staticcheck // legacy fields; Lifecycle needs the VersionClassificationLifecycle feature gate
 		v.InPlaceUpdates = buildInPlaceUpdates(src.SupportInPlaceUpdate, iu.MinVersionForUpdate)
 		return
@@ -277,7 +253,7 @@ func (iu *ImageUpdater) upsertCleanVersion(image *gardenerv1beta1.MachineImage, 
 				existing.Architectures = append(existing.Architectures, arch)
 			}
 		}
-		existing.Classification = src.Classification                                             //nolint:staticcheck // legacy fields; Lifecycle needs the VersionClassificationLifecycle feature gate
+		existing.Classification = src.Classification                                 //nolint:staticcheck // legacy fields; Lifecycle needs the VersionClassificationLifecycle feature gate
 		existing.ExpirationDate = iu.resolveExpiration(src, existing.ExpirationDate) //nolint:staticcheck // legacy fields; Lifecycle needs the VersionClassificationLifecycle feature gate
 		existing.InPlaceUpdates = buildInPlaceUpdates(src.SupportInPlaceUpdate, iu.MinVersionForUpdate)
 		existing.CapabilityFlavors = mergeCapabilityFlavor(existing.CapabilityFlavors, src.Capabilities)
