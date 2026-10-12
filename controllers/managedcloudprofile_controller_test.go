@@ -276,6 +276,24 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 		Expect(k8sClient.Delete(ctx, cloudProfile)).To(Succeed())
 	})
 
+	It("propagates controlPlane.allowZonePinning to the generated CloudProfile", func(ctx SpecContext) {
+		var mcp v1alpha1.ManagedCloudProfile
+		mcp.Name = "test-mcp-zonepinning"
+		mcp.Spec.CloudProfile = baseCloudProfileSpec(validMachineImage("bar", "0.3.0"))
+		mcp.Spec.CloudProfile.ControlPlane = &gardenerv1beta1.CloudProfileControlPlane{AllowZonePinning: true}
+		Expect(k8sClient.Create(ctx, &mcp)).To(Succeed())
+
+		expectReconcileStatus(ctx, &mcp, v1alpha1.SucceededReconcileStatus)
+		expectAppliedCondition(&mcp, metav1.ConditionTrue)
+
+		cloudProfile := getCloudProfile(ctx, mcp.Name)
+		Expect(cloudProfile.Spec.ControlPlane).NotTo(BeNil())
+		Expect(cloudProfile.Spec.ControlPlane.AllowZonePinning).To(BeTrue())
+
+		Expect(k8sClient.Delete(ctx, &mcp)).To(Succeed())
+		Expect(k8sClient.Delete(ctx, cloudProfile)).To(Succeed())
+	})
+
 	It("reports failure given an invalid cloudprofile", func(ctx SpecContext) {
 		var mcp v1alpha1.ManagedCloudProfile
 		mcp.Name = "test-invalid"
@@ -675,8 +693,14 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 			},
 		}
 
-		_, err := reconciler.Reconcile(ctx, ctrl.Request{Name: mcp.Name})
-		Expect(err).ToNot(HaveOccurred())
+		// The suite's background manager also reconciles this MCP, so it may create
+		// the CloudProfile before this manual reconcile does. Both produce identical
+		// content, so an AlreadyExists from losing that race is benign; retry until
+		// the manual reconcile observes a consistent state.
+		Eventually(func(g Gomega) {
+			_, err := reconciler.Reconcile(ctx, ctrl.Request{Name: mcp.Name})
+			g.Expect(err).ToNot(HaveOccurred())
+		}, 10*time.Second, 200*time.Millisecond).Should(Succeed())
 
 		// Wait for the CloudProfile to exist with both versions, then confirm GC
 		// never removes the unreferenced, stale oldVersion while paused.
