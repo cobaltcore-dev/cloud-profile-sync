@@ -112,6 +112,7 @@ func CloudProfileSpecToGardener(spec *v1alpha1.CloudProfileSpec) gardenerv1beta1
 		Bastion:             cpu.Bastion,
 		Limits:              cpu.Limits,
 		MachineCapabilities: cpu.MachineCapabilities,
+		ControlPlane:        cpu.ControlPlane,
 	}
 }
 
