@@ -84,6 +84,10 @@ type CloudProfileSpec struct {
 	// During maintenance upgrades, the image that matches most capabilities will be selected.
 	// +optional
 	MachineCapabilities []gardenerv1beta1.CapabilityDefinition `json:"machineCapabilities,omitempty"`
+	// ControlPlane holds settings that control what control-plane-related features shoots
+	// using this CloudProfile may configure.
+	// +optional
+	ControlPlane *gardenerv1beta1.CloudProfileControlPlane `json:"controlPlane,omitempty"`
 }
 
 type SecretReference struct {
