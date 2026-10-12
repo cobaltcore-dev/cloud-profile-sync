@@ -43,6 +43,19 @@ func (m *MockProvider) Configure(_ *runtime.RawExtension, versions []ossync.Sour
 	return &runtime.RawExtension{Raw: data}, nil
 }
 
+// captureFilter drops a single version by name; used in Fetch-with-filter tests.
+type captureFilter struct{ drop string }
+
+func (f *captureFilter) Filter(images []ossync.SourceImage) []ossync.SourceImage {
+	out := images[:0:0]
+	for _, img := range images {
+		if img.Version != f.drop {
+			out = append(out, img)
+		}
+	}
+	return out
+}
+
 const registryAddr = "127.0.0.1:48080"
 
 var (

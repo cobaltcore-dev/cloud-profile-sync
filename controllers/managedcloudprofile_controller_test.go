@@ -1578,6 +1578,95 @@ var _ = Describe("The ManagedCloudProfile reconciler", func() {
 		Expect(k8sClient.Delete(ctx, cp)).To(Succeed())
 	})
 
+	It("reports failure when MinVersionForUpdate is not valid semver", func(ctx SpecContext) {
+		var mcp v1alpha1.ManagedCloudProfile
+		mcp.Name = "test-invalid-min-version"
+		mcp.Spec.CloudProfile = baseCloudProfileSpec()
+		mcp.Spec.MachineImageUpdates = []v1alpha1.MachineImageUpdate{
+			{
+				ImageName:           "some-image",
+				MinVersionForUpdate: ptr.To("not-semver"),
+				Source: v1alpha1.MachineImageUpdateSource{
+					OCI: &v1alpha1.OCI{
+						Registry:   registryAddr,
+						Repository: orasRepoName("repo"),
+						Insecure:   true,
+					},
+				},
+				Provider: v1alpha1.MachineImageUpdateProvider{
+					IroncoreMetal: &v1alpha1.MachineImagesUpdateProviderIroncoreMetal{
+						Registry:   registryAddr,
+						Repository: orasRepoName("repo"),
+					},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, &mcp)).To(Succeed())
+
+		expectReconcileStatus(ctx, &mcp, v1alpha1.FailedReconcileStatus)
+		expectAppliedCondition(&mcp, metav1.ConditionFalse,
+			HaveField("Reason", "ApplyFailed"),
+			HaveField("Message", ContainSubstring("not valid semver")),
+		)
+
+		Expect(k8sClient.Delete(ctx, &mcp)).To(Succeed())
+	})
+
+	It("reports failure when no machine image source is configured", func(ctx SpecContext) {
+		var mcp v1alpha1.ManagedCloudProfile
+		mcp.Name = "test-no-source"
+		mcp.Spec.CloudProfile = baseCloudProfileSpec()
+		mcp.Spec.MachineImageUpdates = []v1alpha1.MachineImageUpdate{
+			{
+				ImageName: "some-image",
+				// Source intentionally empty — no OCI, no Glance.
+				Provider: v1alpha1.MachineImageUpdateProvider{
+					IroncoreMetal: &v1alpha1.MachineImagesUpdateProviderIroncoreMetal{
+						Registry:   registryAddr,
+						Repository: orasRepoName("repo"),
+					},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, &mcp)).To(Succeed())
+
+		expectReconcileStatus(ctx, &mcp, v1alpha1.FailedReconcileStatus)
+		expectAppliedCondition(&mcp, metav1.ConditionFalse,
+			HaveField("Reason", "ApplyFailed"),
+			HaveField("Message", ContainSubstring("no machine images source configured")),
+		)
+
+		Expect(k8sClient.Delete(ctx, &mcp)).To(Succeed())
+	})
+
+	It("reports failure when no machine image provider is configured", func(ctx SpecContext) {
+		var mcp v1alpha1.ManagedCloudProfile
+		mcp.Name = "test-no-provider"
+		mcp.Spec.CloudProfile = baseCloudProfileSpec()
+		mcp.Spec.MachineImageUpdates = []v1alpha1.MachineImageUpdate{
+			{
+				ImageName: "some-image",
+				Source: v1alpha1.MachineImageUpdateSource{
+					OCI: &v1alpha1.OCI{
+						Registry:   registryAddr,
+						Repository: orasRepoName("repo"),
+						Insecure:   true,
+					},
+				},
+				// Provider intentionally empty — no IroncoreMetal, no OpenStack.
+			},
+		}
+		Expect(k8sClient.Create(ctx, &mcp)).To(Succeed())
+
+		expectReconcileStatus(ctx, &mcp, v1alpha1.FailedReconcileStatus)
+		expectAppliedCondition(&mcp, metav1.ConditionFalse,
+			HaveField("Reason", "ApplyFailed"),
+			HaveField("Message", ContainSubstring("no known provider configured")),
+		)
+
+		Expect(k8sClient.Delete(ctx, &mcp)).To(Succeed())
+	})
+
 })
 
 var _ = DescribeTable("ValidateMinVersionForUpdate",

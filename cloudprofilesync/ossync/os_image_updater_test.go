@@ -685,6 +685,100 @@ var _ = Describe("ImageUpdater", func() {
 		})
 	})
 
+	Describe("VersionFilter applied in Fetch", func() {
+		It("removes images rejected by the filter before Apply sees them", func(ctx SpecContext) {
+			mockSource.images = []ossync.SourceImage{
+				{Version: "1.0.0", Architectures: []string{"amd64"}},
+				{Version: "2.0.0", Architectures: []string{"amd64"}},
+			}
+			filtered := &captureFilter{drop: "1.0.0"}
+			updater := ossync.ImageUpdater{
+				Log:       logr.Discard(),
+				Source:    &mockSource,
+				ImageName: "test",
+				Filter:    filtered,
+			}
+			var cpSpec gardencorev1beta1.CloudProfileSpec
+			Expect(runUpdate(ctx, updater, &cpSpec)).To(Succeed())
+			versions := cpSpec.MachineImages[0].Versions
+			Expect(versions).To(HaveLen(1))
+			Expect(versions[0].Version).To(Equal("2.0.0"))
+		})
+
+		It("passes all images through when Filter is nil", func(ctx SpecContext) {
+			mockSource.images = []ossync.SourceImage{
+				{Version: "1.0.0", Architectures: []string{"amd64"}},
+				{Version: "2.0.0", Architectures: []string{"amd64"}},
+			}
+			updater := ossync.ImageUpdater{
+				Log:       logr.Discard(),
+				Source:    &mockSource,
+				ImageName: "test",
+				Filter:    nil,
+			}
+			var cpSpec gardencorev1beta1.CloudProfileSpec
+			Expect(runUpdate(ctx, updater, &cpSpec)).To(Succeed())
+			Expect(cpSpec.MachineImages[0].Versions).To(HaveLen(2))
+		})
+	})
+
+	Describe("MinVersionForUpdate", func() {
+		It("sets MinVersionForUpdate on legacy version InPlaceUpdates when SupportInPlaceUpdate is true", func(ctx SpecContext) {
+			minVer := "1877.0.0"
+			mockSource.images = []ossync.SourceImage{{
+				Version:              "1877.0.0",
+				Architectures:        []string{"amd64"},
+				SupportInPlaceUpdate: true,
+			}}
+			updater := ossync.ImageUpdater{
+				Log:                 logr.Discard(),
+				Source:              &mockSource,
+				ImageName:           "test",
+				MinVersionForUpdate: &minVer,
+			}
+			var cpSpec gardencorev1beta1.CloudProfileSpec
+			Expect(runUpdate(ctx, updater, &cpSpec)).To(Succeed())
+			v := cpSpec.MachineImages[0].Versions[0]
+			Expect(v.InPlaceUpdates).ToNot(BeNil())
+			Expect(v.InPlaceUpdates.Supported).To(BeTrue())
+			Expect(v.InPlaceUpdates.MinVersionForUpdate).To(Equal(&minVer))
+		})
+
+		It("does not set InPlaceUpdates when SupportInPlaceUpdate is false, even with MinVersionForUpdate set", func(ctx SpecContext) {
+			minVer := "1877.0.0"
+			mockSource.images = []ossync.SourceImage{{
+				Version:              "1877.0.0",
+				Architectures:        []string{"amd64"},
+				SupportInPlaceUpdate: false,
+			}}
+			updater := ossync.ImageUpdater{
+				Log:                 logr.Discard(),
+				Source:              &mockSource,
+				ImageName:           "test",
+				MinVersionForUpdate: &minVer,
+			}
+			var cpSpec gardencorev1beta1.CloudProfileSpec
+			Expect(runUpdate(ctx, updater, &cpSpec)).To(Succeed())
+			Expect(cpSpec.MachineImages[0].Versions[0].InPlaceUpdates).To(BeNil())
+		})
+	})
+
+	Describe("Apply with nil Provider", func() {
+		It("leaves ProviderConfig nil when no provider is set", func(ctx SpecContext) {
+			mockSource.images = []ossync.SourceImage{{Version: "1.0.0", Architectures: []string{"amd64"}}}
+			updater := ossync.ImageUpdater{
+				Log:       logr.Discard(),
+				Source:    &mockSource,
+				ImageName: "test",
+				Provider:  nil,
+			}
+			var cpSpec gardencorev1beta1.CloudProfileSpec
+			Expect(runUpdate(ctx, updater, &cpSpec)).To(Succeed())
+			Expect(cpSpec.ProviderConfig).To(BeNil())
+			Expect(cpSpec.MachineImages[0].Versions).To(HaveLen(1))
+		})
+	})
+
 	Describe("expiration", func() {
 		deprecated := gardencorev1beta1.ClassificationDeprecated
 
