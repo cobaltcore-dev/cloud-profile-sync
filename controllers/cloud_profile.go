@@ -160,6 +160,7 @@ func (r *Reconciler) updateMachineImages(ctx context.Context, log logr.Logger, u
 			KeepLatest:        update.Source.Glance.KeepLatest,
 			VersionOffset:     update.Source.Glance.VersionOffset,
 			ExcludedSuffixes:  update.Source.Glance.ExcludedSuffixes,
+			RequireAllRegions: update.Source.Glance.RequireAllRegions,
 			Parallel:          update.Source.Glance.Parallel,
 			ProjectName:       update.Source.Glance.ProjectName,
 			ProjectDomainName: update.Source.Glance.ProjectDomainName,

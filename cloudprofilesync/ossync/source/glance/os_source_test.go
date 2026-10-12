@@ -5,6 +5,7 @@ package glance
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"testing"
 	"time"
@@ -425,5 +426,67 @@ func TestGetVersionsMultiRegionPropagatesCapabilities(t *testing.T) {
 	}
 	if len(v.Regions) != 2 {
 		t.Errorf("got %d regions, want 2", len(v.Regions))
+	}
+}
+
+// With RequireAllRegions set, a version present in only some regions must be dropped,
+// while a version present in every queried region is kept.
+func TestGetVersionsRequireAllRegions(t *testing.T) {
+	const (
+		region1 = "region1"
+		region2 = "region2"
+	)
+	const (
+		everywhere = "2150.11.0"
+		oneRegion  = "2380.0.0"
+	)
+	imgsByRegion := map[string][]images.Image{
+		region1: {
+			{ID: "uuid-1-all", Name: imageName(everywhere)},
+		},
+		region2: {
+			{ID: "uuid-2-all", Name: imageName(everywhere)},
+			{ID: "uuid-2-one", Name: imageName(oneRegion)},
+		},
+	}
+	g := newTestGlance(t, GlanceParams{Regions: []string{region1, region2}, RequireAllRegions: true}, imgsByRegion)
+
+	versions, err := g.GetVersions(context.Background())
+	if err != nil {
+		t.Fatalf("GetVersions: %v", err)
+	}
+	if len(versions) != 1 {
+		t.Fatalf("got %d versions, want 1 (version in a single region must be dropped): %+v", len(versions), versions)
+	}
+	if versions[0].Version != everywhere {
+		t.Errorf("kept version = %q, want %q", versions[0].Version, everywhere)
+	}
+}
+
+// RequireAllRegions must use the successfully-queried regions as the baseline, not the
+// configured list: a version present in every reachable region is kept even when another
+// region failed to be queried.
+func TestGetVersionsRequireAllRegionsIgnoresFailedRegions(t *testing.T) {
+	const (
+		okRegion   = "region-ok"
+		failRegion = "region-fail"
+	)
+	imgsByRegion := map[string][]images.Image{
+		okRegion: {{ID: "uuid-ok", Name: imageName(testVersion)}},
+	}
+	g := newTestGlance(t, GlanceParams{Regions: []string{okRegion, failRegion}, RequireAllRegions: true}, imgsByRegion)
+	g.listImages = func(ctx context.Context, provider *gophercloud.ProviderClient, region string) ([]images.Image, error) {
+		if region == failRegion {
+			return nil, errors.New("boom")
+		}
+		return imgsByRegion[region], nil
+	}
+
+	versions, err := g.GetVersions(context.Background())
+	if err != nil {
+		t.Fatalf("GetVersions: %v", err)
+	}
+	if len(versions) != 1 {
+		t.Fatalf("got %d versions, want 1 (a failed region must not wipe out versions): %+v", len(versions), versions)
 	}
 }
