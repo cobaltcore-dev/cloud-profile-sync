@@ -74,17 +74,16 @@ func (r *Reconciler) reconcileCloudProfile(ctx context.Context, log logr.Logger,
 
 		if mcp.Spec.MachineImagesPaused {
 			if len(cloudProfile.Spec.MachineImages) == 0 {
-				cloudProfile.Spec.MachineImages = deepCopyMachineImages(base.MachineImages)
+				imgs = deepCopyMachineImages(base.MachineImages)
+				providerConfig = base.ProviderConfig.DeepCopy()
+			} else {
+				imgs = deepCopyMachineImages(cloudProfile.Spec.MachineImages)
+				providerConfig = cloudProfile.Spec.ProviderConfig.DeepCopy()
 			}
-			if cloudProfile.Spec.ProviderConfig == nil {
-				cloudProfile.Spec.ProviderConfig = base.ProviderConfig.DeepCopy()
-			}
-		} else {
-			outImages := deepCopyMachineImages(imgs)
-			carryExpirationDates(cloudProfile.Spec.MachineImages, outImages)
-			cloudProfile.Spec.MachineImages = outImages
-			cloudProfile.Spec.ProviderConfig = providerConfig
 		}
+		carryExpirationDates(cloudProfile.Spec.MachineImages, imgs)
+		cloudProfile.Spec.MachineImages = imgs
+		cloudProfile.Spec.ProviderConfig = providerConfig
 		if mcp.Spec.KubernetesUpdate != nil {
 			cloudProfile.Spec.Kubernetes.Versions = versions
 		}
