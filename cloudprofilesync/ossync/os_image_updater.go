@@ -13,6 +13,7 @@ import (
 	gardenerv1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
 	"github.com/go-logr/logr"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 )
 
 // Capability-related helpers (CapabilitiesEqual, mergeCapabilityFlavor,
@@ -63,7 +64,14 @@ type Source interface {
 }
 
 type Provider interface {
-	Configure(cloudProfile *gardenerv1beta1.CloudProfileSpec, versions []SourceImage) error
+	Configure(providerConfig *runtime.RawExtension, versions []SourceImage) (*runtime.RawExtension, error)
+}
+
+// VersionFilter removes source images that should not be written into the
+// CloudProfile (e.g. garbage-collected stale versions). It is pure: it performs
+// no I/O and is applied inside Fetch after the versions are validated and sorted.
+type VersionFilter interface {
+	Filter(images []SourceImage) []SourceImage
 }
 
 func validateImageVersions(log logr.Logger, versions []SourceImage) []SourceImage {
@@ -108,10 +116,13 @@ type ImageUpdater struct {
 	ImageName           string
 	EnableCapabilities  bool
 	MinVersionForUpdate *string
+	// Filter, when set, removes source images (e.g. garbage-collected stale
+	// versions) after they are fetched. Nil means no filtering.
+	Filter VersionFilter
 }
 
-func resolveExpiration(fromSource, existing *metav1.Time) *metav1.Time {
-	return cmp.Or(existing, fromSource)
+func (iu *ImageUpdater) resolveExpiration(src SourceImage, existing *metav1.Time) *metav1.Time {
+	return cmp.Or(existing, src.ExpirationDate)
 }
 
 func buildInPlaceUpdates(supported bool, minVersionForUpdate *string) *gardenerv1beta1.InPlaceUpdates {
@@ -124,10 +135,14 @@ func buildInPlaceUpdates(supported bool, minVersionForUpdate *string) *gardenerv
 	}
 }
 
-func (iu *ImageUpdater) Update(ctx context.Context, cpSpec *gardenerv1beta1.CloudProfileSpec) error {
+// Fetch performs all network I/O for the updater: it retrieves the image
+// versions from the source and returns them validated and deterministically
+// sorted. It never touches a CloudProfileSpec, so it is safe to call once
+// outside a CreateOrPatch mutate closure.
+func (iu *ImageUpdater) Fetch(ctx context.Context) ([]SourceImage, error) {
 	sourceImages, err := iu.Source.GetVersions(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to retrieve image versions from OCI registry: %w", err)
+		return nil, fmt.Errorf("failed to retrieve image versions from OCI registry: %w", err)
 	}
 	sourceImages = validateImageVersions(iu.Log, sourceImages)
 	if iu.MinVersionForUpdate == nil && slices.ContainsFunc(sourceImages, func(si SourceImage) bool {
@@ -145,24 +160,42 @@ func (iu *ImageUpdater) Update(ctx context.Context, cpSpec *gardenerv1beta1.Clou
 		}
 		return cmp.Compare(a.Version, b.Version)
 	})
-
-	allowed := allowedCapabilityValues(cpSpec.MachineCapabilities)
-	for i := range sourceImages {
-		sourceImages[i].Capabilities = filterCapabilities(sourceImages[i].Capabilities, allowed)
+	if iu.Filter != nil {
+		sourceImages = iu.Filter.Filter(sourceImages)
 	}
-	imageIndex := slices.IndexFunc(cpSpec.MachineImages, func(img gardenerv1beta1.MachineImage) bool {
+	return sourceImages, nil
+}
+
+func (iu *ImageUpdater) Apply(
+	capabilities []gardenerv1beta1.CapabilityDefinition,
+	baseImages []gardenerv1beta1.MachineImage,
+	baseProviderConfig *runtime.RawExtension,
+	sourceImages []SourceImage,
+) ([]gardenerv1beta1.MachineImage, *runtime.RawExtension, error) {
+
+	machineImages := slices.Clone(baseImages)
+	providerConfig := baseProviderConfig.DeepCopy()
+
+	filtered := make([]SourceImage, len(sourceImages))
+	copy(filtered, sourceImages)
+	allowed := allowedCapabilityValues(capabilities)
+	for i := range filtered {
+		filtered[i].Capabilities = filterCapabilities(filtered[i].Capabilities, allowed)
+	}
+	sourceImages = filtered
+
+	imageIndex := slices.IndexFunc(machineImages, func(img gardenerv1beta1.MachineImage) bool {
 		return img.Name == iu.ImageName
 	})
 	if imageIndex == -1 {
-		cpSpec.MachineImages = append(cpSpec.MachineImages, gardenerv1beta1.MachineImage{Name: iu.ImageName})
-		imageIndex = len(cpSpec.MachineImages) - 1
+		machineImages = append(machineImages, gardenerv1beta1.MachineImage{Name: iu.ImageName})
+		imageIndex = len(machineImages) - 1
 	}
-	image := &cpSpec.MachineImages[imageIndex]
+	image := &machineImages[imageIndex]
 	existingVersions := make(map[string]int, len(image.Versions))
 	for idx, version := range image.Versions {
 		existingVersions[version.Version] = idx
 	}
-
 	for _, src := range sourceImages {
 		iu.upsertLegacyVersion(image, existingVersions, src)
 		if iu.EnableCapabilities && src.CleanVersion != "" {
@@ -171,20 +204,21 @@ func (iu *ImageUpdater) Update(ctx context.Context, cpSpec *gardenerv1beta1.Clou
 	}
 
 	if iu.Provider != nil {
-		if err := iu.Provider.Configure(cpSpec, sourceImages); err != nil {
-			return fmt.Errorf("failed to invoke provider: %w", err)
+		var err error
+		providerConfig, err = iu.Provider.Configure(providerConfig, sourceImages)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to invoke provider: %w", err)
 		}
 	}
-	return nil
+	return machineImages, providerConfig, nil
 }
 
-// upsertLegacyVersion writes or updates the full-tag version entry (legacy path, safe for running Shoots).
 func (iu *ImageUpdater) upsertLegacyVersion(image *gardenerv1beta1.MachineImage, existingVersions map[string]int, src SourceImage) {
 	if idx, exists := existingVersions[src.Version]; exists {
 		v := &image.Versions[idx]
 		v.Architectures = src.Architectures
-		v.Classification = src.Classification                                      //nolint:staticcheck // legacy fields; Lifecycle needs the VersionClassificationLifecycle feature gate
-		v.ExpirationDate = resolveExpiration(src.ExpirationDate, v.ExpirationDate) //nolint:staticcheck // legacy fields; Lifecycle needs the VersionClassificationLifecycle feature gate
+		v.Classification = src.Classification                          //nolint:staticcheck // legacy fields; Lifecycle needs the VersionClassificationLifecycle feature gate
+		v.ExpirationDate = iu.resolveExpiration(src, v.ExpirationDate) //nolint:staticcheck // legacy fields; Lifecycle needs the VersionClassificationLifecycle feature gate
 		v.InPlaceUpdates = buildInPlaceUpdates(src.SupportInPlaceUpdate, iu.MinVersionForUpdate)
 		return
 	}
@@ -219,8 +253,8 @@ func (iu *ImageUpdater) upsertCleanVersion(image *gardenerv1beta1.MachineImage, 
 				existing.Architectures = append(existing.Architectures, arch)
 			}
 		}
-		existing.Classification = src.Classification                                             //nolint:staticcheck // legacy fields; Lifecycle needs the VersionClassificationLifecycle feature gate
-		existing.ExpirationDate = resolveExpiration(src.ExpirationDate, existing.ExpirationDate) //nolint:staticcheck // legacy fields; Lifecycle needs the VersionClassificationLifecycle feature gate
+		existing.Classification = src.Classification                                 //nolint:staticcheck // legacy fields; Lifecycle needs the VersionClassificationLifecycle feature gate
+		existing.ExpirationDate = iu.resolveExpiration(src, existing.ExpirationDate) //nolint:staticcheck // legacy fields; Lifecycle needs the VersionClassificationLifecycle feature gate
 		existing.InPlaceUpdates = buildInPlaceUpdates(src.SupportInPlaceUpdate, iu.MinVersionForUpdate)
 		existing.CapabilityFlavors = mergeCapabilityFlavor(existing.CapabilityFlavors, src.Capabilities)
 		return

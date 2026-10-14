@@ -12,7 +12,7 @@ import (
 	"github.com/distribution/distribution/v3/configuration"
 	"github.com/distribution/distribution/v3/registry"
 	_ "github.com/distribution/distribution/v3/registry/storage/driver/inmemory"
-	gardenerv1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -27,27 +27,33 @@ func TestSource(t *testing.T) {
 
 type MockSource struct {
 	images []ossync.SourceImage
-	err    error
 }
 
-func (m *MockSource) GetVersions(_ context.Context) ([]ossync.SourceImage, error) {
-	return m.images, m.err
+func (m *MockSource) GetVersions(ctx context.Context) ([]ossync.SourceImage, error) {
+	return m.images, nil
 }
 
-type MockProvider struct {
-	err error
-}
+type MockProvider struct{}
 
-func (m *MockProvider) Configure(cpSpec *gardenerv1beta1.CloudProfileSpec, versions []ossync.SourceImage) error {
-	if m.err != nil {
-		return m.err
-	}
+func (m *MockProvider) Configure(_ *runtime.RawExtension, versions []ossync.SourceImage) (*runtime.RawExtension, error) {
 	data, err := json.Marshal(versions)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	cpSpec.ProviderConfig = &runtime.RawExtension{Raw: data}
-	return nil
+	return &runtime.RawExtension{Raw: data}, nil
+}
+
+// captureFilter drops a single version by name; used in Fetch-with-filter tests.
+type captureFilter struct{ drop string }
+
+func (f *captureFilter) Filter(images []ossync.SourceImage) []ossync.SourceImage {
+	out := images[:0:0]
+	for _, img := range images {
+		if img.Version != f.drop {
+			out = append(out, img)
+		}
+	}
+	return out
 }
 
 const registryAddr = "127.0.0.1:48080"

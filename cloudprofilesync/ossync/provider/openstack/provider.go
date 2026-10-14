@@ -8,7 +8,6 @@ import (
 	"slices"
 
 	openstackv1alpha1 "github.com/gardener/gardener-extension-provider-openstack/pkg/apis/openstack/v1alpha1"
-	gardencorev1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
 	"k8s.io/apimachinery/pkg/runtime"
 
 	"github.com/cobaltcore-dev/cloud-profile-sync/cloudprofilesync/ossync"
@@ -38,11 +37,11 @@ func sortRegions(regions []openstackv1alpha1.RegionIDMapping) {
 	})
 }
 
-func (p *OpenStackProvider) Configure(cpSpec *gardencorev1beta1.CloudProfileSpec, versions []ossync.SourceImage) error {
+func (p *OpenStackProvider) Configure(providerConfig *runtime.RawExtension, versions []ossync.SourceImage) (*runtime.RawExtension, error) {
 	var cfg openstackv1alpha1.CloudProfileConfig
-	if cpSpec.ProviderConfig != nil {
-		if err := json.Unmarshal(cpSpec.ProviderConfig.Raw, &cfg); err != nil {
-			return err
+	if providerConfig != nil {
+		if err := json.Unmarshal(providerConfig.Raw, &cfg); err != nil {
+			return nil, err
 		}
 	}
 
@@ -103,8 +102,7 @@ func (p *OpenStackProvider) Configure(cpSpec *gardencorev1beta1.CloudProfileSpec
 
 	raw, err := json.Marshal(cfg)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	cpSpec.ProviderConfig = &runtime.RawExtension{Raw: raw}
-	return nil
+	return &runtime.RawExtension{Raw: raw}, nil
 }

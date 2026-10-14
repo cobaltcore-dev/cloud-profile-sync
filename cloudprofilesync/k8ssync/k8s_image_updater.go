@@ -32,12 +32,22 @@ func NewKubernetesVersionUpdater(source KubernetesVersionSource, expirationThres
 	}
 }
 
-func (ku *KubernetesVersionUpdater) Update(ctx context.Context, cpSpec *gardenerv1beta1.CloudProfileSpec) error {
+// Fetch performs the only network I/O: it retrieves the raw Kubernetes
+// versions from the source. It touches no CloudProfileSpec, so it is safe to
+// call once outside a CreateOrPatch mutate closure.
+func (ku *KubernetesVersionUpdater) Fetch(ctx context.Context) ([]gardenerv1beta1.ExpirableVersion, error) {
 	versions, err := ku.Source.FetchVersions(ctx)
 	if err != nil {
-		return fmt.Errorf("fetching kubernetes versions: %w", err)
+		return nil, fmt.Errorf("fetching kubernetes versions: %w", err)
 	}
+	return versions, nil
+}
 
+// Apply filters the pre-fetched versions, dropping any whose expiration date has
+// already passed the configured threshold, and returns the result. It performs
+// no I/O. It refuses to return an empty list (returns an error instead) so a
+// transient empty source never wipes the CloudProfile.
+func (ku *KubernetesVersionUpdater) Apply(versions []gardenerv1beta1.ExpirableVersion) ([]gardenerv1beta1.ExpirableVersion, error) {
 	cutoff := time.Now().Add(-ku.ExpirationThreshold)
 	filteredVersions := make([]gardenerv1beta1.ExpirableVersion, 0, len(versions))
 	for _, v := range versions {
@@ -48,8 +58,7 @@ func (ku *KubernetesVersionUpdater) Update(ctx context.Context, cpSpec *gardener
 	}
 
 	if len(filteredVersions) == 0 {
-		return errors.New("source returned no kubernetes versions after expiration filtering, refusing to wipe CloudProfile")
+		return nil, errors.New("source returned no kubernetes versions after expiration filtering, refusing to wipe CloudProfile")
 	}
-	cpSpec.Kubernetes.Versions = filteredVersions
-	return nil
+	return filteredVersions, nil
 }
