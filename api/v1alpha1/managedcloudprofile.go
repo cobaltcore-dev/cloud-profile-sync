@@ -184,6 +184,10 @@ type GlanceSource struct {
 	// ExcludedSuffixes is the list of version suffixes to skip when selecting images
 	// +optional
 	ExcludedSuffixes []string `json:"excludedSuffixes,omitempty"`
+	// RequireAllRegions, when true, keeps only versions that are present in every
+	// region that was successfully queried. Versions missing from some regions are dropped.
+	// +optional
+	RequireAllRegions bool `json:"requireAllRegions,omitempty"`
 	// Parallel bounds how many regions are queried concurrently.
 	// +optional
 	Parallel int64 `json:"parallel,omitempty"`

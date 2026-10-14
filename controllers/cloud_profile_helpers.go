@@ -71,6 +71,7 @@ func (r *Reconciler) newGlanceSource(ctx context.Context, log logr.Logger, g *v1
 		KeepLatest:        g.KeepLatest,
 		VersionOffset:     g.VersionOffset,
 		ExcludedSuffixes:  g.ExcludedSuffixes,
+		RequireAllRegions: g.RequireAllRegions,
 		Parallel:          g.Parallel,
 		ProjectName:       g.ProjectName,
 		ProjectDomainName: g.ProjectDomainName,

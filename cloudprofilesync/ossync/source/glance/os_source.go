@@ -59,6 +59,10 @@ type GlanceParams struct {
 	VersionOffset    int
 	ExcludedSuffixes []string
 
+	// RequireAllRegions, when true, keeps only versions present in every region
+	// that was successfully queried. Versions missing from some regions are dropped.
+	RequireAllRegions bool
+
 	// ProjectName / ProjectDomainName scope the token.
 	ProjectName       string
 	ProjectDomainName string
@@ -180,6 +184,7 @@ func (g *Glance) GetVersions(ctx context.Context) ([]ossync.SourceImage, error) 
 	}
 
 	imagesByVersion := map[string]*ossync.SourceImage{}
+	allRegions := map[string]struct{}{}
 	var skipped []error
 	for range g.params.Regions {
 		result := <-out
@@ -202,6 +207,9 @@ func (g *Glance) GetVersions(ctx context.Context) ([]ossync.SourceImage, error) 
 				imagesByVersion[img.Version] = entry
 			}
 			entry.Regions = append(entry.Regions, img.Regions...)
+			for _, r := range img.Regions {
+				allRegions[r.Region] = struct{}{}
+			}
 		}
 	}
 
@@ -215,6 +223,10 @@ func (g *Glance) GetVersions(ctx context.Context) ([]ossync.SourceImage, error) 
 	versions := make([]ossync.SourceImage, 0, len(imagesByVersion))
 	for _, img := range imagesByVersion {
 		versions = append(versions, *img)
+	}
+
+	if g.params.RequireAllRegions {
+		versions = g.filterRequireRegions(versions, allRegions)
 	}
 
 	slices.SortFunc(versions, func(a, b ossync.SourceImage) int {
@@ -248,6 +260,37 @@ func (g *Glance) GetVersions(ctx context.Context) ([]ossync.SourceImage, error) 
 	}
 
 	return versions, nil
+}
+
+// filterAllRegions drops any version that is not present in every region in
+// `baseline` (the set of regions successfully queried this run). A version is
+// kept only when its own region set covers the full baseline. Using the
+// successfully-queried set rather than the configured region list means a
+// transient failure in one region does not wipe out every version.
+func (g *Glance) filterRequireRegions(versions []ossync.SourceImage, baseline map[string]struct{}) []ossync.SourceImage {
+	if len(baseline) == 0 {
+		return versions
+	}
+	kept := make([]ossync.SourceImage, 0, len(versions))
+	for _, v := range versions {
+		present := make(map[string]struct{}, len(v.Regions))
+		for _, r := range v.Regions {
+			present[r.Region] = struct{}{}
+		}
+		missing := make([]string, 0)
+		for region := range baseline {
+			if _, ok := present[region]; !ok {
+				missing = append(missing, region)
+			}
+		}
+		if len(missing) > 0 {
+			slices.Sort(missing)
+			g.log.V(1).Info("dropping version not present in all regions", "version", v.Version, "missingRegions", missing)
+			continue
+		}
+		kept = append(kept, v)
+	}
+	return kept
 }
 
 // discoverRegion returns a region's public images.
