@@ -4,6 +4,7 @@
 package controllers
 
 import (
+	"errors"
 	"testing"
 
 	gardenerv1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
@@ -21,8 +22,8 @@ func TestGardenerVersionFromShoots_Found(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if ver != "v1.150.2" {
-		t.Errorf("expected v1.150.2, got %q", ver)
+	if *ver != "v1.150.2" {
+		t.Errorf("expected v1.150.2, got %q", *ver)
 	}
 }
 
@@ -36,8 +37,8 @@ func TestGardenerVersionFromShoots_MinVersion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if ver != "v1.150.2" {
-		t.Errorf("expected v1.150.2 (minimum), got %q", ver)
+	if *ver != "v1.150.2" {
+		t.Errorf("expected v1.150.2 (minimum), got %q", *ver)
 	}
 }
 
@@ -50,15 +51,15 @@ func TestGardenerVersionFromShoots_SkipsEmptyVersions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if ver != "v1.150.2" {
-		t.Errorf("expected v1.150.2, got %q", ver)
+	if *ver != "v1.150.2" {
+		t.Errorf("expected v1.150.2, got %q", *ver)
 	}
 }
 
 func TestGardenerVersionFromShoots_NoShoots(t *testing.T) {
 	_, err := gardenerVersionFromShoots(nil)
-	if err == nil {
-		t.Fatal("expected an error when no shoots exist")
+	if !errors.Is(err, ErrNoShoots) {
+		t.Fatalf("expected ErrNoShoots, got %v", err)
 	}
 }
 
@@ -67,7 +68,7 @@ func TestGardenerVersionFromShoots_EmptyVersion(t *testing.T) {
 		{Status: gardenerv1beta1.ShootStatus{}},
 	}
 	_, err := gardenerVersionFromShoots(shoots)
-	if err == nil {
-		t.Fatal("expected an error when shoot has no Gardener version")
+	if !errors.Is(err, ErrNoShoots) {
+		t.Fatalf("expected ErrNoShoots, got %v", err)
 	}
 }

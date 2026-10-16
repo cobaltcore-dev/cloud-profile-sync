@@ -142,11 +142,15 @@ func (r *Reconciler) landscapeSetupSource(ctx context.Context, ls v1alpha1.Lands
 	return landscapeSource, nil
 }
 
+// ErrNoShoots is returned by gardenerVersionFromShoots when no shoots with a
+// Gardener version are found. Callers can check for this to apply a fallback.
+var ErrNoShoots = errors.New("no Gardener version found in any shoot")
+
 // gardenerVersionFromShoots returns the minimum Gardener version across all
 // shoots. Using the minimum ensures we never expose Kubernetes versions whose
 // imageVectorOverwrite hasn't been deployed to every seed yet (which can happen
 // during a rolling Gardener update where different seeds are at different versions).
-func gardenerVersionFromShoots(shoots []gardenerv1beta1.Shoot) (string, error) {
+func gardenerVersionFromShoots(shoots []gardenerv1beta1.Shoot) (*string, error) {
 	versionSet := make(map[string]struct{})
 	for _, s := range shoots {
 		if s.Status.Gardener.Version == "" {
@@ -170,12 +174,12 @@ func gardenerVersionFromShoots(shoots []gardenerv1beta1.Shoot) (string, error) {
 	}
 
 	if len(entries) == 0 {
-		return "", errors.New("no Gardener version found in any shoot")
+		return nil, ErrNoShoots
 	}
 
 	slices.SortFunc(entries, func(a, b entry) int { return a.ver.Compare(b.ver) })
 
-	return entries[0].raw, nil
+	return &entries[0].raw, nil
 }
 
 const maxConditionMessageLen = 32768

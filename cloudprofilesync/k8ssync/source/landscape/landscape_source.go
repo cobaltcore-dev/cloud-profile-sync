@@ -121,10 +121,21 @@ func NewLandscapeKubernetesSource(ociParams ocirepo.Params, provider string) (*L
 // fetches the component descriptor to get supported versions, fetches the
 // kubernetes-version-data localBlob for classifications at the same tag, and
 // returns the intersection as []gardenerv1beta1.ExpirableVersion.
-func (s *LandscapeKubernetesSource) FetchVersions(ctx context.Context, gardenerVersion string) ([]gardenerv1beta1.ExpirableVersion, error) {
-	tag, err := s.TagForGardenerVersion(ctx, gardenerVersion)
-	if err != nil {
-		return nil, fmt.Errorf("resolving RBSC tag for Gardener %s: %w", gardenerVersion, err)
+// If gardenerVersion is empty, the latest semver tag is used (bootstrap fallback
+// for landscapes where no shoots exist yet).
+func (s *LandscapeKubernetesSource) FetchVersions(ctx context.Context, gardenerVersion *string) ([]gardenerv1beta1.ExpirableVersion, error) {
+	var tag string
+	var err error
+	if gardenerVersion == nil {
+		tag, err = s.LatestTag(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("resolving latest RBSC tag: %w", err)
+		}
+	} else {
+		tag, err = s.TagForGardenerVersion(ctx, *gardenerVersion)
+		if err != nil {
+			return nil, fmt.Errorf("resolving RBSC tag for Gardener %s: %w", *gardenerVersion, err)
+		}
 	}
 
 	supportedVersions, err := s.fetchSupportedVersions(ctx, tag)

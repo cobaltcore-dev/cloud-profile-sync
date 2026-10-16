@@ -59,7 +59,7 @@ func (r *Reconciler) reconcileCloudProfile(ctx context.Context, log logr.Logger,
 	var versions []gardenerv1beta1.ExpirableVersion
 	if mcp.Spec.KubernetesUpdate != nil {
 		log.V(1).Info("updating kubernetes versions", "cloudProfile", cloudProfile.Name)
-		v, err := r.prepareKubernetesUpdate(ctx, *mcp.Spec.KubernetesUpdate, shoots)
+		v, err := r.prepareKubernetesUpdate(ctx, log, *mcp.Spec.KubernetesUpdate, shoots)
 		if err != nil {
 			if statusErr := r.markReconcileFailed(ctx, mcp, err); statusErr != nil {
 				return statusErr
@@ -224,7 +224,7 @@ func (r *Reconciler) prepareMachineImageUpdate(
 	return images, providerConfig, nil
 }
 
-func (r *Reconciler) prepareKubernetesUpdate(ctx context.Context, cfg v1alpha1.KubernetesVersionUpdateConfig, shoots *gardenerv1beta1.ShootList) ([]gardenerv1beta1.ExpirableVersion, error) {
+func (r *Reconciler) prepareKubernetesUpdate(ctx context.Context, log logr.Logger, cfg v1alpha1.KubernetesVersionUpdateConfig, shoots *gardenerv1beta1.ShootList) ([]gardenerv1beta1.ExpirableVersion, error) {
 	var source k8ssync.KubernetesVersionSource
 	var err error
 	switch {
@@ -239,7 +239,10 @@ func (r *Reconciler) prepareKubernetesUpdate(ctx context.Context, cfg v1alpha1.K
 
 	gardenerVersion, err := gardenerVersionFromShoots(shoots.Items)
 	if err != nil {
-		return nil, fmt.Errorf("resolving Gardener version: %w", err)
+		if !errors.Is(err, ErrNoShoots) {
+			return nil, fmt.Errorf("resolving Gardener version: %w", err)
+		}
+		log.V(1).Info("no shoots with Gardener version found, falling back to latest RBSC tag")
 	}
 
 	updater := k8ssync.NewKubernetesVersionUpdater(source, cfg.ExpirationThreshold.Duration)

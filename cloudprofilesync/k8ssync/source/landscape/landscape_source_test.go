@@ -444,7 +444,7 @@ func TestFetchVersions_EndToEnd(t *testing.T) {
 		provider: "converged-cloud",
 	}
 
-	versions, err := src.FetchVersions(context.Background(), "v1.100.0")
+	versions, err := src.FetchVersions(context.Background(), new("v1.100.0"))
 	if err != nil {
 		t.Fatalf("FetchVersions: %v", err)
 	}
@@ -486,7 +486,7 @@ func TestFetchVersions_NoMatchingTag(t *testing.T) {
 		ociRepo:  ociRepo,
 		provider: "converged-cloud",
 	}
-	_, err = src.FetchVersions(context.Background(), "v1.999.0")
+	_, err = src.FetchVersions(context.Background(), new("v1.999.0"))
 	if err == nil || !strings.Contains(err.Error(), "no RBSC tag found") {
 		t.Fatalf("expected no-matching-tag error, got %v", err)
 	}
@@ -567,7 +567,7 @@ component:
 		ociRepo:  ociRepo,
 		provider: "converged-cloud",
 	}
-	versions, err := src.FetchVersions(context.Background(), "v1.100.0")
+	versions, err := src.FetchVersions(context.Background(), new("v1.100.0"))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -703,7 +703,7 @@ component:
 		provider: "converged-cloud",
 	}
 
-	versions, err := src.FetchVersions(context.Background(), "v1.100.0")
+	versions, err := src.FetchVersions(context.Background(), new("v1.100.0"))
 	if err != nil {
 		t.Fatalf("FetchVersions: %v", err)
 	}
@@ -750,5 +750,38 @@ func pushArtifactWithCustomDescriptor(t *testing.T, addr, repoName, tag string, 
 	manifestDesc := content.NewDescriptorFromBytes(ocispec.MediaTypeImageManifest, manifestBytes)
 	if err := repo.PushReference(ctx, manifestDesc, bytes.NewReader(manifestBytes), tag); err != nil {
 		t.Fatalf("push manifest: %v", err)
+	}
+}
+
+// TestFetchVersions_EmptyGardenerVersionFallsBackToLatest verifies that passing
+// an empty gardenerVersion falls back to the latest semver tag (bootstrap path
+// for landscapes where no shoots exist yet).
+func TestFetchVersions_EmptyGardenerVersionFallsBackToLatest(t *testing.T) {
+	addr := freePort(t)
+	stop := startRegistry(t, addr)
+	defer stop()
+
+	// Push two tags; 0.200.0 is newer and has kube-apiserver resources.
+	// With an empty gardenerVersion, 0.200.0 (latest) must be used.
+	pushArtifactWithVersionsBlob(t, addr, "k8s-fallback", "0.100.0", "v1.100.0")
+	pushArtifactWithVersionsBlob(t, addr, "k8s-fallback", "0.200.0", "v1.200.0")
+
+	ociRepo, err := remote.NewRepository(addr + "/k8s-fallback")
+	if err != nil {
+		t.Fatalf("new oci repo: %v", err)
+	}
+	ociRepo.PlainHTTP = true
+
+	src := &LandscapeKubernetesSource{
+		ociRepo:  ociRepo,
+		provider: "converged-cloud",
+	}
+
+	versions, err := src.FetchVersions(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("FetchVersions: %v", err)
+	}
+	if len(versions) == 0 {
+		t.Fatal("expected versions from latest tag fallback, got none")
 	}
 }
