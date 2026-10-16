@@ -148,7 +148,7 @@ func (iu *ImageUpdater) Fetch(ctx context.Context) ([]SourceImage, error) {
 	if iu.MinVersionForUpdate == nil && slices.ContainsFunc(sourceImages, func(si SourceImage) bool {
 		return si.SupportInPlaceUpdate
 	}) {
-		iu.Log.Info("minVersionForUpdate not set — in-place updates will not be available for existing worker pools", "image", iu.ImageName)
+		iu.Log.V(1).Info("minVersionForUpdate not set — in-place updates will not be available for existing worker pools", "image", iu.ImageName)
 	}
 
 	// Images from a source arrive in no guaranteed order. A changed order
