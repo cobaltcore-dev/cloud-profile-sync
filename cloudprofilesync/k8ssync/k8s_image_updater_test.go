@@ -18,7 +18,7 @@ type fakeSource struct {
 	err      error
 }
 
-func (f *fakeSource) FetchVersions(_ context.Context) ([]gardenerv1beta1.ExpirableVersion, error) {
+func (f *fakeSource) FetchVersions(_ context.Context, _ string) ([]gardenerv1beta1.ExpirableVersion, error) {
 	return f.versions, f.err
 }
 
@@ -28,7 +28,7 @@ func expiry(t time.Time) *metav1.Time { return &metav1.Time{Time: t} }
 // single-shot Update. It surfaces either the fetch or the apply error and,
 // on success, writes the filtered versions back into spec.
 func runUpdate(ku *KubernetesVersionUpdater, spec *gardenerv1beta1.CloudProfileSpec) error {
-	fetched, err := ku.Fetch(context.Background())
+	fetched, err := ku.Fetch(context.Background(), "")
 	if err != nil {
 		return err
 	}

@@ -6,7 +6,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 
+	"github.com/blang/semver/v4"
+	gardenerv1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -137,6 +140,42 @@ func (r *Reconciler) landscapeSetupSource(ctx context.Context, ls v1alpha1.Lands
 		return nil, fmt.Errorf("initializing landscape source: %w", err)
 	}
 	return landscapeSource, nil
+}
+
+// gardenerVersionFromShoots returns the minimum Gardener version across all
+// shoots. Using the minimum ensures we never expose Kubernetes versions whose
+// imageVectorOverwrite hasn't been deployed to every seed yet (which can happen
+// during a rolling Gardener update where different seeds are at different versions).
+func gardenerVersionFromShoots(shoots []gardenerv1beta1.Shoot) (string, error) {
+	versionSet := make(map[string]struct{})
+	for _, s := range shoots {
+		if s.Status.Gardener.Version == "" {
+			continue
+		}
+
+		versionSet[s.Status.Gardener.Version] = struct{}{}
+	}
+
+	type entry struct {
+		raw string
+		ver semver.Version
+	}
+	entries := make([]entry, 0, len(versionSet))
+	for raw := range versionSet {
+		v, err := semver.ParseTolerant(raw)
+		if err != nil {
+			continue
+		}
+		entries = append(entries, entry{raw: raw, ver: v})
+	}
+
+	if len(entries) == 0 {
+		return "", errors.New("no Gardener version found in any shoot")
+	}
+
+	slices.SortFunc(entries, func(a, b entry) int { return a.ver.Compare(b.ver) })
+
+	return entries[0].raw, nil
 }
 
 const maxConditionMessageLen = 32768

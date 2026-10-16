@@ -56,7 +56,24 @@ type componentDescriptor struct {
 			Version string         `yaml:"version"`
 			Access  resourceAccess `yaml:"access"`
 		} `yaml:"resources"`
+		ComponentReferences []struct {
+			ComponentName string `yaml:"componentName"`
+			Version       string `yaml:"version"`
+		} `yaml:"componentReferences"`
 	} `yaml:"component"`
+}
+
+// gardenerComponentName is the component name used in componentReferences to identify Gardener.
+const gardenerComponentName = "github.com/gardener/gardener"
+
+// gardenerVersionFromCD returns the Gardener version from the componentReferences of the descriptor.
+func gardenerVersionFromCD(cd *componentDescriptor) (string, bool) {
+	for _, ref := range cd.Component.ComponentReferences {
+		if ref.ComponentName == gardenerComponentName {
+			return ref.Version, true
+		}
+	}
+	return "", false
 }
 
 // yamlExpirableVersion is a YAML-unmarshalling intermediate for entries in the
@@ -100,14 +117,14 @@ func NewLandscapeKubernetesSource(ociParams ocirepo.Params, provider string) (*L
 	}, nil
 }
 
-// FetchVersions resolves the latest OCI tag, fetches the component descriptor
-// to get supported versions, fetches the kubernetes-version-data localBlob for
-// classifications at the same tag, and returns the intersection as
-// []gardenerv1beta1.ExpirableVersion.
-func (s *LandscapeKubernetesSource) FetchVersions(ctx context.Context) ([]gardenerv1beta1.ExpirableVersion, error) {
-	tag, err := s.LatestTag(ctx)
+// FetchVersions resolves the RBSC OCI tag matching the given Gardener version,
+// fetches the component descriptor to get supported versions, fetches the
+// kubernetes-version-data localBlob for classifications at the same tag, and
+// returns the intersection as []gardenerv1beta1.ExpirableVersion.
+func (s *LandscapeKubernetesSource) FetchVersions(ctx context.Context, gardenerVersion string) ([]gardenerv1beta1.ExpirableVersion, error) {
+	tag, err := s.TagForGardenerVersion(ctx, gardenerVersion)
 	if err != nil {
-		return nil, fmt.Errorf("resolving latest tag: %w", err)
+		return nil, fmt.Errorf("resolving RBSC tag for Gardener %s: %w", gardenerVersion, err)
 	}
 
 	supportedVersions, err := s.fetchSupportedVersions(ctx, tag)
@@ -169,6 +186,62 @@ func (s *LandscapeKubernetesSource) LatestTag(ctx context.Context) (string, erro
 		return a.ver.Compare(b.ver)
 	})
 	return latest.raw, nil
+}
+
+// TagForGardenerVersion returns the highest semver tag in the OCI repository
+// whose component descriptor contains a componentReference to the given
+// Gardener version (matched on major.minor, patch is ignored on both sides).
+func (s *LandscapeKubernetesSource) TagForGardenerVersion(ctx context.Context, gardenerVersion string) (string, error) {
+	wantMinor := minorVersion(gardenerVersion)
+
+	var tags []string
+	if err := s.ociRepo.Tags(ctx, "", func(t []string) error {
+		tags = append(tags, t...)
+		return nil
+	}); err != nil {
+		return "", fmt.Errorf("listing tags: %w", err)
+	}
+	if len(tags) == 0 {
+		return "", fmt.Errorf("no tags found in %s", s.ociRepo.Reference)
+	}
+
+	type semverTag struct {
+		raw string
+		ver semver.Version
+	}
+	var parseable []semverTag
+	for _, t := range tags {
+		if v, err := semver.ParseTolerant(t); err == nil {
+			parseable = append(parseable, semverTag{raw: t, ver: v})
+		}
+	}
+	if len(parseable) == 0 {
+		return "", fmt.Errorf("no semver tags found in %s", s.ociRepo.Reference)
+	}
+
+	slices.SortFunc(parseable, func(a, b semverTag) int { return b.ver.Compare(a.ver) }) // descending
+
+	for _, t := range parseable {
+		cd, err := s.fetchComponentDescriptor(ctx, t.raw)
+		if err != nil {
+			continue
+		}
+		cdVersion, ok := gardenerVersionFromCD(cd)
+		if ok && minorVersion(cdVersion) == wantMinor {
+			return t.raw, nil
+		}
+	}
+	return "", fmt.Errorf("no RBSC tag found matching Gardener version %s in %s", gardenerVersion, s.ociRepo.Reference)
+}
+
+// minorVersion strips the patch segment from a version string, returning
+// "vMAJOR.MINOR" (e.g. "v1.150.2" → "v1.150", "1.150" → "1.150").
+func minorVersion(v string) string {
+	parts := strings.SplitN(v, ".", 3)
+	if len(parts) < 2 {
+		return v
+	}
+	return parts[0] + "." + parts[1]
 }
 
 // fetchSupportedVersions returns the kube-apiserver version strings from the

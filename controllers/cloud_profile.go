@@ -27,19 +27,22 @@ func (r *Reconciler) reconcileCloudProfile(ctx context.Context, log logr.Logger,
 
 	base := &mcp.Spec.CloudProfile
 
+	needShootsForGC := mcp.Spec.GarbageCollection != nil && mcp.Spec.GarbageCollection.Enabled && !mcp.Spec.MachineImagesPaused
+	needShootsForK8s := mcp.Spec.KubernetesUpdate != nil
+	needShoots := needShootsForGC || needShootsForK8s
+	var shoots *gardenerv1beta1.ShootList
+	if needShoots {
+		shoots = &gardenerv1beta1.ShootList{}
+		if err := r.List(ctx, shoots, client.InNamespace(metav1.NamespaceAll)); err != nil {
+			return fmt.Errorf("failed to list Shoots: %w", err)
+		}
+	}
+
 	var imgs []gardenerv1beta1.MachineImage
 	var providerConfig *runtime.RawExtension
 	if !mcp.Spec.MachineImagesPaused {
 		imgs = base.MachineImages
 		providerConfig = base.ProviderConfig
-
-		var shoots *gardenerv1beta1.ShootList
-		if mcp.Spec.GarbageCollection != nil && mcp.Spec.GarbageCollection.Enabled {
-			shoots = &gardenerv1beta1.ShootList{}
-			if err := r.List(ctx, shoots, client.InNamespace(metav1.NamespaceAll)); err != nil {
-				return fmt.Errorf("failed to list Shoots: %w", err)
-			}
-		}
 
 		for _, update := range mcp.Spec.MachineImageUpdates {
 			log.V(1).Info("updating machine images", "cloudProfile", cloudProfile.Name)
@@ -56,7 +59,7 @@ func (r *Reconciler) reconcileCloudProfile(ctx context.Context, log logr.Logger,
 	var versions []gardenerv1beta1.ExpirableVersion
 	if mcp.Spec.KubernetesUpdate != nil {
 		log.V(1).Info("updating kubernetes versions", "cloudProfile", cloudProfile.Name)
-		v, err := r.prepareKubernetesUpdate(ctx, *mcp.Spec.KubernetesUpdate)
+		v, err := r.prepareKubernetesUpdate(ctx, *mcp.Spec.KubernetesUpdate, shoots)
 		if err != nil {
 			if statusErr := r.markReconcileFailed(ctx, mcp, err); statusErr != nil {
 				return statusErr
@@ -221,7 +224,7 @@ func (r *Reconciler) prepareMachineImageUpdate(
 	return images, providerConfig, nil
 }
 
-func (r *Reconciler) prepareKubernetesUpdate(ctx context.Context, cfg v1alpha1.KubernetesVersionUpdateConfig) ([]gardenerv1beta1.ExpirableVersion, error) {
+func (r *Reconciler) prepareKubernetesUpdate(ctx context.Context, cfg v1alpha1.KubernetesVersionUpdateConfig, shoots *gardenerv1beta1.ShootList) ([]gardenerv1beta1.ExpirableVersion, error) {
 	var source k8ssync.KubernetesVersionSource
 	var err error
 	switch {
@@ -234,8 +237,13 @@ func (r *Reconciler) prepareKubernetesUpdate(ctx context.Context, cfg v1alpha1.K
 		return nil, errors.New("no kubernetes version source configured")
 	}
 
+	gardenerVersion, err := gardenerVersionFromShoots(shoots.Items)
+	if err != nil {
+		return nil, fmt.Errorf("resolving Gardener version: %w", err)
+	}
+
 	updater := k8ssync.NewKubernetesVersionUpdater(source, cfg.ExpirationThreshold.Duration)
-	fetched, err := updater.Fetch(ctx)
+	fetched, err := updater.Fetch(ctx, gardenerVersion)
 	if err != nil {
 		return nil, fmt.Errorf("fetching kubernetes versions failed: %w", err)
 	}

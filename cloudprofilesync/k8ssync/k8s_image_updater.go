@@ -14,7 +14,7 @@ import (
 // KubernetesVersionSource is the single interface for sources that return
 // Kubernetes versions ready to assign to a CloudProfile.
 type KubernetesVersionSource interface {
-	FetchVersions(ctx context.Context) ([]gardenerv1beta1.ExpirableVersion, error)
+	FetchVersions(ctx context.Context, gardenerVersion string) ([]gardenerv1beta1.ExpirableVersion, error)
 }
 
 // KubernetesVersionUpdater writes Kubernetes versions to a CloudProfileSpec,
@@ -35,8 +35,8 @@ func NewKubernetesVersionUpdater(source KubernetesVersionSource, expirationThres
 // Fetch performs the only network I/O: it retrieves the raw Kubernetes
 // versions from the source. It touches no CloudProfileSpec, so it is safe to
 // call once outside a CreateOrPatch mutate closure.
-func (ku *KubernetesVersionUpdater) Fetch(ctx context.Context) ([]gardenerv1beta1.ExpirableVersion, error) {
-	versions, err := ku.Source.FetchVersions(ctx)
+func (ku *KubernetesVersionUpdater) Fetch(ctx context.Context, gardenerVersion string) ([]gardenerv1beta1.ExpirableVersion, error) {
+	versions, err := ku.Source.FetchVersions(ctx, gardenerVersion)
 	if err != nil {
 		return nil, fmt.Errorf("fetching kubernetes versions: %w", err)
 	}
