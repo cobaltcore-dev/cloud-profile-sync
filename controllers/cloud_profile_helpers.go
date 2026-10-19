@@ -123,7 +123,7 @@ func (r *Reconciler) getCredential(ctx context.Context, ref v1alpha1.SecretRefer
 	return data, nil
 }
 
-func (r *Reconciler) landscapeSetupSource(ctx context.Context, ls v1alpha1.LandscapeSetup) (k8ssync.KubernetesVersionSource, error) {
+func (r *Reconciler) landscapeSetupSource(ctx context.Context, ls v1alpha1.LandscapeSetup, log logr.Logger) (k8ssync.KubernetesVersionSource, error) {
 	ociPassword, err := r.getCredential(ctx, ls.OCI.Password)
 	if err != nil {
 		return nil, fmt.Errorf("getting oci password: %w", err)
@@ -135,7 +135,7 @@ func (r *Reconciler) landscapeSetupSource(ctx context.Context, ls v1alpha1.Lands
 		Password:   string(ociPassword),
 		Insecure:   ls.OCI.Insecure,
 	}
-	landscapeSource, err := landscape.NewLandscapeKubernetesSource(ociParams, ls.Provider)
+	landscapeSource, err := landscape.NewLandscapeKubernetesSource(ociParams, ls.Provider, log)
 	if err != nil {
 		return nil, fmt.Errorf("initializing landscape source: %w", err)
 	}

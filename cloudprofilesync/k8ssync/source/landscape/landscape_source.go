@@ -17,6 +17,7 @@ import (
 
 	"github.com/blang/semver/v4"
 	gardenerv1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
+	"github.com/go-logr/logr"
 	digest "github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"go.yaml.in/yaml/v3"
@@ -96,6 +97,7 @@ type kubernetesVersions struct {
 // LandscapeKubernetesSource fetches Kubernetes versions exclusively from the
 // OCI component descriptor and its embedded kubernetes-version-data localBlob.
 type LandscapeKubernetesSource struct {
+	log      logr.Logger
 	ociRepo  *remote.Repository
 	provider string
 }
@@ -103,7 +105,7 @@ type LandscapeKubernetesSource struct {
 // NewLandscapeKubernetesSource creates a source that fetches Kubernetes
 // versions and their classifications from the OCI component descriptor.
 // provider must match a provider name in the kubernetes-version-data blob.
-func NewLandscapeKubernetesSource(ociParams ocirepo.Params, provider string) (*LandscapeKubernetesSource, error) {
+func NewLandscapeKubernetesSource(ociParams ocirepo.Params, provider string, log logr.Logger) (*LandscapeKubernetesSource, error) {
 	if provider == "" {
 		return nil, errors.New("provider must be set")
 	}
@@ -112,6 +114,7 @@ func NewLandscapeKubernetesSource(ociParams ocirepo.Params, provider string) (*L
 		return nil, fmt.Errorf("initializing OCI repository: %w", err)
 	}
 	return &LandscapeKubernetesSource{
+		log:      log,
 		ociRepo:  repo,
 		provider: provider,
 	}, nil
@@ -129,13 +132,15 @@ func (s *LandscapeKubernetesSource) FetchVersions(ctx context.Context, gardenerV
 	if gardenerVersion == nil {
 		tag, err = s.LatestTag(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("resolving latest RBSC tag: %w", err)
+			return nil, fmt.Errorf("resolving latest OCI tag: %w", err)
 		}
+		s.log.Info("no shoots, falling back to latest OCI tag", "tag", tag)
 	} else {
 		tag, err = s.TagForGardenerVersion(ctx, *gardenerVersion)
 		if err != nil {
-			return nil, fmt.Errorf("resolving RBSC tag for Gardener %s: %w", *gardenerVersion, err)
+			return nil, fmt.Errorf("resolving OCI tag for Gardener %s: %w", *gardenerVersion, err)
 		}
+		s.log.Info("resolved OCI tag for Gardener version", "gardenerVersion", *gardenerVersion, "tag", tag)
 	}
 
 	supportedVersions, err := s.fetchSupportedVersions(ctx, tag)
@@ -163,20 +168,19 @@ func (s *LandscapeKubernetesSource) FetchVersions(ctx context.Context, gardenerV
 	return result, nil
 }
 
-// LatestTag returns the highest semver tag in the OCI repository.
-// Tags that cannot be parsed as semver are ignored.
-func (s *LandscapeKubernetesSource) LatestTag(ctx context.Context) (string, error) {
+// listSemverTags lists all tags in the OCI repository, returns those that
+// parse as semver sorted in descending order (highest version first).
+// Tags that cannot be parsed are silently skipped.
+func (s *LandscapeKubernetesSource) listSemverTags(ctx context.Context) ([]string, error) {
 	var tags []string
-	appendTagsFunc := func(newTags []string) error {
-		tags = append(tags, newTags...)
+	if err := s.ociRepo.Tags(ctx, "", func(t []string) error {
+		tags = append(tags, t...)
 		return nil
-	}
-
-	if err := s.ociRepo.Tags(ctx, "", appendTagsFunc); err != nil {
-		return "", fmt.Errorf("listing tags: %w", err)
+	}); err != nil {
+		return nil, fmt.Errorf("listing tags: %w", err)
 	}
 	if len(tags) == 0 {
-		return "", fmt.Errorf("no tags found in %s", s.ociRepo.Reference)
+		return nil, fmt.Errorf("no tags found in %s", s.ociRepo.Reference)
 	}
 
 	type semverTag struct {
@@ -190,13 +194,25 @@ func (s *LandscapeKubernetesSource) LatestTag(ctx context.Context) (string, erro
 		}
 	}
 	if len(parseable) == 0 {
-		return "", fmt.Errorf("no semver tags found in %s", s.ociRepo.Reference)
+		return nil, fmt.Errorf("no semver tags found in %s", s.ociRepo.Reference)
 	}
+	slices.SortFunc(parseable, func(a, b semverTag) int { return b.ver.Compare(a.ver) }) // descending
 
-	latest := slices.MaxFunc(parseable, func(a, b semverTag) int {
-		return a.ver.Compare(b.ver)
-	})
-	return latest.raw, nil
+	result := make([]string, len(parseable))
+	for i, t := range parseable {
+		result[i] = t.raw
+	}
+	return result, nil
+}
+
+// LatestTag returns the highest semver tag in the OCI repository.
+// Tags that cannot be parsed as semver are ignored.
+func (s *LandscapeKubernetesSource) LatestTag(ctx context.Context) (string, error) {
+	tags, err := s.listSemverTags(ctx)
+	if err != nil {
+		return "", err
+	}
+	return tags[0], nil
 }
 
 // TagForGardenerVersion returns the highest semver tag in the OCI repository
@@ -205,41 +221,19 @@ func (s *LandscapeKubernetesSource) LatestTag(ctx context.Context) (string, erro
 func (s *LandscapeKubernetesSource) TagForGardenerVersion(ctx context.Context, gardenerVersion string) (string, error) {
 	wantMinor := minorVersion(gardenerVersion)
 
-	var tags []string
-	if err := s.ociRepo.Tags(ctx, "", func(t []string) error {
-		tags = append(tags, t...)
-		return nil
-	}); err != nil {
-		return "", fmt.Errorf("listing tags: %w", err)
-	}
-	if len(tags) == 0 {
-		return "", fmt.Errorf("no tags found in %s", s.ociRepo.Reference)
+	tags, err := s.listSemverTags(ctx)
+	if err != nil {
+		return "", err
 	}
 
-	type semverTag struct {
-		raw string
-		ver semver.Version
-	}
-	var parseable []semverTag
 	for _, t := range tags {
-		if v, err := semver.ParseTolerant(t); err == nil {
-			parseable = append(parseable, semverTag{raw: t, ver: v})
-		}
-	}
-	if len(parseable) == 0 {
-		return "", fmt.Errorf("no semver tags found in %s", s.ociRepo.Reference)
-	}
-
-	slices.SortFunc(parseable, func(a, b semverTag) int { return b.ver.Compare(a.ver) }) // descending
-
-	for _, t := range parseable {
-		cd, err := s.fetchComponentDescriptor(ctx, t.raw)
+		cd, err := s.fetchComponentDescriptor(ctx, t)
 		if err != nil {
 			continue
 		}
 		cdVersion, ok := gardenerVersionFromCD(cd)
 		if ok && minorVersion(cdVersion) == wantMinor {
-			return t.raw, nil
+			return t, nil
 		}
 	}
 	return "", fmt.Errorf("no RBSC tag found matching Gardener version %s in %s", gardenerVersion, s.ociRepo.Reference)

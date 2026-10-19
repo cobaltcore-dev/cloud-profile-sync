@@ -229,7 +229,7 @@ func (r *Reconciler) prepareKubernetesUpdate(ctx context.Context, log logr.Logge
 	var err error
 	switch {
 	case cfg.LandscapeSetup != nil:
-		source, err = r.landscapeSetupSource(ctx, *cfg.LandscapeSetup)
+		source, err = r.landscapeSetupSource(ctx, *cfg.LandscapeSetup, log)
 		if err != nil {
 			return nil, fmt.Errorf("getting landscape setup source: %w", err)
 		}
