@@ -19,6 +19,7 @@ import (
 	"github.com/distribution/distribution/v3/configuration"
 	"github.com/distribution/distribution/v3/registry"
 	_ "github.com/distribution/distribution/v3/registry/storage/driver/inmemory"
+	"github.com/go-logr/logr"
 	. "github.com/onsi/gomega"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2/content"
@@ -405,6 +406,7 @@ component:
 			ociRepo.PlainHTTP = true
 
 			src := &LandscapeKubernetesSource{
+				log:      logr.Discard(),
 				ociRepo:  ociRepo,
 				provider: "converged-cloud",
 			}
@@ -440,6 +442,7 @@ func TestFetchVersions_EndToEnd(t *testing.T) {
 	ociRepo.PlainHTTP = true
 
 	src := &LandscapeKubernetesSource{
+		log:      logr.Discard(),
 		ociRepo:  ociRepo,
 		provider: "converged-cloud",
 	}
@@ -483,6 +486,7 @@ func TestFetchVersions_NoMatchingTag(t *testing.T) {
 	ociRepo.PlainHTTP = true
 
 	src := &LandscapeKubernetesSource{
+		log:      logr.Discard(),
 		ociRepo:  ociRepo,
 		provider: "converged-cloud",
 	}
@@ -564,6 +568,7 @@ component:
 	ociRepo.PlainHTTP = true
 
 	src := &LandscapeKubernetesSource{
+		log:      logr.Discard(),
 		ociRepo:  ociRepo,
 		provider: "converged-cloud",
 	}
@@ -594,6 +599,7 @@ func TestTagForGardenerVersion_Found(t *testing.T) {
 	ociRepo.PlainHTTP = true
 
 	src := &LandscapeKubernetesSource{
+		log:      logr.Discard(),
 		ociRepo:  ociRepo,
 		provider: "converged-cloud",
 	}
@@ -621,6 +627,7 @@ func TestTagForGardenerVersion_NotFound(t *testing.T) {
 	ociRepo.PlainHTTP = true
 
 	src := &LandscapeKubernetesSource{
+		log:      logr.Discard(),
 		ociRepo:  ociRepo,
 		provider: "converged-cloud",
 	}
@@ -646,6 +653,7 @@ func TestTagForGardenerVersion_MinorMatch(t *testing.T) {
 	ociRepo.PlainHTTP = true
 
 	src := &LandscapeKubernetesSource{
+		log:      logr.Discard(),
 		ociRepo:  ociRepo,
 		provider: "converged-cloud",
 	}
@@ -699,6 +707,7 @@ component:
 	ociRepo.PlainHTTP = true
 
 	src := &LandscapeKubernetesSource{
+		log:      logr.Discard(),
 		ociRepo:  ociRepo,
 		provider: "converged-cloud",
 	}
@@ -773,6 +782,7 @@ func TestFetchVersions_EmptyGardenerVersionFallsBackToLatest(t *testing.T) {
 	ociRepo.PlainHTTP = true
 
 	src := &LandscapeKubernetesSource{
+		log:      logr.Discard(),
 		ociRepo:  ociRepo,
 		provider: "converged-cloud",
 	}
