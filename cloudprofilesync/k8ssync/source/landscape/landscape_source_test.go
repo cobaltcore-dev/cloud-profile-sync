@@ -56,10 +56,10 @@ providers:
     classification: supported
 `
 
-// descriptorYAMLWithBlob builds a component descriptor YAML that includes both
-// kube-apiserver resources and a kubernetes-version-data localBlob resource
-// pointing to the given digest and size.
-func descriptorYAMLWithBlob(t *testing.T, versionsDigest string, versionsSize int) string {
+// descriptorYAMLWithBlobAndGardenerRef builds a component descriptor YAML that
+// includes both kube-apiserver resources, a kubernetes-version-data localBlob
+// resource, and a componentReference pointing to the given Gardener version.
+func descriptorYAMLWithBlobAndGardenerRef(t *testing.T, versionsDigest string, versionsSize int, gardenerVersion string) string {
 	t.Helper()
 	return fmt.Sprintf(`
 component:
@@ -79,7 +79,10 @@ component:
       localReference: %s
       mediaType: application/vnd.gardener.cloud/kubernetes-versions+yaml
       size: %d
-`, versionsDigest, versionsSize)
+  componentReferences:
+  - componentName: github.com/gardener/gardener
+    version: %s
+`, versionsDigest, versionsSize, gardenerVersion)
 }
 
 // ---- OCI helpers ----
@@ -138,9 +141,10 @@ func startRegistry(t *testing.T, addr string) func() {
 
 // pushArtifactWithVersionsBlob pushes an OCI artifact that contains:
 //   - a tar layer with the component descriptor (including a kubernetes-version-data
-//     resource pointing to the versions blob by digest)
+//     resource pointing to the versions blob by digest, and a componentReference
+//     for the given Gardener version)
 //   - the raw versions YAML as a standalone OCI blob
-func pushArtifactWithVersionsBlob(t *testing.T, addr, repoName, tag, versionsYAML string) {
+func pushArtifactWithVersionsBlob(t *testing.T, addr, repoName, tag, gardenerVersion string) {
 	t.Helper()
 	ctx := context.Background()
 
@@ -151,7 +155,7 @@ func pushArtifactWithVersionsBlob(t *testing.T, addr, repoName, tag, versionsYAM
 	repo.PlainHTTP = true
 
 	// Push the versions YAML blob first; compute its digest.
-	versionsBlobBytes := []byte(versionsYAML)
+	versionsBlobBytes := []byte(testProvidersYAML)
 	h := sha256.Sum256(versionsBlobBytes)
 	versionsDigest := fmt.Sprintf("sha256:%x", h)
 	versionsSize := len(versionsBlobBytes)
@@ -160,8 +164,8 @@ func pushArtifactWithVersionsBlob(t *testing.T, addr, repoName, tag, versionsYAM
 		t.Fatalf("push versions blob: %v", err)
 	}
 
-	// Build the component descriptor YAML referencing the versions blob.
-	descriptorYAML := descriptorYAMLWithBlob(t, versionsDigest, versionsSize)
+	// Build the component descriptor YAML referencing the versions blob and Gardener version.
+	descriptorYAML := descriptorYAMLWithBlobAndGardenerRef(t, versionsDigest, versionsSize, gardenerVersion)
 
 	// Build the tar layer containing the component descriptor.
 	layerBytes := tarWith(t, componentDescriptorFile, descriptorYAML)
@@ -354,7 +358,7 @@ func TestFetchKubernetesVersionsBlob(t *testing.T) {
 		{
 			name: "returns versions YAML from localBlob",
 			setup: func(t *testing.T) {
-				pushArtifactWithVersionsBlob(t, addr, "blob-ok", "v1.0.0", testProvidersYAML)
+				pushArtifactWithVersionsBlob(t, addr, "blob-ok", "v1.0.0", "v1.100.0")
 			},
 			repo:    "blob-ok",
 			wantStr: "converged-cloud",
@@ -400,7 +404,10 @@ component:
 			g.Expect(err).ToNot(HaveOccurred())
 			ociRepo.PlainHTTP = true
 
-			src := &LandscapeKubernetesSource{ociRepo: ociRepo, provider: "converged-cloud"}
+			src := &LandscapeKubernetesSource{
+				ociRepo:  ociRepo,
+				provider: "converged-cloud",
+			}
 			raw, err := src.fetchKubernetesVersionsBlob(context.Background(), "v1.0.0")
 			if tc.wantErr != "" {
 				g.Expect(err).To(MatchError(ContainSubstring(tc.wantErr)))
@@ -424,7 +431,7 @@ func TestFetchVersions_EndToEnd(t *testing.T) {
 
 	// OCI descriptor contains 1.31.4 and 1.32.1; versions blob has 1.33.0 too.
 	// 1.33.0 must be filtered out because it is absent from kube-apiserver resources.
-	pushArtifactWithVersionsBlob(t, addr, "k8s-versions", "v1.2.3", testProvidersYAML)
+	pushArtifactWithVersionsBlob(t, addr, "k8s-versions", "v1.2.3", "v1.100.0")
 
 	ociRepo, err := remote.NewRepository(addr + "/k8s-versions")
 	if err != nil {
@@ -432,9 +439,12 @@ func TestFetchVersions_EndToEnd(t *testing.T) {
 	}
 	ociRepo.PlainHTTP = true
 
-	src := &LandscapeKubernetesSource{ociRepo: ociRepo, provider: "converged-cloud"}
+	src := &LandscapeKubernetesSource{
+		ociRepo:  ociRepo,
+		provider: "converged-cloud",
+	}
 
-	versions, err := src.FetchVersions(context.Background())
+	versions, err := src.FetchVersions(context.Background(), new("v1.100.0"))
 	if err != nil {
 		t.Fatalf("FetchVersions: %v", err)
 	}
@@ -456,25 +466,29 @@ func TestFetchVersions_EndToEnd(t *testing.T) {
 	}
 }
 
-// TestFetchVersions_NoSemverTags verifies that LatestTag returns an error when
-// the OCI repository has no semver-parseable tags.
-func TestFetchVersions_NoSemverTags(t *testing.T) {
+// TestFetchVersions_NoMatchingTag verifies that FetchVersions returns an error
+// when no RBSC tag matches the Gardener version returned by gardenerVersionFn.
+func TestFetchVersions_NoMatchingTag(t *testing.T) {
 	addr := freePort(t)
 	stop := startRegistry(t, addr)
 	defer stop()
 
-	pushComponentDescriptorArtifact(t, addr, "k8s-nosemver", "not-a-version", "component:\n  name: x\n  resources: []\n")
+	// Push a tag that has a different Gardener version than what we ask for.
+	pushArtifactWithVersionsBlob(t, addr, "k8s-nomatch", "v1.0.0", "v1.100.0")
 
-	ociRepo, err := remote.NewRepository(addr + "/k8s-nosemver")
+	ociRepo, err := remote.NewRepository(addr + "/k8s-nomatch")
 	if err != nil {
 		t.Fatalf("new oci repo: %v", err)
 	}
 	ociRepo.PlainHTTP = true
 
-	src := &LandscapeKubernetesSource{ociRepo: ociRepo, provider: "converged-cloud"}
-	_, err = src.FetchVersions(context.Background())
-	if err == nil || !strings.Contains(err.Error(), "no semver tags") {
-		t.Fatalf("expected no-semver-tags error, got %v", err)
+	src := &LandscapeKubernetesSource{
+		ociRepo:  ociRepo,
+		provider: "converged-cloud",
+	}
+	_, err = src.FetchVersions(context.Background(), new("v1.999.0"))
+	if err == nil || !strings.Contains(err.Error(), "no RBSC tag found") {
+		t.Fatalf("expected no-matching-tag error, got %v", err)
 	}
 }
 
@@ -505,6 +519,9 @@ component:
       localReference: %s
       mediaType: application/vnd.gardener.cloud/kubernetes-versions+yaml
       size: %d
+  componentReferences:
+  - componentName: github.com/gardener/gardener
+    version: v1.100.0
 `, versionsDigest, versionsSize)
 
 	ctx := context.Background()
@@ -546,12 +563,225 @@ component:
 	}
 	ociRepo.PlainHTTP = true
 
-	src := &LandscapeKubernetesSource{ociRepo: ociRepo, provider: "converged-cloud"}
-	versions, err := src.FetchVersions(context.Background())
+	src := &LandscapeKubernetesSource{
+		ociRepo:  ociRepo,
+		provider: "converged-cloud",
+	}
+	versions, err := src.FetchVersions(context.Background(), new("v1.100.0"))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if len(versions) != 0 {
 		t.Errorf("expected empty result when no kube-apiserver resources, got %v", versions)
+	}
+}
+
+// TestTagForGardenerVersion_Found verifies that the correct RBSC tag is returned
+// when multiple tags are present and one matches the requested Gardener version.
+func TestTagForGardenerVersion_Found(t *testing.T) {
+	addr := freePort(t)
+	stop := startRegistry(t, addr)
+	defer stop()
+
+	// Push two tags with different Gardener versions.
+	pushArtifactWithVersionsBlob(t, addr, "tag-find", "0.100.0", "v1.100.0")
+	pushArtifactWithVersionsBlob(t, addr, "tag-find", "0.200.0", "v1.200.0")
+
+	ociRepo, err := remote.NewRepository(addr + "/tag-find")
+	if err != nil {
+		t.Fatalf("new oci repo: %v", err)
+	}
+	ociRepo.PlainHTTP = true
+
+	src := &LandscapeKubernetesSource{
+		ociRepo:  ociRepo,
+		provider: "converged-cloud",
+	}
+	tag, err := src.TagForGardenerVersion(context.Background(), "v1.100.0")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if tag != "0.100.0" {
+		t.Errorf("expected tag 0.100.0, got %q", tag)
+	}
+}
+
+// TestTagForGardenerVersion_NotFound verifies an error when no tag matches.
+func TestTagForGardenerVersion_NotFound(t *testing.T) {
+	addr := freePort(t)
+	stop := startRegistry(t, addr)
+	defer stop()
+
+	pushArtifactWithVersionsBlob(t, addr, "tag-notfound", "0.100.0", "v1.100.0")
+
+	ociRepo, err := remote.NewRepository(addr + "/tag-notfound")
+	if err != nil {
+		t.Fatalf("new oci repo: %v", err)
+	}
+	ociRepo.PlainHTTP = true
+
+	src := &LandscapeKubernetesSource{
+		ociRepo:  ociRepo,
+		provider: "converged-cloud",
+	}
+	_, err = src.TagForGardenerVersion(context.Background(), "v1.999.0")
+	if err == nil || !strings.Contains(err.Error(), "no RBSC tag found") {
+		t.Errorf("expected no-RBSC-tag error, got %v", err)
+	}
+}
+
+// TestTagForGardenerVersion_MinorMatch verifies that patch versions are ignored
+// when matching (v1.100.2 in the descriptor matches a query for v1.100.0).
+func TestTagForGardenerVersion_MinorMatch(t *testing.T) {
+	addr := freePort(t)
+	stop := startRegistry(t, addr)
+	defer stop()
+
+	pushArtifactWithVersionsBlob(t, addr, "tag-minor", "0.100.0", "v1.100.2")
+
+	ociRepo, err := remote.NewRepository(addr + "/tag-minor")
+	if err != nil {
+		t.Fatalf("new oci repo: %v", err)
+	}
+	ociRepo.PlainHTTP = true
+
+	src := &LandscapeKubernetesSource{
+		ociRepo:  ociRepo,
+		provider: "converged-cloud",
+	}
+	tag, err := src.TagForGardenerVersion(context.Background(), "v1.100.0")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if tag != "0.100.0" {
+		t.Errorf("expected tag 0.100.0, got %q", tag)
+	}
+}
+
+// TestFetchVersions_GardenerVersionPinned verifies the end-to-end path where
+// gardenerVersionFn returns a specific version and FetchVersions picks the
+// matching tag instead of the newest available one.
+func TestFetchVersions_GardenerVersionPinned(t *testing.T) {
+	addr := freePort(t)
+	stop := startRegistry(t, addr)
+	defer stop()
+
+	// Push two tags: 0.200.0 is newer but for a different Gardener version.
+	// 0.100.0 is for the version the fn returns — its kube-apiserver resources
+	// must be used, not 0.200.0's.
+	pushArtifactWithVersionsBlob(t, addr, "k8s-pinned", "0.100.0", "v1.100.0")
+	// 0.200.0 has no kube-apiserver resources — if it were picked, result would be empty.
+	versionsBlobBytes := []byte(testProvidersYAML)
+	h := sha256.Sum256(versionsBlobBytes)
+	versionsDigest := fmt.Sprintf("sha256:%x", h)
+	versionsSize := len(versionsBlobBytes)
+	noAPIServerDescriptor := fmt.Sprintf(`
+component:
+  name: landscape-setup
+  resources:
+  - name: kubernetes-version-data
+    version: v2.0.0
+    access:
+      type: localBlob/v1
+      localReference: %s
+      mediaType: application/vnd.gardener.cloud/kubernetes-versions+yaml
+      size: %d
+  componentReferences:
+  - componentName: github.com/gardener/gardener
+    version: v1.200.0
+`, versionsDigest, versionsSize)
+	pushArtifactWithCustomDescriptor(t, addr, "k8s-pinned", "0.200.0", versionsBlobBytes, noAPIServerDescriptor)
+
+	ociRepo, err := remote.NewRepository(addr + "/k8s-pinned")
+	if err != nil {
+		t.Fatalf("new oci repo: %v", err)
+	}
+	ociRepo.PlainHTTP = true
+
+	src := &LandscapeKubernetesSource{
+		ociRepo:  ociRepo,
+		provider: "converged-cloud",
+	}
+
+	versions, err := src.FetchVersions(context.Background(), new("v1.100.0"))
+	if err != nil {
+		t.Fatalf("FetchVersions: %v", err)
+	}
+	// 0.100.0 has kube-apiserver 1.31.4 and 1.32.1 — expect 2 versions.
+	if len(versions) != 2 {
+		t.Fatalf("expected 2 versions from pinned tag, got %d: %v", len(versions), versions)
+	}
+}
+
+// pushArtifactWithCustomDescriptor pushes an OCI artifact with a given versions blob
+// and a custom descriptor YAML string.
+func pushArtifactWithCustomDescriptor(t *testing.T, addr, repoName, tag string, versionsBlobBytes []byte, descriptorYAML string) {
+	t.Helper()
+	ctx := context.Background()
+
+	repo, err := remote.NewRepository(addr + "/" + repoName)
+	if err != nil {
+		t.Fatalf("new repo: %v", err)
+	}
+	repo.PlainHTTP = true
+
+	vDesc := content.NewDescriptorFromBytes("application/vnd.gardener.cloud/kubernetes-versions+yaml", versionsBlobBytes)
+	if err := repo.Push(ctx, vDesc, bytes.NewReader(versionsBlobBytes)); err != nil {
+		t.Fatalf("push versions blob: %v", err)
+	}
+	layerBytes := tarWith(t, componentDescriptorFile, descriptorYAML)
+	layerDesc := content.NewDescriptorFromBytes(ocispec.MediaTypeImageLayer, layerBytes)
+	if err := repo.Push(ctx, layerDesc, bytes.NewReader(layerBytes)); err != nil {
+		t.Fatalf("push layer: %v", err)
+	}
+	if err := repo.Push(ctx, ocispec.DescriptorEmptyJSON, strings.NewReader("{}")); err != nil {
+		t.Fatalf("push config: %v", err)
+	}
+	manifest := ocispec.Manifest{
+		SchemaVersion: 2,
+		MediaType:     ocispec.MediaTypeImageManifest,
+		Config:        ocispec.DescriptorEmptyJSON,
+		Layers:        []ocispec.Descriptor{layerDesc, vDesc},
+	}
+	manifestBytes, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatalf("marshal manifest: %v", err)
+	}
+	manifestDesc := content.NewDescriptorFromBytes(ocispec.MediaTypeImageManifest, manifestBytes)
+	if err := repo.PushReference(ctx, manifestDesc, bytes.NewReader(manifestBytes), tag); err != nil {
+		t.Fatalf("push manifest: %v", err)
+	}
+}
+
+// TestFetchVersions_EmptyGardenerVersionFallsBackToLatest verifies that passing
+// an empty gardenerVersion falls back to the latest semver tag (bootstrap path
+// for landscapes where no shoots exist yet).
+func TestFetchVersions_EmptyGardenerVersionFallsBackToLatest(t *testing.T) {
+	addr := freePort(t)
+	stop := startRegistry(t, addr)
+	defer stop()
+
+	// Push two tags; 0.200.0 is newer and has kube-apiserver resources.
+	// With an empty gardenerVersion, 0.200.0 (latest) must be used.
+	pushArtifactWithVersionsBlob(t, addr, "k8s-fallback", "0.100.0", "v1.100.0")
+	pushArtifactWithVersionsBlob(t, addr, "k8s-fallback", "0.200.0", "v1.200.0")
+
+	ociRepo, err := remote.NewRepository(addr + "/k8s-fallback")
+	if err != nil {
+		t.Fatalf("new oci repo: %v", err)
+	}
+	ociRepo.PlainHTTP = true
+
+	src := &LandscapeKubernetesSource{
+		ociRepo:  ociRepo,
+		provider: "converged-cloud",
+	}
+
+	versions, err := src.FetchVersions(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("FetchVersions: %v", err)
+	}
+	if len(versions) == 0 {
+		t.Fatal("expected versions from latest tag fallback, got none")
 	}
 }
