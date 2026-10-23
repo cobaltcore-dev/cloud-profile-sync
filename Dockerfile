@@ -20,7 +20,7 @@ RUN go build -ldflags="-s -w" -a -o cloud-profile-sync main.go
 
 # Use distroless as minimal base image to package the manager binary
 # Refer to https://github.com/GoogleContainerTools/distroless for more details
-FROM gcr.io/distroless/static:nonroot
+FROM gcr.io/distroless/static:nonroot@sha256:18f4cc26c9ffa7f20a359298be7deadac5c607c8e03a02b8119f1a5fc2f82c99
 WORKDIR /
 LABEL source_repository="https://github.com/cobaltcore-dev/cloud-profile-sync"
 COPY --from=builder /workspace/cloud-profile-sync .
